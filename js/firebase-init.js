@@ -8,18 +8,28 @@
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 const auth = firebase.auth();
-const functions = firebase.functions();
+const functions = firebase.app().functions('us-central1');
 window.db = db;
 window.auth = auth;
 window.functions = functions;
 window._fbReady = false;
 
-db.ref('.info/connected').on('value', snap=>{
-  window._fbReady = snap.val()===true;
-  const el = document.getElementById('fb-status');
-  if(el) el.innerHTML = window._fbReady
-    ? '≡ƒƒó <span id="fb-status-txt">'+(typeof currentLang!=='undefined' && currentLang==='en'?'Connected':'┘à╪¬╪╡┘ä')+'</span>'
-    : '≡ƒö┤ <span id="fb-status-txt">'+(typeof currentLang!=='undefined' && currentLang==='en'?'Connecting...':'╪¼╪º╪▒┘ì ╪º┘ä╪º╪¬╪╡╪º┘ä...')+'</span>';
+function updateFirebaseConnectionStatus(connected) {
+  window._fbReady = connected === true;
+  const wrap = document.getElementById('fb-status');
+  const txt = document.getElementById('fb-status-txt');
+  if (!wrap || !txt) return;
+  const isEn = typeof currentLang !== 'undefined' && currentLang === 'en';
+  wrap.classList.toggle('fb-connected', window._fbReady);
+  wrap.classList.toggle('fb-connecting', !window._fbReady);
+  txt.textContent = window._fbReady
+    ? (isEn ? 'Connected' : '\u0645\u062A\u0635\u0644')
+    : (isEn ? 'Connecting...' : '\u062C\u0627\u0631\u064D \u0627\u0644\u0627\u062A\u0635\u0627\u0644...');
+}
+window.updateFirebaseConnectionStatus = updateFirebaseConnectionStatus;
+
+db.ref('.info/connected').on('value', snap => {
+  updateFirebaseConnectionStatus(snap.val());
 });
 
 window.fbGetTeacher = k => db.ref('teachers/'+k).once('value').then(s=>s.val());
