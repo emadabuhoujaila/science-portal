@@ -37,7 +37,7 @@ window.__splashDeadline = Date.now() + 5000;
 </script>
 <script>
 (function(){
-  var key='portal-cache-reset-v15';
+  var key='portal-cache-reset-v16';
   if(localStorage.getItem(key)) return;
   localStorage.setItem(key,'1');
   var done=function(){ location.reload(); };
@@ -839,26 +839,27 @@ window.__splashDeadline = Date.now() + 5000;
       <div id="settings-account-info" style="background:var(--teal-pale);border:1px solid var(--grey-5);border-radius:10px;padding:12px 14px;font-size:13px;line-height:1.8;color:var(--grey-1)"></div>
     </div>
 
-    <div id="settings-grades-section" class="form-group" style="display:none;border-top:1.5px solid var(--grey-5);padding-top:14px;margin-top:4px">
-      <label id="settings-grades-lbl">📊 سجل الدرجات (OneDrive)</label>
-      <p id="settings-onedrive-help" style="font-size:12px;color:var(--grey-3);margin:0 0 10px;line-height:1.65"></p>
-      <div id="settings-ms-status" style="font-size:12px;color:var(--grey-3);margin:0 0 8px"></div>
-      <button type="button" id="settings-ms-connect-btn" onclick="connectMicrosoftForOneDrive()"
-        style="width:100%;padding:10px 12px;border:1.5px solid var(--grey-5);border-radius:10px;background:var(--white);cursor:pointer;font-family:inherit;font-size:13px;margin-bottom:8px">
-        🔗 ربط حساب Microsoft
-      </button>
-      <input type="url" id="settings-onedrive-url" placeholder="https://1drv.ms/x/s!..." style="width:100%;padding:11px 14px;border:1.5px solid var(--grey-5);border-radius:10px;font-family:inherit;font-size:13px;margin-bottom:8px">
+    <div id="settings-phase3-section" class="form-group" style="display:none;border-top:1.5px solid var(--grey-5);padding-top:14px;margin-top:4px">
+      <label id="settings-phase3-lbl">💾 نسخ احتياطي وإشعارات</label>
+      <p id="settings-grades-toolbar-hint" style="font-size:12px;color:var(--grey-3);margin:0 0 10px;line-height:1.65"></p>
       <div id="settings-last-sync" style="font-size:12px;color:var(--grey-3);margin-bottom:10px"></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button type="button" id="settings-onedrive-update-btn" onclick="updateGradesFromOneDrive()"
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+        <button type="button" id="settings-export-grades-btn" onclick="exportTeacherGradesExcel()"
           style="flex:1;min-width:140px;padding:10px 12px;border:none;border-radius:10px;background:var(--teal-mid);color:#fff;cursor:pointer;font-family:inherit;font-size:13px">
-          🔄 تحديث من OneDrive
+          📤 تصدير الدرجات
         </button>
-        <button type="button" id="settings-onedrive-delete-btn" onclick="deleteTeacherGrades()"
+        <button type="button" id="settings-delete-grades-btn" onclick="deleteTeacherGrades()"
           style="flex:1;min-width:140px;padding:10px 12px;border:1.5px solid var(--red-soft);border-radius:10px;background:var(--red-pale);color:var(--red-soft);cursor:pointer;font-family:inherit;font-size:13px">
           🗑️ حذف الدرجات
         </button>
       </div>
+      <label id="settings-notif-lbl" style="display:block;margin-bottom:6px">🔔 الإشعارات</label>
+      <p id="settings-notif-help" style="font-size:12px;color:var(--grey-3);margin:0 0 8px;line-height:1.65"></p>
+      <div id="settings-notif-action"></div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-top:12px;cursor:pointer">
+        <input type="checkbox" id="settings-auto-refresh">
+        <span id="settings-auto-refresh-lbl">تحديث البيانات تلقائياً عند فتح اللوحة</span>
+      </label>
     </div>
 
     <div class="form-group">
@@ -925,8 +926,7 @@ window.__splashDeadline = Date.now() + 5000;
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
-<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
 <script src="js/firebase-init.js"></script>
-<script src="js/app.js?v=15"></script>
+<script src="js/app.js?v=16"></script>
 </body>
 </html>
