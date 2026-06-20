@@ -1763,17 +1763,6 @@ function adminBuildFilters(){
 // Import students from Excel
 
 
-  const isEn = currentLang==='en';
-  if(!confirm(isEn?'Delete ALL student data? This cannot be undone.':'حذف كل بيانات الطلاب؟ لا يمكن التراجع.')) return;
-  if(typeof db!=='undefined'){
-    db.ref('students').remove().then(()=>{
-      window.ADMIN_STUDENTS={};
-      adminRenderStudents();
-      showToast('✅ '+(isEn?'All data deleted':'تم مسح كل البيانات'));
-    });
-  }
-}
-
 function showAdminTab(tab, el){
   document.querySelectorAll('.admin-tab-panel').forEach(p=>p.style.display='none');
   document.querySelectorAll('.admin-main-tab').forEach(b=>b.classList.remove('active'));
