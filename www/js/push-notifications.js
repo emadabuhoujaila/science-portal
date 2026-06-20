@@ -75,6 +75,51 @@
     role: null,
     meta: {},
 
+    OPTIN_KEY: 'portal-push-optin',
+
+    async getPermissionState(){
+      if(isNative()){
+        const Push = getPushPlugin();
+        if(!Push?.checkPermissions) return 'unsupported';
+        const p = await Push.checkPermissions();
+        return p.receive || 'prompt';
+      }
+      if(!('Notification' in window)) return 'unsupported';
+      return Notification.permission;
+    },
+
+    isOptInSettled(){
+      const s = localStorage.getItem(this.OPTIN_KEY);
+      return s === 'enabled' || s === 'dismissed';
+    },
+
+    markOptInEnabled(){
+      try{ localStorage.setItem(this.OPTIN_KEY, 'enabled'); }catch(e){}
+    },
+
+    markOptInDismissed(){
+      try{ localStorage.setItem(this.OPTIN_KEY, 'dismissed'); }catch(e){}
+    },
+
+    async clearDeliveredNotifications(){
+      if(isNative()){
+        try{
+          const Push = getPushPlugin();
+          if(Push?.removeAllDeliveredNotifications){
+            await Push.removeAllDeliveredNotifications();
+          }
+        }catch(e){ console.warn('clear native notifications', e); }
+        return;
+      }
+      try{
+        if('serviceWorker' in navigator){
+          const reg = window.swRegistration || await navigator.serviceWorker.ready;
+          const list = await reg.getNotifications();
+          list.forEach(n=>{ try{ n.close(); }catch(e){} });
+        }
+      }catch(e){ console.warn('clear web notifications', e); }
+    },
+
     setContext(role, meta){
       this.role = role;
       this.meta = meta || {};
@@ -148,6 +193,7 @@
         const saved = await this.persistToken(token, 'web');
         if(!saved) return { ok:false, reason:'token_save_failed' };
 
+        this.markOptInEnabled();
         hookForegroundMessages();
 
         if(typeof messaging.onTokenRefresh === 'function'){
@@ -182,7 +228,8 @@
         PushNotifications.addListener('pushNotificationReceived', (notif)=>{
           PortalPush.playSound();
         });
-        PushNotifications.addListener('pushNotificationActionPerformed', ()=>{
+        PushNotifications.addListener('pushNotificationActionPerformed', async ()=>{
+          await PortalPush.clearDeliveredNotifications();
           if(typeof openInboxFromAlert === 'function') openInboxFromAlert();
         });
         nativeListenersBound = true;
@@ -211,6 +258,7 @@
 
       await PushNotifications.register();
       nativeReady = true;
+      this.markOptInEnabled();
       return { ok:true, reason:'native_registered' };
     },
 

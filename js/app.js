@@ -346,8 +346,14 @@ function showTab(name,el){
   if(name==='grades') renderGradesTab();
   if(name==='analysis') renderAnalysisTab();
   if(name==='behavior') renderBehaviorTab();
-  if(name==='messages'){ renderSavedMessages(); renderParentInbox(); }
-  if(name==='complaints'){ renderTeacherComplaints(); markAllTeacherComplaintsRead(); }
+  if(name==='messages'){
+    renderSavedMessages(); renderParentInbox();
+    if(window.PortalPush?.clearDeliveredNotifications) PortalPush.clearDeliveredNotifications();
+  }
+  if(name==='complaints'){
+    renderTeacherComplaints(); markAllTeacherComplaintsRead();
+    if(window.PortalPush?.clearDeliveredNotifications) PortalPush.clearDeliveredNotifications();
+  }
 }
 
 // ══════════════════════════════════════════════════
@@ -4596,6 +4602,9 @@ function _getSeenKey(type, cls, name){ return `seen_${type}_${cls}_${name}`; }
 function _markSeen(type, cls, name){
   try{ localStorage.setItem(_getSeenKey(type,cls,name), new Date().toISOString()); }catch(e){}
   _updateParentBadges();
+  if(window.PortalPush?.clearDeliveredNotifications){
+    PortalPush.clearDeliveredNotifications();
+  }
 }
 
 function _getSeenTime(type, cls, name){
@@ -5082,7 +5091,9 @@ function switchParentMainTab(tabId, el){
     _markSeen('msgs', ctx.cls, ctx.name);
     _markSeen('bv',   ctx.cls, ctx.name);
     if(tc?.key) _markSeen('admin_'+tc.key, ctx.cls, ctx.name);
-    if(tc?.key) _refreshSubjectTabBadge(i, ctx.cls, ctx.name, tc.key);
+    (ctx.teachers || []).forEach((t, ti)=>{
+      if(t?.key) _refreshSubjectTabBadge(ti, ctx.cls, ctx.name, t.key);
+    });
     loadSubjectTabContent(i, ctx.cls, ctx.name, ctx.mid, ctx.teachers);
   }
 }
@@ -5096,7 +5107,13 @@ function switchMsgTab(tab, el){
   // Reload on open
   const ctx = window._parentSubjectContext;
   if(!ctx) return;
-  if(tab==='inbox') renderParentInboxAll(ctx.cls, ctx.name, ctx.teachers);
+  if(tab==='inbox'){
+    _markSeen('msgs', ctx.cls, ctx.name);
+    renderParentInboxAll(ctx.cls, ctx.name, ctx.teachers);
+    (ctx.teachers || []).forEach((t, ti)=>{
+      if(t?.key) _refreshSubjectTabBadge(ti, ctx.cls, ctx.name, t.key);
+    });
+  }
   if(tab==='sent')  renderParentSentAll(ctx.cls, ctx.name, ctx.teachers);
 }
 
@@ -6827,8 +6844,20 @@ function showNewMsgAlert(){
 }
 
 function openInboxFromAlert(){
-  document.getElementById('new-msg-alert').classList.remove('show');
-  // انتقل لتبويب رسائل المعلم
+  const alert = document.getElementById('new-msg-alert');
+  if(alert) alert.classList.remove('show');
+  if(window.PortalPush?.clearDeliveredNotifications) PortalPush.clearDeliveredNotifications();
+
+  const ctx = window._parentSubjectContext;
+  if(ctx?.teachers?.length){
+    let idx = 0;
+    (ctx.teachers || []).forEach((t, i)=>{
+      if(t?.key && _getSubjectTabUnseenCount(i, ctx.cls, ctx.name, t.key) > 0) idx = i;
+    });
+    const btn = document.getElementById('btn-tab-subj-'+idx);
+    if(btn){ switchParentMainTab('tab-subj-'+idx, btn); return; }
+  }
+
   const inboxBtn = document.querySelector('[onclick*="switchParentTab(\'inbox\'"]');
   if(inboxBtn){ switchParentTab('inbox', inboxBtn); }
   else {
@@ -6897,6 +6926,7 @@ function clearParentTabBadge(tabId, cls, name){
     const total = (APP.behaviorLog||[]).filter(e=>e.cls===cls && e.name===name).length;
     setSeenCount(cls, name, 'bvlog', total);
   }
+  if(window.PortalPush?.clearDeliveredNotifications) PortalPush.clearDeliveredNotifications();
 }
 
 function switchParentTab(tab, el){
@@ -7162,6 +7192,7 @@ function markTeacherParentMsgRead(msg){
   msg.read = true;
   saveState();
   updateInboxBadge();
+  if(window.PortalPush?.clearDeliveredNotifications) PortalPush.clearDeliveredNotifications();
 }
 
 function countUnreadParentMsgs(){
@@ -7180,6 +7211,7 @@ function markAllParentMsgsSeen(){
   try{ localStorage.setItem('read_pm_'+key, JSON.stringify(ids)); }catch(e){}
   saveState();
   updateInboxBadge();
+  if(window.PortalPush?.clearDeliveredNotifications) PortalPush.clearDeliveredNotifications();
 }
 
 function updateInboxBadge(){
@@ -7313,6 +7345,7 @@ async function markTeacherComplaintRead(id){
   saveState();
   updateTeacherComplaintsBadge();
   renderTeacherComplaints();
+  if(window.PortalPush?.clearDeliveredNotifications) PortalPush.clearDeliveredNotifications();
   const key = getTeacherKey();
   if(typeof db!=='undefined' && key){
     try{ await db.ref('teacherData/'+key+'/complaintInbox/'+id).update({read:true}); }catch(e){ console.warn(e); }
@@ -7326,6 +7359,7 @@ async function markAllTeacherComplaintsRead(){
   unread.forEach(c=>{ c.read = true; });
   saveState();
   updateTeacherComplaintsBadge();
+  if(window.PortalPush?.clearDeliveredNotifications) PortalPush.clearDeliveredNotifications();
   if(typeof db!=='undefined' && key){
     const updates = {};
     unread.forEach(c=>{ updates[c.id+'/read'] = true; });
@@ -8121,6 +8155,7 @@ async function requestNotifPermission(){
 
 function showPushOptInModal(onAccept){
   if(document.getElementById('push-optin-modal')) return;
+  if(window.PortalPush?.isOptInSettled?.() && PortalPush.isOptInSettled()) return;
   const isEn = typeof currentLang !== 'undefined' && currentLang === 'en';
   const overlay = document.createElement('div');
   overlay.id = 'push-optin-modal';
@@ -8144,7 +8179,7 @@ function showPushOptInModal(onAccept){
     if(onAccept) await onAccept(true);
   };
   overlay.querySelector('#push-optin-later').onclick = ()=>{
-    sessionStorage.setItem('push-optin-dismissed','1');
+    if(window.PortalPush?.markOptInDismissed) PortalPush.markOptInDismissed();
     overlay.remove();
     if(onAccept) onAccept(false);
   };
@@ -8171,6 +8206,13 @@ async function ensurePushForCurrentUser(opts){
 
 function schedulePushRegistration(role, data){
   if(!window.PortalPush) return;
+
+  try{
+    if(sessionStorage.getItem('push-optin-dismissed') && !localStorage.getItem(PortalPush.OPTIN_KEY)){
+      PortalPush.markOptInDismissed();
+    }
+  }catch(e){}
+
   const run = async (forcePrompt)=>{
     let r;
     if(role === 'parent' && data?.mid){
@@ -8182,6 +8224,7 @@ function schedulePushRegistration(role, data){
       if(uid) r = await PortalPush.registerAdmin(uid, { forcePrompt });
     }
     if(r?.ok){
+      PortalPush.markOptInEnabled();
       renderNotifButton();
       renderSettingsNotifAction();
     } else if(r?.reason === 'denied'){
@@ -8190,26 +8233,42 @@ function schedulePushRegistration(role, data){
     return r;
   };
 
-  const perm = ('Notification' in window) ? Notification.permission : 'unsupported';
-  if(perm === 'granted'){
-    setTimeout(()=>run(false), 600);
-    return;
-  }
-  if(perm === 'denied'){
-    renderNotifButton();
-    return;
-  }
-  if(sessionStorage.getItem('push-optin-dismissed')) return;
-  setTimeout(()=>{
-    showPushOptInModal(async (accepted)=>{
-      if(accepted) await run(true);
-    });
-  }, 900);
+  (async ()=>{
+    if(PortalPush.isOptInSettled && PortalPush.isOptInSettled()){
+      const perm = await PortalPush.getPermissionState();
+      if(perm === 'granted' || localStorage.getItem(PortalPush.OPTIN_KEY) === 'enabled'){
+        setTimeout(()=>run(false), 600);
+      }
+      return;
+    }
+
+    const perm = await PortalPush.getPermissionState();
+    if(perm === 'granted'){
+      PortalPush.markOptInEnabled();
+      setTimeout(()=>run(false), 600);
+      return;
+    }
+    if(perm === 'denied'){
+      renderNotifButton();
+      return;
+    }
+
+    setTimeout(()=>{
+      showPushOptInModal(async (accepted)=>{
+        if(accepted){
+          await run(true);
+        } else if(window.PortalPush?.markOptInDismissed){
+          PortalPush.markOptInDismissed();
+        }
+      });
+    }, 900);
+  })();
 }
 
 async function requestAndSubscribe(){
   const r = await ensurePushForCurrentUser({ forcePrompt: true });
   if(r?.ok){
+    if(window.PortalPush?.markOptInEnabled) PortalPush.markOptInEnabled();
     showToast('✅ تم تفعيل الإشعارات — ستصلك حتى لو التطبيق مغلق');
   } else if(r?.reason === 'denied'){
     showToast('⚠️ مرفوض — فعّل الإشعارات من إعدادات الجهاز');
