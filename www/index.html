@@ -37,7 +37,7 @@ window.__splashDeadline = Date.now() + 5000;
 </script>
 <script>
 (function(){
-  var key='portal-cache-reset-v20';
+  var key='portal-cache-reset-v21';
   if(localStorage.getItem(key)) return;
   localStorage.setItem(key,'1');
   var done=function(){ location.reload(); };
@@ -385,6 +385,7 @@ window.__splashDeadline = Date.now() + 5000;
       <div class="card admin-card-allowlist" style="margin-bottom:20px">
         <div class="card-header admin-card-header-teal">
           <h3 id="admin-allowlist-title">🔐 المعلّمون المعتمدون للتسجيل</h3>
+          <button type="button" class="btn-icon" style="background:var(--teal-light);color:var(--teal-dark)" onclick="adminLoadMonitoring()" id="admin-monitor-refresh">🔄 تحديث</button>
         </div>
         <div style="padding:16px 20px">
           <p id="admin-allowlist-desc" class="admin-help-text">أضف هنا بريد كل معلّم في المدرسة قبل أن يسجّل حسابه. لا يستطيع أي شخص آخر (مثل ولي الأمر) التسجيل كمعلّم.</p>
@@ -399,13 +400,15 @@ window.__splashDeadline = Date.now() + 5000;
                 <tr>
                   <th id="admin-th-a-email">البريد</th>
                   <th id="admin-th-a-name">الاسم</th>
-                  <th id="admin-th-a-date">تاريخ الإضافة</th>
+                  <th id="admin-th-a-subject">المادة</th>
+                  <th id="admin-th-a-grades">الصفوف والشعب</th>
+                  <th id="admin-th-a-regdate">تاريخ التسجيل</th>
                   <th id="admin-th-a-status">الحالة</th>
                   <th id="admin-th-a-action">إجراء</th>
                 </tr>
               </thead>
               <tbody id="admin-allowlist-tbody">
-                <tr><td colspan="5" class="empty-state"><div class="ico">⏳</div><p id="admin-allowlist-empty">جارٍ التحميل...</p></td></tr>
+                <tr><td colspan="7" class="empty-state"><div class="ico">⏳</div><p id="admin-allowlist-empty">جارٍ التحميل...</p></td></tr>
               </tbody>
             </table>
           </div>
@@ -421,30 +424,6 @@ window.__splashDeadline = Date.now() + 5000;
           <div id="admin-missing-coverage" class="admin-missing-wrap">
             <div class="empty-state" style="padding:24px"><div class="ico">⏳</div><p>جارٍ التحميل...</p></div>
           </div>
-        </div>
-      </div>
-
-      <div class="card admin-card-teachers" style="margin-bottom:20px">
-        <div class="card-header admin-card-header-teal">
-          <h3 id="admin-teachers-title">👨‍🏫 المعلمون المسجلون</h3>
-          <button type="button" class="btn-icon" style="background:var(--teal-light);color:var(--teal-dark)" onclick="adminLoadMonitoring()" id="admin-monitor-refresh">🔄 تحديث</button>
-        </div>
-        <div class="table-wrap admin-table-wrap">
-          <table class="admin-table">
-            <thead>
-              <tr>
-                <th id="admin-th-t-name">الاسم</th>
-                <th id="admin-th-t-email">البريد</th>
-                <th id="admin-th-t-subject">المادة</th>
-                <th id="admin-th-t-grades">الصفوف</th>
-                <th id="admin-th-t-date">تاريخ التسجيل</th>
-                <th id="admin-th-t-action">إجراء</th>
-              </tr>
-            </thead>
-            <tbody id="admin-teachers-tbody">
-              <tr><td colspan="6" class="empty-state"><div class="ico">⏳</div><p id="admin-teachers-empty">جارٍ التحميل...</p></td></tr>
-            </tbody>
-          </table>
         </div>
       </div>
 
@@ -958,6 +937,6 @@ window.__splashDeadline = Date.now() + 5000;
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
 <script src="js/firebase-init.js?v=3"></script>
-<script src="js/app.js?v=20"></script>
+<script src="js/app.js?v=21"></script>
 </body>
 </html>

@@ -1984,6 +1984,14 @@ async function adminAddTeacherAllowlist(){
 async function adminRemoveTeacherAllowlist(key, email){
   const isEn = currentLang==='en';
   if(!key) return;
+  if(typeof db==='undefined'){
+    showToast(isEn ? '❌ Not connected' : '❌ غير متصل');
+    return;
+  }
+  if(typeof auth === 'undefined' || !auth.currentUser){
+    showToast(isEn ? '❌ Admin login required' : '❌ يجب تسجيل دخول المسؤول');
+    return;
+  }
   const label = email || key;
   if(!confirm(isEn
     ? `Remove "${label}" from approved teachers list?\nThey will not be able to register unless added again.`
@@ -1994,55 +2002,109 @@ async function adminRemoveTeacherAllowlist(key, email){
     adminLoadMonitoring();
   }catch(e){
     console.error('adminRemoveTeacherAllowlist', e);
-    showToast(isEn ? '❌ Remove failed' : '❌ فشل الإزالة');
+    showToast(isEn ? '❌ Remove failed — check admin permissions' : '❌ فشل الإزالة — تحقق من صلاحيات المسؤول');
   }
 }
 
-function adminRenderAllowlistTable(allowlist, registeredKeys, isEn){
+function adminRenderAllowlistTable(allowlist, teachersByKey, isEn){
   const tbody = document.getElementById('admin-allowlist-tbody');
   if(!tbody) return;
   const entries = Object.entries(allowlist||{}).map(([key, v]) => ({ key, ...v }));
   entries.sort((a,b)=>(b.addedAt||'').localeCompare(a.addedAt||''));
   if(!entries.length){
-    tbody.innerHTML = `<tr><td colspan="5" class="empty-state"><div class="ico">📋</div><p>${isEn?'No approved emails yet — add teacher emails below':'لا توجد بريدات معتمدة بعد — أضف بريد المعلّم أدناه'}</p></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="empty-state"><div class="ico">📋</div><p>${isEn?'No approved emails yet — add teacher emails below':'لا توجد بريدات معتمدة بعد — أضف بريد المعلّم أدناه'}</p></td></tr>`;
     return;
   }
   tbody.innerHTML = entries.map(entry=>{
-    const registered = registeredKeys.has(entry.key);
+    const teacher = teachersByKey[entry.key] || null;
+    const registered = !!teacher;
     const status = registered
       ? (isEn ? '✅ Registered' : '✅ مسجّل')
       : (isEn ? '⏳ Pending' : '⏳ بانتظار التسجيل');
-    const emailArg = JSON.stringify(entry.email||'');
-    const keyArg = JSON.stringify(entry.key||'');
+    const displayName = teacher?.name || entry.name || '—';
+    const subject = teacher ? formatAdminSubject(teacher.subject, isEn) : '—';
+    const grades = teacher ? formatAdminGrades(teacher, isEn) : '—';
+    const regDate = teacher ? formatAdminDate(teacher.createdAt, isEn) : '—';
+    const actionBtn = registered
+      ? `<button type="button" class="action-btn danger admin-delete-teacher-btn" style="font-size:12px;padding:4px 10px;white-space:nowrap"
+          data-teacher-key="${escapeHtml(entry.key||'')}"
+          data-teacher-uid="${escapeHtml(teacher.uid||'')}"
+          data-teacher-name="${escapeHtml(displayName)}"
+          data-teacher-email="${escapeHtml(entry.email||teacher.email||'')}">🗑️ ${isEn?'Delete':'حذف'}</button>`
+      : `<button type="button" class="action-btn danger admin-remove-allowlist-btn" style="font-size:12px;padding:4px 10px;white-space:nowrap"
+          data-allow-key="${escapeHtml(entry.key||'')}"
+          data-allow-email="${escapeHtml(entry.email||'')}">🗑️ ${isEn?'Remove':'إزالة'}</button>`;
     return `<tr>
       <td style="font-size:12px">${escapeHtml(entry.email||'—')}</td>
-      <td>${escapeHtml(entry.name||'—')}</td>
-      <td style="font-size:12px;color:var(--grey-3)">${formatAdminDate(entry.addedAt, isEn)}</td>
+      <td>${escapeHtml(displayName)}</td>
+      <td>${escapeHtml(subject)}</td>
+      <td style="font-size:12px">${escapeHtml(grades)}</td>
+      <td style="font-size:12px;color:var(--grey-3)">${regDate}</td>
       <td style="font-size:12px">${status}</td>
-      <td><button type="button" class="action-btn danger" style="font-size:12px;padding:4px 10px"
-        onclick="adminRemoveTeacherAllowlist(${keyArg}, ${emailArg})">🗑️ ${isEn?'Remove':'إزالة'}</button></td>
+      <td>${actionBtn}</td>
     </tr>`;
   }).join('');
+  bindAdminAllowlistButtons();
+}
+
+function bindAdminAllowlistButtons(){
+  const tbody = document.getElementById('admin-allowlist-tbody');
+  if(!tbody || tbody.dataset.allowBound === '1') return;
+  tbody.dataset.allowBound = '1';
+  tbody.addEventListener('click', e=>{
+    const removeBtn = e.target.closest('.admin-remove-allowlist-btn');
+    if(removeBtn){
+      adminRemoveTeacherAllowlist(
+        removeBtn.dataset.allowKey || '',
+        removeBtn.dataset.allowEmail || ''
+      );
+      return;
+    }
+    const deleteBtn = e.target.closest('.admin-delete-teacher-btn');
+    if(deleteBtn){
+      adminDeleteTeacher(
+        deleteBtn.dataset.teacherKey || '',
+        deleteBtn.dataset.teacherUid || '',
+        deleteBtn.dataset.teacherName || '',
+        deleteBtn.dataset.teacherEmail || ''
+      );
+    }
+  });
+}
+
+function bindAdminParentDeleteButtons(){
+  const tbody = document.getElementById('admin-parents-tbody');
+  if(!tbody || tbody.dataset.deleteBound === '1') return;
+  tbody.dataset.deleteBound = '1';
+  tbody.addEventListener('click', e=>{
+    const btn = e.target.closest('.admin-delete-parent-btn');
+    if(!btn) return;
+    adminDeleteParentRegistration(
+      btn.dataset.parentMid || '',
+      btn.dataset.parentName || ''
+    );
+  });
 }
 
 async function adminLoadMonitoring(){
   const isEn = currentLang==='en';
-  const teachersBody = document.getElementById('admin-teachers-tbody');
+  const allowlistBody = document.getElementById('admin-allowlist-tbody');
   const parentsBody  = document.getElementById('admin-parents-tbody');
   const missingWrap  = document.getElementById('admin-missing-coverage');
-  if(!teachersBody || !parentsBody) return;
+  if(!allowlistBody || !parentsBody) return;
 
-  bindAdminTeacherDeleteButtons();
+  bindAdminAllowlistButtons();
+  bindAdminParentDeleteButtons();
   await syncParentQuickLoginFromRegistry();
 
   if(typeof db==='undefined'){
-    teachersBody.innerHTML = `<tr><td colspan="6" class="empty-state"><p>${isEn?'Firebase not connected':'Firebase غير متصل'}</p></td></tr>`;
+    allowlistBody.innerHTML = `<tr><td colspan="7" class="empty-state"><p>${isEn?'Firebase not connected':'Firebase غير متصل'}</p></td></tr>`;
     parentsBody.innerHTML  = `<tr><td colspan="7" class="empty-state"><p>${isEn?'Firebase not connected':'Firebase غير متصل'}</p></td></tr>`;
     if(missingWrap) missingWrap.innerHTML = `<div class="empty-state"><p>${isEn?'Firebase not connected':'Firebase غير متصل'}</p></div>`;
     return;
   }
 
-  teachersBody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--grey-3)">⏳</td></tr>`;
+  allowlistBody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--grey-3)">⏳</td></tr>`;
   parentsBody.innerHTML  = `<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--grey-3)">⏳</td></tr>`;
   if(missingWrap) missingWrap.innerHTML = `<div class="empty-state" style="padding:24px"><div class="ico">⏳</div><p>${isEn?'Loading...':'جارٍ التحميل...'}</p></div>`;
 
@@ -2083,34 +2145,11 @@ async function adminLoadMonitoring(){
     }
     teachers.sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
 
-    const registeredKeys = new Set(teachers.map(t => t.key));
-    adminRenderAllowlistTable(allowSnap.exists() ? allowSnap.val() : {}, registeredKeys, isEn);
+    const teachersByKey = {};
+    teachers.forEach(t=>{ teachersByKey[t.key] = t; });
+    adminRenderAllowlistTable(allowSnap.exists() ? allowSnap.val() : {}, teachersByKey, isEn);
 
     const { missingCount } = adminRenderMissingCoverage(teachers, isEn);
-
-    if(!teachers.length){
-      teachersBody.innerHTML = `<tr><td colspan="6" class="empty-state"><div class="ico">👨‍🏫</div><p>${isEn?'No registered teachers yet':'لا يوجد معلمون مسجلون بعد'}</p></td></tr>`;
-    }else{
-      teachersBody.innerHTML = teachers.map(t=>{
-        const key = t.key || '';
-        const uid = t.uid || '';
-        const tName = t.name || '';
-        const tEmail = t.email || '';
-        return `<tr>
-          <td style="font-weight:600">${escapeHtml(tName||'—')}</td>
-          <td style="font-size:12px">${escapeHtml(tEmail||'—')}</td>
-          <td>${escapeHtml(formatAdminSubject(t.subject, isEn))}</td>
-          <td style="font-size:12px">${escapeHtml(formatAdminGrades(t, isEn))}</td>
-          <td style="font-size:12px;color:var(--grey-3)">${formatAdminDate(t.createdAt, isEn)}</td>
-          <td><button type="button" class="action-btn danger admin-delete-teacher-btn" style="font-size:12px;padding:4px 10px;white-space:nowrap"
-            data-teacher-key="${escapeHtml(key)}"
-            data-teacher-uid="${escapeHtml(uid)}"
-            data-teacher-name="${escapeHtml(tName)}"
-            data-teacher-email="${escapeHtml(tEmail)}">🗑️ ${isEn?'Delete':'حذف'}</button></td>
-        </tr>`;
-      }).join('');
-      bindAdminTeacherDeleteButtons();
-    }
 
     const parents = [];
     if(parentsSnap.exists()){
@@ -2125,8 +2164,7 @@ async function adminLoadMonitoring(){
       parentsBody.innerHTML = `<tr><td colspan="7" class="empty-state"><div class="ico">👨‍👩‍👧</div><p>${isEn?'No registered parents yet':'لا يوجد أولياء أمور مسجلون بعد'}</p></td></tr>`;
     }else{
       parentsBody.innerHTML = parents.map(p=>{
-        const midArg = JSON.stringify(p.mid||'');
-        const nameArg = JSON.stringify(p.name||'');
+        const pName = p.name || '';
         return `<tr>
         <td style="font-weight:600;text-align:right">${escapeHtml(displayStudentName(p.name, p.cls, p.section, p.mid))}</td>
         <td style="font-family:monospace;font-size:12px">${escapeHtml(p.mid||'—')}</td>
@@ -2134,8 +2172,9 @@ async function adminLoadMonitoring(){
         <td>${escapeHtml(p.section||'—')}</td>
         <td style="font-size:12px;color:var(--grey-3)">${formatAdminDate(p.registeredAt, isEn)}</td>
         <td style="font-size:12px;color:var(--grey-3)">${formatAdminDate(p.lastLogin, isEn)}</td>
-        <td><button type="button" class="action-btn danger" style="font-size:12px;padding:4px 10px"
-          onclick="adminDeleteParentRegistration(${midArg}, ${nameArg})">🗑️ ${isEn?'Delete':'حذف'}</button></td>
+        <td><button type="button" class="action-btn danger admin-delete-parent-btn" style="font-size:12px;padding:4px 10px"
+          data-parent-mid="${escapeHtml(p.mid||'')}"
+          data-parent-name="${escapeHtml(pName)}">🗑️ ${isEn?'Delete':'حذف'}</button></td>
       </tr>`;
       }).join('');
     }
@@ -2144,8 +2183,8 @@ async function adminLoadMonitoring(){
   }catch(err){
     console.error('adminLoadMonitoring', err);
     showToast(isEn ? '❌ Failed to load monitoring data' : '❌ فشل تحميل بيانات المتابعة');
-    teachersBody.innerHTML = `<tr><td colspan="6" class="empty-state"><p>${isEn?'Load failed':'فشل التحميل'}</p></td></tr>`;
-    parentsBody.innerHTML  = `<tr><td colspan="7" class="empty-state"><p>${isEn?'Load failed':'فشل التحميل'}</p></td></tr>`;
+    if(allowlistBody) allowlistBody.innerHTML = `<tr><td colspan="7" class="empty-state"><p>${isEn?'Load failed':'فشل التحميل'}</p></td></tr>`;
+    if(parentsBody) parentsBody.innerHTML  = `<tr><td colspan="7" class="empty-state"><p>${isEn?'Load failed':'فشل التحميل'}</p></td></tr>`;
   }
 }
 
@@ -2176,22 +2215,6 @@ async function adminDeleteParentRegistration(mid, studentName){
     console.error(err);
     showToast(isEn ? '❌ Delete failed' : '❌ فشل الحذف');
   }
-}
-
-function bindAdminTeacherDeleteButtons(){
-  const tbody = document.getElementById('admin-teachers-tbody');
-  if(!tbody || tbody.dataset.deleteBound === '1') return;
-  tbody.dataset.deleteBound = '1';
-  tbody.addEventListener('click', e=>{
-    const btn = e.target.closest('.admin-delete-teacher-btn');
-    if(!btn) return;
-    adminDeleteTeacher(
-      btn.dataset.teacherKey || '',
-      btn.dataset.teacherUid || '',
-      btn.dataset.teacherName || '',
-      btn.dataset.teacherEmail || ''
-    );
-  });
 }
 
 async function adminDeleteTeacher(teacherKey, teacherUid, teacherName, teacherEmail){
@@ -2277,24 +2300,25 @@ function registerParentSession(parent){
     mid,
     lastLogin: now,
   };
-  db.ref('registeredParents/'+mid).transaction(current=>{
-    if(!current) return { ...payload, registeredAt: now };
-    return {
-      ...current,
-      ...payload,
-      registeredAt: current.registeredAt || now,
-    };
-  }).catch(()=>{});
-
   const sessionKey = makeParentSessionKey(parent.cls, parent.section, parent.name);
-  db.ref('parentQuickLogin/'+sessionKey).transaction(current=>{
-    if(!current) return { ...payload, registeredAt: now };
-    return {
-      ...current,
+
+  db.ref('registeredParents/'+mid).once('value').then(snap=>{
+    const existing = snap.val() || {};
+    const record = {
       ...payload,
-      registeredAt: current.registeredAt || now,
+      registeredAt: existing.registeredAt || now,
     };
-  }).catch(()=>{});
+    return db.ref('registeredParents/'+mid).set(record);
+  }).catch(err=>{ console.warn('registerParentSession', err); });
+
+  db.ref('parentQuickLogin/'+sessionKey).once('value').then(snap=>{
+    const existing = snap.val() || {};
+    const record = {
+      ...payload,
+      registeredAt: existing.registeredAt || now,
+    };
+    return db.ref('parentQuickLogin/'+sessionKey).set(record);
+  }).catch(err=>{ console.warn('registerParentSession quickLogin', err); });
 }
 
 async function syncParentQuickLoginFromRegistry(){
@@ -3019,7 +3043,9 @@ const TRANSLATIONS = {
     adminAllowAddBtn: '➕ إضافة بريد',
     adminThAEmail: 'البريد',
     adminThAName: 'الاسم',
-    adminThADate: 'تاريخ الإضافة',
+    adminThASubject: 'المادة',
+    adminThAGrades: 'الصفوف والشعب',
+    adminThARegDate: 'تاريخ التسجيل',
     adminThAStatus: 'الحالة',
     adminThAAction: 'إجراء',
     adminParentsTitle: '👨‍👩‍👧 أولياء الأمور المسجلون',
@@ -3316,7 +3342,9 @@ const TRANSLATIONS = {
     adminAllowAddBtn: '➕ Add Email',
     adminThAEmail: 'Email',
     adminThAName: 'Name',
-    adminThADate: 'Added',
+    adminThASubject: 'Subject',
+    adminThAGrades: 'Grades & sections',
+    adminThARegDate: 'Registration date',
     adminThAStatus: 'Status',
     adminThAAction: 'Action',
     adminParentsTitle: '👨‍👩‍👧 Registered Parents',
@@ -3884,26 +3912,21 @@ function applyAdminLang(){
   setText('admin-allow-add-btn', 'adminAllowAddBtn');
   setText('admin-th-a-email', 'adminThAEmail');
   setText('admin-th-a-name', 'adminThAName');
-  setText('admin-th-a-date', 'adminThADate');
+  setText('admin-th-a-subject', 'adminThASubject');
+  setText('admin-th-a-grades', 'adminThAGrades');
+  setText('admin-th-a-regdate', 'adminThARegDate');
   setText('admin-th-a-status', 'adminThAStatus');
   setText('admin-th-a-action', 'adminThAAction');
   const allowEmail = document.getElementById('admin-allow-email');
   if(allowEmail) allowEmail.placeholder = t('adminAllowEmailPH');
   const allowName = document.getElementById('admin-allow-name');
   if(allowName) allowName.placeholder = t('adminAllowNamePH');
-  setText('admin-teachers-title', 'adminTeachersTitle');
   setText('admin-parents-title', 'adminParentsTitle');
   setText('admin-th-grade', 'adminThGrade');
   setText('admin-th-sec', 'adminThSec');
   setText('admin-th-mid', 'adminThMid');
   setText('admin-th-name', 'adminThName');
   setText('admin-th-en', 'adminThEn');
-  setText('admin-th-t-name', 'adminThTName');
-  setText('admin-th-t-email', 'adminThTEmail');
-  setText('admin-th-t-subject', 'adminThTSubject');
-  setText('admin-th-t-grades', 'adminThTGrades');
-  setText('admin-th-t-date', 'adminThTDate');
-  setText('admin-th-t-action', 'adminThPAction');
   setText('admin-th-p-student', 'adminThPStudent');
   setText('admin-th-p-mid', 'adminThMid');
   setText('admin-th-p-grade', 'adminThGrade');
