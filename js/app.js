@@ -1043,6 +1043,10 @@ function applyTeacherProfile(){
     const name = CURRENT_TEACHER.name || '';
     te.textContent = [name, subjLabel].filter(Boolean).join(' · ');
   }
+  const scopeEl = document.getElementById('teacher-scope-el');
+  if(scopeEl){
+    scopeEl.textContent = scopeLabel || (isEn ? 'No grades/sections registered' : 'لم تُسجَّل صفوف أو شعب');
+  }
   try{ refreshGradeDropdowns(); }catch(e){}
 }
 
@@ -3711,9 +3715,13 @@ function applyTeacherLang(){
   const tlb = document.getElementById('teacher-lang-lbl');
   if(tlb) tlb.textContent = isAr ? 'EN' : 'ع';
   // FB status
-  const fbTxt = document.getElementById('fb-status-txt');
-  if(fbTxt && (fbTxt.textContent.includes('جارٍ') || fbTxt.textContent.includes('Connecting')))
-    fbTxt.textContent = isAr?'جارٍ الاتصال...':'Connecting...';
+  if(typeof window.updateFirebaseConnectionStatus === 'function'){
+    window.updateFirebaseConnectionStatus(window._fbReady);
+  } else {
+    const fbTxt = document.getElementById('fb-status-txt');
+    if(fbTxt && (fbTxt.textContent.includes('جارٍ') || fbTxt.textContent.includes('Connecting')))
+      fbTxt.textContent = isAr?'جارٍ الاتصال...':'Connecting...';
+  }
 
   // Nav tabs
   setText('ttab-overview', 'tabOverview');
