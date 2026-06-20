@@ -1999,13 +1999,13 @@ async function adminDeleteTeacher(teacherKey, teacherUid, teacherName, teacherEm
     showToast(isEn ? '❌ Admin login required' : '❌ يجب تسجيل دخول المسؤول');
     return;
   }
-  if(typeof firebase === 'undefined' || !firebase.functions){
+  if(!getCloudFunctions()){
     showToast(t('adminDeleteTeacherFunctions'));
     return;
   }
 
   try{
-    const callable = firebase.functions().httpsCallable('adminDeleteTeacher');
+    const callable = getCloudFunctions().httpsCallable('adminDeleteTeacher');
     await callable({ key: teacherKey, uid: teacherUid || null });
     showToast(t('adminDeleteTeacherOk'));
     adminLoadMonitoring();
@@ -5785,9 +5785,14 @@ function showBvAnalytics(){
 
 
 // ══════════════════════════════════════════════════
-//  SETTINGS
+//  CLOUD FUNCTIONS (us-central1)
 // ══════════════════════════════════════════════════
-function populateSettingsAccount(){
+function getCloudFunctions(){
+  if(typeof firebase === 'undefined' || !firebase.app) return null;
+  try{ return firebase.app().functions('us-central1'); }
+  catch(e){ return typeof firebase.functions === 'function' ? firebase.functions() : null; }
+}
+
   const wrap = document.getElementById('settings-account-section');
   const box = document.getElementById('settings-account-info');
   if(!wrap || !box) return;
@@ -5970,13 +5975,13 @@ async function updateGradesFromOneDrive(silent){
     if(!silent) showToast(t('settingsOneDriveRequired'));
     return false;
   }
-  if(typeof firebase === 'undefined' || !firebase.functions){
+  if(!getCloudFunctions()){
     if(!silent) showToast(t('settingsOneDriveFunctions'));
     return false;
   }
   if(!silent) showToast(t('settingsOneDriveUpdating'));
   try{
-    const callable = firebase.functions().httpsCallable('fetchOneDriveExcel');
+    const callable = getCloudFunctions().httpsCallable('fetchOneDriveExcel');
     const res = await callable({ url });
     const base64 = res?.data?.base64;
     if(!base64) throw new Error(isEn ? 'Empty file from OneDrive' : 'ملف فارغ من OneDrive');
