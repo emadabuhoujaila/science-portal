@@ -5995,10 +5995,21 @@ async function updateGradesFromOneDrive(silent){
     console.error('updateGradesFromOneDrive', e);
     if(!silent){
       const code = e?.code || '';
-      if(String(code).includes('functions') || e.message?.includes('fetchOneDriveExcel')){
+      const msg = e?.message || '';
+      if(code === 'functions/not-found' && /fetchOneDriveExcel|NOT FOUND|Function/i.test(msg)){
         showToast(t('settingsOneDriveFunctions'));
+      } else if(code === 'functions/unauthenticated'){
+        showToast(isEn ? '❌ Session expired — log in again' : '❌ انتهت الجلسة — سجّل الدخول مجدداً');
+      } else if(code === 'functions/permission-denied'){
+        showToast(isEn ? '❌ Teachers only' : '❌ للمعلمين المسجّلين فقط');
+      } else if(code === 'functions/invalid-argument'){
+        showToast(t('settingsOneDriveFail') + (msg ? ': '+msg : ''));
+      } else if(code === 'functions/failed-precondition' || code === 'functions/not-found'){
+        showToast(t('settingsOneDriveFail') + (msg ? ': '+msg : ''));
+      } else if(code === 'functions/unavailable' || code === 'functions/internal'){
+        showToast(t('settingsOneDriveFail') + (msg ? ': '+msg : ''));
       } else {
-        showToast(t('settingsOneDriveFail') + (e.message ? ': '+e.message : ''));
+        showToast(t('settingsOneDriveFail') + (msg ? ': '+msg : ''));
       }
     }
     return false;
