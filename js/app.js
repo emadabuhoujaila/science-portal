@@ -6538,10 +6538,10 @@ function importStudentsExcel(input){
 // ══════════════════════════════════════════════════
 
 function parseSheetGradeSection(sheetName){
+  const hint = parseSheetNameGradeSection(sheetName);
+  if(hint) return hint;
   const n = String(sheetName || '').trim();
-  let m = n.match(/^([5-8])\s*[-_/\\]\s*(\d)$/);
-  if(m) return { grade: m[1], section: normalizeSectionCell(m[2]) };
-  m = n.match(/(?:صف|grade)?\s*([5-8]).*?(?:ش|sec)?\s*(\d)/i);
+  const m = n.match(/(?:صف|grade)?\s*([5-8]).*?(?:ش|sec)?\s*([1-6])/i);
   if(m) return { grade: m[1], section: normalizeSectionCell(m[2]) };
   return null;
 }
@@ -6550,9 +6550,21 @@ function isTeacherScopeMatch(scope, grade, section){
   if(!scope) return true;
   const g = String(grade || '');
   const sec = normalizeSectionCell(section);
-  if(scope.grades?.length && g && !scope.grades.includes(g)) return false;
-  if(scope.gradeMap?.[g] && sec && !scope.gradeMap[g].includes(sec)) return false;
+  if(!g) return false;
+  if(scope.grades?.length && !scope.grades.includes(g)) return false;
+  const allowed = (getSectionsForGrade(g) || []).map(normalizeSectionCell).filter(Boolean);
+  if(sec && allowed.length && !allowed.includes(sec)) return false;
   return true;
+}
+
+function shouldProcessGradeSheet(sheetName, scope){
+  const hint = parseSheetGradeSection(sheetName);
+  if(!scope) return { process: true, hint, reason: null };
+  if(!hint) return { process: false, hint: null, reason: 'unparsed' };
+  if(!isTeacherScopeMatch(scope, hint.grade, hint.section)){
+    return { process: false, hint, reason: 'out_of_scope' };
+  }
+  return { process: true, hint, reason: null };
 }
 
 function showImportUnmatchedAlert(unmatched, isEn){
@@ -6749,12 +6761,13 @@ function parseGradeRow(row, map, sheetHint){
 
 function importGradeSheet(ws, sheetName, tKey, scope){
   const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:'' });
-  if(!rows.length) return { imported:0, unmatched:[], skipped:false, saves:[] };
+  if(!rows.length) return { imported:0, unmatched:[], skipped:true, saves:[] };
 
-  const sheetHint = parseSheetGradeSection(sheetName);
-  if(scope && sheetHint && !isTeacherScopeMatch(scope, sheetHint.grade, sheetHint.section)){
+  const decision = shouldProcessGradeSheet(sheetName, scope);
+  if(!decision.process){
     return { imported:0, unmatched:[], skipped:true, saves:[] };
   }
+  const sheetHint = decision.hint;
 
   const map = buildGradeColumnMap(rows);
   const start = findGradeDataStartRow(rows, map);
@@ -6812,16 +6825,26 @@ function importExcel(input){
       const allSaves = [];
       let sheetsProcessed = 0;
       let sheetsSkipped = 0;
+      const matchedSheets = [];
+      const skippedSheets = [];
 
       for(const sheetName of wb.SheetNames){
         const ws = wb.Sheets[sheetName];
         if(!ws) continue;
+        const decision = shouldProcessGradeSheet(sheetName, scope);
+        if(!decision.process){
+          sheetsSkipped++;
+          skippedSheets.push(sheetName);
+          continue;
+        }
         const result = importGradeSheet(ws, sheetName, tKey, scope);
         if(result.skipped){
           sheetsSkipped++;
+          skippedSheets.push(sheetName);
           continue;
         }
         sheetsProcessed++;
+        matchedSheets.push(sheetName);
         imported += result.imported;
         result.unmatched.forEach(u=>{
           const key = String(u.mid);
@@ -6835,20 +6858,30 @@ function importExcel(input){
       const unmatched = [...unmatchedMap.values()];
 
       if(imported > 0){
-        const sheetInfo = isEn
-          ? ` (${sheetsProcessed} sheet${sheetsProcessed===1?'':'s'})`
-          : ` (${sheetsProcessed} ورقة)`;
+        const sheetList = matchedSheets.slice(0, 8).join(', ')
+          + (matchedSheets.length > 8 ? '…' : '');
+        const skipInfo = sheetsSkipped
+          ? (isEn ? ` — ignored ${sheetsSkipped} other sheet(s)` : ` — تم تجاهل ${sheetsSkipped} ورقة أخرى`)
+          : '';
         showToast(
           isEn
-            ? `✅ Updated ${imported} student(s)${sheetInfo}`
-            : `✅ تم تحديث ${imported} طالب${sheetInfo}`
+            ? `✅ Updated ${imported} student(s) from ${sheetsProcessed} sheet(s): ${sheetList}${skipInfo}`
+            : `✅ تم تحديث ${imported} طالب من ${sheetsProcessed} ورقة: ${sheetList}${skipInfo}`
         );
         renderAllTabs();
       } else {
+        const expected = scope
+          ? (scope.grades || []).flatMap(g =>
+              (getSectionsForGrade(g) || []).map(sec => `${g}-${normalizeSectionCell(sec)}`)
+            ).join(', ')
+          : '';
         const hint = sheetsSkipped && !sheetsProcessed
-          ? (isEn ? ' — no sheets match your sections' : ' — لا توجد أوراق تطابق شعبك')
+          ? (isEn
+            ? (expected ? ` — your sections: ${expected}` : ' — no sheets match your sections')
+            : (expected ? ` — شعبك: ${expected}` : ' — لا توجد أوراق تطابق شعبك'))
           : '';
         showToast((isEn ? '⚠️ No grades imported' : '⚠️ لم يتم استيراد أي درجات') + hint);
+        if(skippedSheets.length) console.log('[Import] Skipped sheets:', skippedSheets);
       }
 
       showImportUnmatchedAlert(unmatched, isEn);
