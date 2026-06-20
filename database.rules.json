@@ -1,0 +1,110 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "publicConfig": {
+      ".read": true,
+      ".write": "auth != null && (root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin')"
+    },
+    "students": {
+      ".read": true,
+      ".write": "auth != null && (root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin')"
+    },
+    "teacherAllowlist": {
+      ".read": "auth != null && (root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin')",
+      "$key": {
+        ".read": "auth != null && (root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin' || (auth.token.email != null && $key === auth.token.email.toLowerCase().replace('@', '_').replace('.', '_')))",
+        ".write": "auth != null && (root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin')"
+      }
+    },
+    "teachers": {
+      ".read": "auth != null && (root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin')",
+      "$key": {
+        ".read": "auth != null && (root.child('teacherLookup').child(auth.uid).child('key').val() === $key || root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin')",
+        ".write": "auth != null && ((!data.exists() && newData.child('uid').val() === auth.uid && root.child('teacherAllowlist').child($key).exists() && auth.token.email != null && newData.child('email').val().toLowerCase() === auth.token.email.toLowerCase()) || root.child('teacherLookup').child(auth.uid).child('key').val() === $key || root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin')"
+      }
+    },
+    "teacherLookup": {
+      ".read": "auth != null && (root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin')",
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && ((auth.uid === $uid && !data.exists() && root.child('teacherAllowlist').child(newData.child('key').val()).exists()) || root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin')"
+      }
+    },
+    "admins": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid"
+      },
+      ".read": "auth != null && (root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin')",
+      ".write": false
+    },
+    "teacherData": {
+      "$key": {
+        ".read": true,
+        ".write": "auth != null && (root.child('teacherLookup').child(auth.uid).child('key').val() === $key || root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin')"
+      }
+    },
+    "publicTeachers": {
+      ".read": true,
+      "$key": {
+        ".write": "auth != null && ((!data.exists() && root.child('teachers').child($key).child('uid').val() === auth.uid && root.child('teacherAllowlist').child($key).exists()) || root.child('teacherLookup').child(auth.uid).child('key').val() === $key || root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin')"
+      }
+    },
+    "registeredParents": {
+      ".read": "auth != null && (root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin')",
+      "$mid": {
+        ".read": true,
+        ".write": "newData.child('mid').val() == $mid || (auth != null && (root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin'))"
+      }
+    },
+    "parentQuickLogin": {
+      "$key": {
+        ".read": true,
+        ".write": "(auth != null && (root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin')) || (!data.exists() && newData.child('mid').val() != null && newData.child('cls').val() != null && newData.child('name').val() != null && root.child('students').child(newData.child('cls').val()).child(newData.child('section').val()).child(newData.child('mid').val()).exists()) || (data.exists() && newData.child('mid').val() === data.child('mid').val() && newData.child('cls').val() === data.child('cls').val() && newData.child('name').val() === data.child('name').val())"
+      }
+    },
+    "complaints": {
+      ".read": "auth != null && (root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin')",
+      "$id": {
+        ".write": "(!data.exists() && newData.child('status').val() === 'pending' && newData.hasChildren(['body','teacherKey','studentName','cls','mid','ts'])) || (auth != null && (root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin'))"
+      }
+    },
+    "parentAdminInbox": {
+      "$mid": {
+        ".read": true,
+        "$id": {
+          ".write": "auth != null && (root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin') && newData.child('mid').val() == $mid"
+        }
+      }
+    },
+    "fcmTokens": {
+      "parents": {
+        "$mid": {
+          ".read": false,
+          "$tokenId": {
+            ".write": "newData.child('token').isString() && newData.child('mid').val() == $mid && root.child('registeredParents').child($mid).exists()",
+            ".read": false
+          }
+        }
+      },
+      "teachers": {
+        "$key": {
+          ".read": "auth != null && root.child('teacherLookup').child(auth.uid).child('key').val() === $key",
+          "$tokenId": {
+            ".write": "auth != null && root.child('teacherLookup').child(auth.uid).child('key').val() === $key && newData.child('token').isString()",
+            ".read": "auth != null && root.child('teacherLookup').child(auth.uid).child('key').val() === $key"
+          }
+        }
+      },
+      "admins": {
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid",
+          "$tokenId": {
+            ".write": "auth != null && auth.uid === $uid && (root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin') && newData.child('token').isString()",
+            ".read": "auth != null && auth.uid === $uid"
+          }
+        }
+      }
+    }
+  }
+}

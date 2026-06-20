@@ -1,0 +1,13 @@
+{
+  "name": "science-portal-functions",
+  "description": "Cloud Functions for science portal admin actions",
+  "engines": {
+    "node": "20"
+  },
+  "main": "index.js",
+  "dependencies": {
+    "firebase-admin": "^13.10.0",
+    "firebase-functions": "^6.3.2"
+  },
+  "private": true
+}

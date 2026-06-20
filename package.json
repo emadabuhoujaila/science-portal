@@ -1,0 +1,36 @@
+{
+  "name": "science-portal-app",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "migrate:teachers": "node scripts/migrate-teachers.mjs",
+    "migrate:teachers:dry": "node scripts/migrate-teachers.mjs --dry-run",
+    "create:admin": "node scripts/create-admin.mjs",
+    "sync:public-teachers": "node scripts/sync-public-teachers.mjs",
+    "reset:teachers-admins": "node scripts/reset-teachers-admins.mjs",
+    "seed:teacher-allowlist": "node scripts/seed-teacher-allowlist.mjs",
+    "deploy:rules": "firebase deploy --only database",
+    "deploy:functions": "firebase deploy --only functions",
+    "deploy:push": "firebase deploy --only functions,database",
+    "seed:fcm": "node scripts/seed-fcm-config.mjs",
+    "cap:sync": "npx cap sync android",
+    "cap:open": "npx cap open android",
+    "publish:github": "powershell -ExecutionPolicy Bypass -File scripts/publish-github.ps1",
+    "icons:android": "npx capacitor-assets generate --iconBackgroundColor \"#0d6e6e\" --iconBackgroundColorDark \"#0d6e6e\" --android"
+  },
+  "type": "module",
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@capacitor/android": "^8.4.0",
+    "@capacitor/cli": "^8.4.0",
+    "@capacitor/core": "^8.4.0",
+    "@capacitor/push-notifications": "^8.1.1",
+    "firebase-admin": "^13.10.0"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5"
+  }
+}

@@ -3,6 +3,7 @@
   authDomain:  "students-portal-34231.firebaseapp.com",
   databaseURL: "https://students-portal-34231-default-rtdb.firebaseio.com",
   projectId:   "students-portal-34231",
+  messagingSenderId: "148177464784",
 };
 
 firebase.initializeApp(firebaseConfig);
