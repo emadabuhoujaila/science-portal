@@ -2740,6 +2740,21 @@ const TRANSLATIONS = {
     parentAcademicTab: 'الأكاديمي',
     settingsPwLabel: '🔑 كلمة مرور المعلم الجديدة',
     settingsPwPH: 'اتركه فارغاً للإبقاء',
+    settingsPwConfirmLabel: '🔑 تأكيد كلمة المرور',
+    settingsPwConfirmPH: 'أعد إدخال كلمة المرور',
+    settingsAccountLabel: '👤 حسابي',
+    settingsAccountName: 'الاسم',
+    settingsAccountEmail: 'البريد',
+    settingsAccountSubject: 'المادة',
+    settingsAccountScope: 'الصفوف والشعب',
+    settingsCopyUrl: '📋 نسخ',
+    settingsUrlCopied: '✅ تم نسخ الرابط',
+    settingsUrlCopyFail: '⚠️ تعذّر النسخ — انسخ يدوياً',
+    settingsPwTooShort: '⚠️ كلمة المرور 8 أحرف على الأقل',
+    settingsPwMismatch: '⚠️ كلمتا المرور غير متطابقتين',
+    settingsPwChanged: '✅ تم تغيير كلمة المرور',
+    settingsPwNeedLogin: '⚠️ سجّل خروجاً ثم دخولاً مجدداً ثم غيّر كلمة المرور',
+    settingsSaved: '✅ تم حفظ الإعدادات',
     settingsUrlLabel: '🌐 رابط التطبيق (URL الكامل)',
     settingsSave: '💾 حفظ',
     settingsCancel: 'إلغاء',
@@ -2998,6 +3013,21 @@ const TRANSLATIONS = {
     parentAcademicTab: 'Academic',
     settingsPwLabel: '🔑 New Teacher Password',
     settingsPwPH: 'Leave blank to keep current',
+    settingsPwConfirmLabel: '🔑 Confirm Password',
+    settingsPwConfirmPH: 'Re-enter password',
+    settingsAccountLabel: '👤 My Account',
+    settingsAccountName: 'Name',
+    settingsAccountEmail: 'Email',
+    settingsAccountSubject: 'Subject',
+    settingsAccountScope: 'Grades & sections',
+    settingsCopyUrl: '📋 Copy',
+    settingsUrlCopied: '✅ Link copied',
+    settingsUrlCopyFail: '⚠️ Could not copy — copy manually',
+    settingsPwTooShort: '⚠️ Password must be at least 8 characters',
+    settingsPwMismatch: '⚠️ Passwords do not match',
+    settingsPwChanged: '✅ Password updated',
+    settingsPwNeedLogin: '⚠️ Log out, sign in again, then change password',
+    settingsSaved: '✅ Settings saved',
     settingsUrlLabel: '🌐 App URL (full link)',
     settingsSave: '💾 Save',
     settingsCancel: 'Cancel',
@@ -3577,16 +3607,22 @@ function applySharedUiLang(){
   const setText = (id, key) => { const el=document.getElementById(id); if(el) el.textContent=t(key); };
   const setPH = (id, key) => { const el=document.getElementById(id); if(el) el.placeholder=t(key); };
 
-  const settingsModal = document.querySelector('#settings-modal h3');
+  const settingsModal = document.getElementById('settings-modal-title');
   if(settingsModal) settingsModal.textContent = t('settingsTitle');
-  const settingsLabels = document.querySelectorAll('#settings-modal label');
-  if(settingsLabels[0]) settingsLabels[0].textContent = t('settingsPwLabel');
-  if(settingsLabels[1]) settingsLabels[1].textContent = t('settingsUrlLabel');
+  const setLbl = (id, key) => { const el=document.getElementById(id); if(el) el.textContent=t(key); };
+  setLbl('settings-account-lbl', 'settingsAccountLabel');
+  setLbl('settings-pw-lbl', 'settingsPwLabel');
+  setLbl('settings-pw2-lbl', 'settingsPwConfirmLabel');
+  setLbl('settings-url-lbl', 'settingsUrlLabel');
   setPH('new-password', 'settingsPwPH');
-  const saveBtn = document.querySelector('#settings-modal .btn-primary');
+  setPH('new-password-confirm', 'settingsPwConfirmPH');
+  const copyBtn = document.getElementById('settings-copy-url-btn');
+  if(copyBtn) copyBtn.textContent = t('settingsCopyUrl');
+  const saveBtn = document.getElementById('settings-save-btn');
   if(saveBtn) saveBtn.textContent = t('settingsSave');
-  const cancelBtn = document.querySelector('#settings-modal button[onclick="closeSettings()"]');
+  const cancelBtn = document.getElementById('settings-cancel-btn');
   if(cancelBtn) cancelBtn.textContent = t('settingsCancel');
+  if(typeof populateSettingsAccount === 'function') populateSettingsAccount();
 
   const alertEl = document.querySelector('#new-msg-alert > span');
   if(alertEl) alertEl.textContent = t('newMsgAlert');
@@ -5703,15 +5739,114 @@ function showBvAnalytics(){
 // ══════════════════════════════════════════════════
 //  SETTINGS
 // ══════════════════════════════════════════════════
-function openSettings(){ document.getElementById('settings-modal').classList.add('open'); }
-function closeSettings(){ document.getElementById('settings-modal').classList.remove('open'); }
-function saveSettings(){
-  APP.siteUrl=document.getElementById('site-url-input').value.trim()||APP.siteUrl;
-  saveState(); closeSettings();
-  document.getElementById('site-url-display').textContent=APP.siteUrl;
-  // حفظ إلى Firebase لمزامنة كل الأجهزة
+function populateSettingsAccount(){
+  const wrap = document.getElementById('settings-account-section');
+  const box = document.getElementById('settings-account-info');
+  if(!wrap || !box) return;
+  if(!CURRENT_TEACHER){
+    wrap.style.display = 'none';
+    return;
+  }
+  wrap.style.display = '';
+  const isEn = currentLang === 'en';
+  const subj = SUBJECTS[CURRENT_TEACHER.subject];
+  const subjLabel = subj ? (isEn ? subj.en : subj.ar) : (CURRENT_TEACHER.subject || '—');
+  const scope = getTeacherScope();
+  const scopeText = formatTeacherScopeSummary(scope, isEn) || '—';
+  const lines = [
+    `<strong>${t('settingsAccountName')}:</strong> ${escapeHtml(CURRENT_TEACHER.name || '—')}`,
+    `<strong>${t('settingsAccountEmail')}:</strong> ${escapeHtml(CURRENT_TEACHER.email || '—')}`,
+    `<strong>${t('settingsAccountSubject')}:</strong> ${escapeHtml(subjLabel)}`,
+    `<strong>${t('settingsAccountScope')}:</strong> ${escapeHtml(scopeText)}`,
+  ];
+  box.innerHTML = lines.join('<br>');
+}
+
+function openSettings(){
+  const urlInput = document.getElementById('site-url-input');
+  if(urlInput) urlInput.value = APP.siteUrl || '';
+  const pw1 = document.getElementById('new-password');
+  const pw2 = document.getElementById('new-password-confirm');
+  if(pw1) pw1.value = '';
+  if(pw2) pw2.value = '';
+  populateSettingsAccount();
+  document.getElementById('settings-modal').classList.add('open');
+}
+
+function closeSettings(){
+  document.getElementById('settings-modal').classList.remove('open');
+}
+
+async function copySiteUrlFromSettings(){
+  const url = (document.getElementById('site-url-input')?.value || APP.siteUrl || '').trim();
+  if(!url){
+    showToast(currentLang === 'en' ? '⚠️ No URL to copy' : '⚠️ لا يوجد رابط للنسخ');
+    return;
+  }
+  try{
+    if(navigator.clipboard?.writeText){
+      await navigator.clipboard.writeText(url);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = url;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    showToast(t('settingsUrlCopied'));
+  }catch(e){
+    showToast(t('settingsUrlCopyFail'));
+  }
+}
+
+async function saveSettings(){
+  const isEn = currentLang === 'en';
+  const pw1 = document.getElementById('new-password')?.value || '';
+  const pw2 = document.getElementById('new-password-confirm')?.value || '';
+  const urlVal = document.getElementById('site-url-input')?.value.trim() || APP.siteUrl;
+
+  if(pw1 || pw2){
+    if(pw1.length < 8){
+      showToast(t('settingsPwTooShort'));
+      return;
+    }
+    if(pw1 !== pw2){
+      showToast(t('settingsPwMismatch'));
+      return;
+    }
+    if(typeof auth === 'undefined' || !auth.currentUser){
+      showToast(t('settingsPwNeedLogin'));
+      return;
+    }
+    try{
+      await auth.currentUser.updatePassword(pw1);
+      showToast(t('settingsPwChanged'));
+      document.getElementById('new-password').value = '';
+      document.getElementById('new-password-confirm').value = '';
+    }catch(e){
+      console.warn('updatePassword', e);
+      const code = e?.code || '';
+      if(code === 'auth/requires-recent-login'){
+        showToast(t('settingsPwNeedLogin'));
+      } else {
+        showToast('❌ ' + (e.message || (isEn ? 'Password change failed' : 'فشل تغيير كلمة المرور')));
+      }
+      return;
+    }
+  }
+
+  APP.siteUrl = urlVal;
+  saveState();
+  closeSettings();
+  const su = document.getElementById('site-url-display');
+  if(su) su.textContent = APP.siteUrl;
+  const si = document.getElementById('site-url-input');
+  if(si) si.value = APP.siteUrl;
   if(window.saveToFirebase) window.saveToFirebase();
-  showToast('✅ تم حفظ الإعدادات على كل الأجهزة');
+  showToast(t('settingsSaved'));
 }
 
 // ══════════════════════════════════════════════════

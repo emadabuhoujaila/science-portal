@@ -831,19 +831,37 @@ window.__splashDeadline = Date.now() + 5000;
 
 <!-- ═══════════ SETTINGS MODAL ═══════════ -->
 <div class="modal-overlay" id="settings-modal">
-  <div class="modal-box">
-    <h3>⚙️ الإعدادات</h3>
+  <div class="modal-box" style="max-width:520px">
+    <h3 id="settings-modal-title">⚙️ الإعدادات</h3>
+
+    <div id="settings-account-section" class="form-group" style="display:none">
+      <label id="settings-account-lbl">👤 حسابي</label>
+      <div id="settings-account-info" style="background:var(--teal-pale);border:1px solid var(--grey-5);border-radius:10px;padding:12px 14px;font-size:13px;line-height:1.8;color:var(--grey-1)"></div>
+    </div>
+
     <div class="form-group">
-      <label>🔑 كلمة مرور المعلم الجديدة</label>
-      <input type="password" id="new-password" placeholder="اتركه فارغاً للإبقاء">
+      <label id="settings-pw-lbl">🔑 كلمة مرور المعلم الجديدة</label>
+      <input type="password" id="new-password" placeholder="اتركه فارغاً للإبقاء" autocomplete="new-password">
     </div>
     <div class="form-group">
-      <label>🌐 رابط التطبيق (URL الكامل)</label>
-      <input type="text" id="site-url-input" placeholder="https://yourusername.github.io/portal">
+      <label id="settings-pw2-lbl">🔑 تأكيد كلمة المرور</label>
+      <input type="password" id="new-password-confirm" placeholder="أعد إدخال كلمة المرور" autocomplete="new-password">
     </div>
+
+    <div class="form-group">
+      <label id="settings-url-lbl">🌐 رابط التطبيق (URL الكامل)</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="text" id="site-url-input" placeholder="https://yourusername.github.io/portal" style="flex:1">
+        <button type="button" id="settings-copy-url-btn" onclick="copySiteUrlFromSettings()"
+          style="white-space:nowrap;padding:10px 12px;border:1.5px solid var(--grey-5);border-radius:10px;background:var(--white);cursor:pointer;font-family:inherit;font-size:13px">
+          📋 نسخ
+        </button>
+      </div>
+    </div>
+
     <div style="display:flex;gap:10px;margin-top:10px">
-      <button class="btn-primary" onclick="saveSettings()" style="flex:1">💾 حفظ</button>
-      <button onclick="closeSettings()" style="flex:1;padding:13px;border:1.5px solid var(--grey-5);border-radius:10px;background:none;cursor:pointer;font-family:inherit;font-size:14px">إلغاء</button>
+      <button class="btn-primary" id="settings-save-btn" onclick="saveSettings()" style="flex:1">💾 حفظ</button>
+      <button type="button" id="settings-cancel-btn" onclick="closeSettings()" style="flex:1;padding:13px;border:1.5px solid var(--grey-5);border-radius:10px;background:none;cursor:pointer;font-family:inherit;font-size:14px">إلغاء</button>
     </div>
   </div>
 </div>
