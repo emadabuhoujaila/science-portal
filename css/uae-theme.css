@@ -92,11 +92,17 @@ body::before {
   height: 5px;
   border-radius: 20px 20px 0 0;
   background: var(--uae-flag-stripe);
+  z-index: 2;
 }
 .login-card,
 .lock-card {
   position: relative;
   overflow: hidden;
+}
+.login-card-inner,
+.lock-card-inner {
+  position: relative;
+  z-index: 1;
 }
 .card::before {
   height: 3px;
