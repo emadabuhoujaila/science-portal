@@ -601,6 +601,25 @@ window.ADMIN_STUDENTS  = {}; // students from admin /students/ path
 // ── Email key helper ──
 function emailKey(email){ return email.trim().toLowerCase().replace(/[.@]/g,'_'); }
 
+async function checkTeacherEmailAllowed(email){
+  const normalized = String(email||'').trim().toLowerCase();
+  if(!normalized || !normalized.includes('@')) return false;
+  const fn = getCloudFunctions();
+  if(fn){
+    try{
+      const res = await fn.httpsCallable('checkTeacherAllowlist')({ email: normalized });
+      return res.data?.allowed === true;
+    }catch(e){
+      console.warn('checkTeacherAllowlist', e);
+    }
+  }
+  if(typeof db !== 'undefined'){
+    const snap = await db.ref('teacherAllowlist/' + emailKey(normalized)).once('value');
+    return snap.exists();
+  }
+  return false;
+}
+
 function buildPublicTeacherProfile(teacher){
   if(!teacher?.subject || teacher.role === 'admin') return null;
   return {
@@ -800,6 +819,10 @@ function toggleGradeSections(grade, checked){
 //  REGISTER
 // ══════════════════════════════════════════════════
 function submitTeacherReg(){
+  submitTeacherRegAsync().catch(e=>console.error('submitTeacherReg', e));
+}
+
+async function submitTeacherRegAsync(){
   const isEn = currentLang==='en';
   const name    = (document.getElementById('reg-name')?.value||'').trim();
   const email   = (document.getElementById('reg-email')?.value||'').trim();
@@ -833,7 +856,7 @@ function submitTeacherReg(){
 
   const btn=document.getElementById('reg-submit-btn');
   btn.disabled=true;
-  btn.textContent=isEn?'⏳ Creating...':'⏳ جارٍ الإنشاء...';
+  btn.textContent=isEn?'⏳ Verifying...':'⏳ جارٍ التحقق...';
 
   const key = emailKey(email);
   const teacherData={
@@ -853,39 +876,51 @@ function submitTeacherReg(){
     btn.textContent=isEn?'✅ Create Account':'✅ إنشاء الحساب';
     document.querySelectorAll('#t-reg-panel input[type="text"],#t-reg-panel input[type="email"],#t-reg-panel input[type="password"]').forEach(el=>el.value='');
     document.querySelectorAll('#t-reg-panel input[type="checkbox"]').forEach(c=>c.checked=false);
-    // Hide all section grids
     document.querySelectorAll('[id^="reg-sec-"]').forEach(d=>d.style.display='none');
     setTimeout(()=>{suc.style.display='none'; showTeacherLogin();},2500);
   };
+  const notAllowedMsg = isEn
+    ? 'This email is not on the approved teachers list. Ask the school admin to add your email first.'
+    : 'هذا البريد غير موجود في قائمة المعلّمين المعتمدين. اطلب من مسؤول المدرسة إضافة بريدك أولاً.';
   const onError=e=>{
-    showRegErr((isEn?'Error: ':'خطأ: ')+(e?.message||e||''));
+    const code = e?.code || '';
+    let msg = e?.message || e || '';
+    if(code === 'PERMISSION_DENIED' || /permission/i.test(String(msg))){
+      msg = notAllowedMsg;
+    }
+    showRegErr((isEn?'Error: ':'خطأ: ')+msg);
     btn.disabled=false;
     btn.textContent=isEn?'✅ Create Account':'✅ إنشاء الحساب';
   };
 
-  if(typeof auth !== 'undefined' && auth){
-    auth.createUserWithEmailAndPassword(email, pw)
-      .then(cred=>{
-        teacherData.uid = cred.user.uid;
-        const updates = {};
-        updates['teachers/' + key] = teacherData;
-        updates['teacherLookup/' + cred.user.uid] = { key, role: 'teacher' };
-        return db.ref().update(updates);
-      })
-      .then(() => syncPublicTeacher(key, teacherData))
-      .then(onSuccess)
-      .catch(async e=>{
-        try{ if(auth.currentUser) await auth.currentUser.delete(); }catch(_){}
-        onError(e);
-      });
-  } else if(typeof db!=='undefined'){
-    db.ref('teachers/'+key).set(teacherData).then(onSuccess).catch(onError);
-  } else {
-    try{
-      const t=JSON.parse(localStorage.getItem('portal_teachers')||'{}');
-      t[key]=teacherData; localStorage.setItem('portal_teachers',JSON.stringify(t));
+  try{
+    if(typeof auth !== 'undefined' && auth){
+      const allowed = await checkTeacherEmailAllowed(email);
+      if(!allowed){
+        onError({ message: notAllowedMsg });
+        return;
+      }
+      btn.textContent=isEn?'⏳ Creating...':'⏳ جارٍ الإنشاء...';
+      const cred = await auth.createUserWithEmailAndPassword(email, pw);
+      teacherData.uid = cred.user.uid;
+      const updates = {};
+      updates['teachers/' + key] = teacherData;
+      updates['teacherLookup/' + cred.user.uid] = { key, role: 'teacher' };
+      await db.ref().update(updates);
+      await syncPublicTeacher(key, teacherData);
       onSuccess();
-    }catch(e){ onError(e); }
+    } else if(typeof db!=='undefined'){
+      onError({ message: notAllowedMsg });
+    } else {
+      try{
+        const t=JSON.parse(localStorage.getItem('portal_teachers')||'{}');
+        t[key]=teacherData; localStorage.setItem('portal_teachers',JSON.stringify(t));
+        onSuccess();
+      }catch(e){ onError(e); }
+    }
+  }catch(e){
+    try{ if(typeof auth !== 'undefined' && auth?.currentUser) await auth.currentUser.delete(); }catch(_){}
+    onError(e);
   }
 }
 
@@ -1861,6 +1896,82 @@ function adminUpdateMonitorStats(teacherCount, parentCount, missingCount, isEn){
     : '⚠️ الصفوف والشعب — مواد لم يُسجّل معلم لها بعد';
 }
 
+async function adminAddTeacherAllowlist(){
+  const isEn = currentLang==='en';
+  const emailInput = document.getElementById('admin-allow-email');
+  const nameInput = document.getElementById('admin-allow-name');
+  const email = (emailInput?.value||'').trim().toLowerCase();
+  const name = (nameInput?.value||'').trim();
+  if(!email || !email.includes('@')){
+    showToast(isEn ? '⚠️ Enter a valid email' : '⚠️ أدخل بريداً إلكترونياً صحيحاً');
+    return;
+  }
+  if(typeof db==='undefined'){
+    showToast(isEn ? '❌ Not connected' : '❌ غير متصل');
+    return;
+  }
+  const key = emailKey(email);
+  try{
+    await db.ref('teacherAllowlist/'+key).set({
+      email,
+      name: name || null,
+      addedAt: new Date().toISOString(),
+      addedBy: auth?.currentUser?.uid || null,
+    });
+    if(emailInput) emailInput.value = '';
+    if(nameInput) nameInput.value = '';
+    showToast(isEn ? '✅ Teacher email added to approved list' : '✅ تمت إضافة بريد المعلّم للقائمة المعتمدة');
+    adminLoadMonitoring();
+  }catch(e){
+    console.error('adminAddTeacherAllowlist', e);
+    showToast(isEn ? '❌ Failed to add email' : '❌ فشل إضافة البريد');
+  }
+}
+
+async function adminRemoveTeacherAllowlist(key, email){
+  const isEn = currentLang==='en';
+  if(!key) return;
+  const label = email || key;
+  if(!confirm(isEn
+    ? `Remove "${label}" from approved teachers list?\nThey will not be able to register unless added again.`
+    : `إزالة "${label}" من قائمة المعلّمين المعتمدين؟\nلن يستطيع التسجيل ما لم يُضاف مجدداً.`)) return;
+  try{
+    await db.ref('teacherAllowlist/'+key).remove();
+    showToast(isEn ? '✅ Removed from approved list' : '✅ تمت الإزالة من القائمة');
+    adminLoadMonitoring();
+  }catch(e){
+    console.error('adminRemoveTeacherAllowlist', e);
+    showToast(isEn ? '❌ Remove failed' : '❌ فشل الإزالة');
+  }
+}
+
+function adminRenderAllowlistTable(allowlist, registeredKeys, isEn){
+  const tbody = document.getElementById('admin-allowlist-tbody');
+  if(!tbody) return;
+  const entries = Object.entries(allowlist||{}).map(([key, v]) => ({ key, ...v }));
+  entries.sort((a,b)=>(b.addedAt||'').localeCompare(a.addedAt||''));
+  if(!entries.length){
+    tbody.innerHTML = `<tr><td colspan="5" class="empty-state"><div class="ico">📋</div><p>${isEn?'No approved emails yet — add teacher emails below':'لا توجد بريدات معتمدة بعد — أضف بريد المعلّم أدناه'}</p></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = entries.map(entry=>{
+    const registered = registeredKeys.has(entry.key);
+    const status = registered
+      ? (isEn ? '✅ Registered' : '✅ مسجّل')
+      : (isEn ? '⏳ Pending' : '⏳ بانتظار التسجيل');
+    const emailArg = JSON.stringify(entry.email||'');
+    const keyArg = JSON.stringify(entry.key||'');
+    return `<tr>
+      <td style="font-size:12px">${escapeHtml(entry.email||'—')}</td>
+      <td>${escapeHtml(entry.name||'—')}</td>
+      <td style="font-size:12px;color:var(--grey-3)">${formatAdminDate(entry.addedAt, isEn)}</td>
+      <td style="font-size:12px">${status}</td>
+      <td><button type="button" class="action-btn danger" style="font-size:12px;padding:4px 10px"
+        onclick="adminRemoveTeacherAllowlist(${keyArg}, ${emailArg})">🗑️ ${isEn?'Remove':'إزالة'}</button></td>
+    </tr>`;
+  }).join('');
+}
+
 async function adminLoadMonitoring(){
   const isEn = currentLang==='en';
   const teachersBody = document.getElementById('admin-teachers-tbody');
@@ -1887,10 +1998,11 @@ async function adminLoadMonitoring(){
       }catch(e){ console.warn('adminLoadMonitoring students:', e); }
     }
 
-    const [teachersSnap, lookupSnap, parentsSnap] = await Promise.all([
+    const [teachersSnap, lookupSnap, parentsSnap, allowSnap] = await Promise.all([
       db.ref('teachers').once('value'),
       db.ref('teacherLookup').once('value'),
       db.ref('registeredParents').once('value'),
+      db.ref('teacherAllowlist').once('value'),
     ]);
 
     const uidByKey = {};
@@ -1914,6 +2026,9 @@ async function adminLoadMonitoring(){
       });
     }
     teachers.sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
+
+    const registeredKeys = new Set(teachers.map(t => t.key));
+    adminRenderAllowlistTable(allowSnap.exists() ? allowSnap.val() : {}, registeredKeys, isEn);
 
     const { missingCount } = adminRenderMissingCoverage(teachers, isEn);
 
@@ -2702,6 +2817,7 @@ const TRANSLATIONS = {
     regPwPH: '8 أحرف على الأقل',
     regPw2PH: 'أعد إدخال كلمة المرور',
     regGradesSections: 'الصفوف والشعب (اختر شعب كل صف على حدى)',
+    regSubApproved: 'التسجيل متاح فقط للمعلّمين الذين أضاف مسؤول المدرسة بريدهم مسبقاً',
     parentSecPH: '— اختر الشعبة —',
     parentGradePH: '— اختر الصف —',
     clsErrorMsg: 'الصف أو الشعبة أو الاسم غير صحيح',
@@ -2727,6 +2843,16 @@ const TRANSLATIONS = {
     adminClearAll: '🗑️ مسح كل الطلاب',
     adminClearGrade: '🗑️ مسح صف محدد',
     adminTeachersTitle: '👨‍🏫 المعلمون المسجلون',
+    adminAllowlistTitle: '🔐 المعلّمون المعتمدون للتسجيل',
+    adminAllowlistDesc: 'أضف هنا بريد كل معلّم في المدرسة قبل أن يسجّل حسابه. لا يستطيع أي شخص آخر (مثل ولي الأمر) التسجيل كمعلّم.',
+    adminAllowEmailPH: 'teacher@school.ae',
+    adminAllowNamePH: 'اسم المعلّم (اختياري)',
+    adminAllowAddBtn: '➕ إضافة بريد',
+    adminThAEmail: 'البريد',
+    adminThAName: 'الاسم',
+    adminThADate: 'تاريخ الإضافة',
+    adminThAStatus: 'الحالة',
+    adminThAAction: 'إجراء',
     adminParentsTitle: '👨‍👩‍👧 أولياء الأمور المسجلون',
     adminThTName: 'الاسم',
     adminThTEmail: 'البريد',
@@ -2988,6 +3114,7 @@ const TRANSLATIONS = {
     regPwPH: 'At least 8 characters',
     regPw2PH: 'Re-enter password',
     regGradesSections: 'Grades & sections (select sections per grade)',
+    regSubApproved: 'Registration is only available for teachers whose email was added by the school admin',
     parentSecPH: '— Select Section —',
     parentGradePH: '— Select Grade —',
     clsErrorMsg: 'Incorrect grade, section, or name',
@@ -3013,6 +3140,16 @@ const TRANSLATIONS = {
     adminClearAll: '🗑️ Clear All Students',
     adminClearGrade: '🗑️ Clear Selected Grade',
     adminTeachersTitle: '👨‍🏫 Registered Teachers',
+    adminAllowlistTitle: '🔐 Approved Teachers for Registration',
+    adminAllowlistDesc: 'Add each school teacher\'s email here before they register. Others (e.g. parents) cannot register as teachers.',
+    adminAllowEmailPH: 'teacher@school.ae',
+    adminAllowNamePH: 'Teacher name (optional)',
+    adminAllowAddBtn: '➕ Add Email',
+    adminThAEmail: 'Email',
+    adminThAName: 'Name',
+    adminThADate: 'Added',
+    adminThAStatus: 'Status',
+    adminThAAction: 'Action',
     adminParentsTitle: '👨‍👩‍👧 Registered Parents',
     adminThTName: 'Name',
     adminThTEmail: 'Email',
@@ -3150,7 +3287,7 @@ function applyGlobalLang(){
   const rtEl = document.getElementById('reg-title');
   if(rtEl) rtEl.textContent = isArL?'📋 تسجيل معلم جديد':'📋 New Teacher Registration';
   const rsEl = document.getElementById('reg-sub');
-  if(rsEl) rsEl.textContent = isArL?'أدخل بياناتك للحصول على حساب':'Enter your details to create an account';
+  if(rsEl) rsEl.textContent = t('regSubApproved');
   const rnEl = document.getElementById('reg-lbl-name');
   if(rnEl) rnEl.textContent = isArL?'اسم المعلم':'Teacher Name';
   const reEl = document.getElementById('reg-lbl-email');
@@ -3573,6 +3710,18 @@ function applyAdminLang(){
   setText('admin-complaints-desc', 'adminComplaintsDesc');
   setText('admin-complaints-refresh', 'adminRefresh');
   setText('admin-monitor-refresh', 'adminRefresh');
+  setText('admin-allowlist-title', 'adminAllowlistTitle');
+  setText('admin-allowlist-desc', 'adminAllowlistDesc');
+  setText('admin-allow-add-btn', 'adminAllowAddBtn');
+  setText('admin-th-a-email', 'adminThAEmail');
+  setText('admin-th-a-name', 'adminThAName');
+  setText('admin-th-a-date', 'adminThADate');
+  setText('admin-th-a-status', 'adminThAStatus');
+  setText('admin-th-a-action', 'adminThAAction');
+  const allowEmail = document.getElementById('admin-allow-email');
+  if(allowEmail) allowEmail.placeholder = t('adminAllowEmailPH');
+  const allowName = document.getElementById('admin-allow-name');
+  if(allowName) allowName.placeholder = t('adminAllowNamePH');
   setText('admin-teachers-title', 'adminTeachersTitle');
   setText('admin-parents-title', 'adminParentsTitle');
   setText('admin-th-grade', 'adminThGrade');

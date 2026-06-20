@@ -37,7 +37,7 @@ window.__splashDeadline = Date.now() + 5000;
 </script>
 <script>
 (function(){
-  var key='portal-cache-reset-v18';
+  var key='portal-cache-reset-v19';
   if(localStorage.getItem(key)) return;
   localStorage.setItem(key,'1');
   var done=function(){ location.reload(); };
@@ -108,7 +108,7 @@ window.__splashDeadline = Date.now() + 5000;
       <div id="t-reg-panel" style="display:none">
         <div style="text-align:center;margin-bottom:14px">
           <h3 id="reg-title" style="color:var(--teal-dark);margin:0 0 4px">📋 تسجيل معلم جديد</h3>
-          <p id="reg-sub" style="font-size:13px;color:var(--grey-3);margin:0">أدخل بياناتك للحصول على حساب</p>
+          <p id="reg-sub" style="font-size:13px;color:var(--grey-3);margin:0">التسجيل متاح فقط للمعلّمين الذين أضاف مسؤول المدرسة بريدهم مسبقاً</p>
         </div>
         <div class="error-msg" id="reg-error" style="display:none"></div>
         <div class="success-msg" id="reg-success" style="display:none;background:#e8f5e9;color:#2e7d32;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;text-align:center"></div>
@@ -380,6 +380,36 @@ window.__splashDeadline = Date.now() + 5000;
         <div class="admin-stat-card admin-stat-teachers"><span class="admin-stat-num" id="admin-stat-teachers">—</span><span class="admin-stat-label" id="admin-stat-lbl-teachers">معلمون</span></div>
         <div class="admin-stat-card admin-stat-parents"><span class="admin-stat-num" id="admin-stat-parents">—</span><span class="admin-stat-label" id="admin-stat-lbl-parents">أولياء أمور</span></div>
         <div class="admin-stat-card admin-stat-missing"><span class="admin-stat-num" id="admin-stat-missing">—</span><span class="admin-stat-label" id="admin-stat-lbl-missing">مواد غير مسجلة</span></div>
+      </div>
+
+      <div class="card admin-card-allowlist" style="margin-bottom:20px">
+        <div class="card-header admin-card-header-teal">
+          <h3 id="admin-allowlist-title">🔐 المعلّمون المعتمدون للتسجيل</h3>
+        </div>
+        <div style="padding:16px 20px">
+          <p id="admin-allowlist-desc" class="admin-help-text">أضف هنا بريد كل معلّم في المدرسة قبل أن يسجّل حسابه. لا يستطيع أي شخص آخر (مثل ولي الأمر) التسجيل كمعلّم.</p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+            <input type="email" id="admin-allow-email" placeholder="teacher@school.ae" style="flex:1;min-width:180px;padding:10px 12px;border:1.5px solid var(--grey-5);border-radius:10px;font-family:inherit;font-size:13px">
+            <input type="text" id="admin-allow-name" placeholder="اسم المعلّم (اختياري)" style="flex:1;min-width:140px;padding:10px 12px;border:1.5px solid var(--grey-5);border-radius:10px;font-family:inherit;font-size:13px">
+            <button type="button" class="btn-primary" id="admin-allow-add-btn" onclick="adminAddTeacherAllowlist()" style="white-space:nowrap">➕ إضافة بريد</button>
+          </div>
+          <div class="table-wrap admin-table-wrap">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th id="admin-th-a-email">البريد</th>
+                  <th id="admin-th-a-name">الاسم</th>
+                  <th id="admin-th-a-date">تاريخ الإضافة</th>
+                  <th id="admin-th-a-status">الحالة</th>
+                  <th id="admin-th-a-action">إجراء</th>
+                </tr>
+              </thead>
+              <tbody id="admin-allowlist-tbody">
+                <tr><td colspan="5" class="empty-state"><div class="ico">⏳</div><p id="admin-allowlist-empty">جارٍ التحميل...</p></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
       <div class="card admin-card-missing" style="margin-bottom:20px">
@@ -928,6 +958,6 @@ window.__splashDeadline = Date.now() + 5000;
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
 <script src="js/firebase-init.js?v=3"></script>
-<script src="js/app.js?v=18"></script>
+<script src="js/app.js?v=19"></script>
 </body>
 </html>
