@@ -37,7 +37,7 @@ window.__splashDeadline = Date.now() + 5000;
 </script>
 <script>
 (function(){
-  var key='portal-cache-reset-v26';
+  var key='portal-cache-reset-v27';
   if(localStorage.getItem(key)) return;
   localStorage.setItem(key,'1');
   var done=function(){ location.reload(); };
@@ -76,10 +76,14 @@ window.__splashDeadline = Date.now() + 5000;
 <!-- ═══════════ SCREEN: MAIN LOGIN ═══════════ -->
 <div id="screen-login" class="screen">
   <button onclick="toggleLang()" id="global-lang-btn" style="position:fixed;top:16px;left:16px;z-index:999;background:var(--teal-mid);border:none;color:#fff;padding:8px 18px;border-radius:20px;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,.2);letter-spacing:1px">🌐 EN</button>
-  <div class="login-card login-card--with-hero">
-    <div class="card-hero-bg" aria-hidden="true"></div>
-    <img src="img/portal-hero-banner.png?v=2" alt="بوابة المتابعة الرقمية" class="visually-hidden" id="login-banner">
-    <div class="login-card-inner">
+  <div class="portal-hero-block portal-hero-block--auth">
+    <div class="portal-hero-sep portal-hero-sep--top" aria-hidden="true"></div>
+    <div class="portal-hero-frame">
+      <img src="img/portal-hero-banner.png?v=3" alt="بوابة المتابعة الرقمية" class="portal-hero-banner" id="login-banner">
+    </div>
+    <div class="portal-hero-sep portal-hero-sep--bottom" aria-hidden="true"></div>
+  </div>
+  <div class="login-card">
     <h1 id="login-title">بوابة المتابعة</h1>
     <div class="login-school-box">
       <div id="login-school">مدرسة محمد بن حمد الشرقي للحلقة الثانية - بنين</div>
@@ -213,15 +217,19 @@ window.__splashDeadline = Date.now() + 5000;
         🔐 دخول لوحة المسؤول
       </button>
     </div>
-    </div>
   </div>
 </div>
 
 <!-- ═══════════ SCREEN: PIN ENTRY ═══════════ -->
 <div id="screen-locked" class="screen">
-  <div class="lock-card lock-card--with-hero">
-    <div class="card-hero-bg" aria-hidden="true"></div>
-    <div class="lock-card-inner">
+  <div class="portal-hero-block portal-hero-block--auth">
+    <div class="portal-hero-sep portal-hero-sep--top" aria-hidden="true"></div>
+    <div class="portal-hero-frame">
+      <img src="img/portal-hero-banner.png?v=3" alt="بوابة المتابعة الرقمية" class="portal-hero-banner">
+    </div>
+    <div class="portal-hero-sep portal-hero-sep--bottom" aria-hidden="true"></div>
+  </div>
+  <div class="lock-card">
     <div class="lock-icon">🔒</div>
     <h2 id="lock-student-name">اسم الطالب</h2>
     <p id="pin-instruction">أدخل رقمك الوزاري للدخول</p>
@@ -243,7 +251,6 @@ window.__splashDeadline = Date.now() + 5000;
     </div>
     <div class="lock-attempts" id="lock-attempts"></div>
     <button onclick="showScreen('login');clearPin()" style="margin-top:16px;background:none;border:none;cursor:pointer;font-family:inherit;font-size:13px;color:var(--grey-3)"id="pin-back-btn">← العودة</button>
-    </div>
   </div>
 </div>
 
@@ -263,8 +270,12 @@ window.__splashDeadline = Date.now() + 5000;
     </div>
   </div>
 
-  <div class="portal-hero-wrap portal-hero-wrap--strip">
-    <img src="img/portal-hero-banner.png?v=2" alt="بوابة المتابعة الرقمية" class="portal-hero-banner">
+  <div class="portal-hero-block">
+    <div class="portal-hero-sep portal-hero-sep--top" aria-hidden="true"></div>
+    <div class="portal-hero-frame">
+      <img src="img/portal-hero-banner.png?v=3" alt="بوابة المتابعة الرقمية" class="portal-hero-banner">
+    </div>
+    <div class="portal-hero-sep portal-hero-sep--bottom" aria-hidden="true"></div>
   </div>
 
   <div class="main-content">
@@ -589,8 +600,12 @@ window.__splashDeadline = Date.now() + 5000;
     </div>
   </div>
 
-  <div class="portal-hero-wrap portal-hero-wrap--strip">
-    <img src="img/portal-hero-banner.png?v=2" alt="بوابة المتابعة الرقمية" class="portal-hero-banner">
+  <div class="portal-hero-block">
+    <div class="portal-hero-sep portal-hero-sep--top" aria-hidden="true"></div>
+    <div class="portal-hero-frame">
+      <img src="img/portal-hero-banner.png?v=3" alt="بوابة المتابعة الرقمية" class="portal-hero-banner">
+    </div>
+    <div class="portal-hero-sep portal-hero-sep--bottom" aria-hidden="true"></div>
   </div>
 
   <div class="nav-tabs">
@@ -926,8 +941,12 @@ window.__splashDeadline = Date.now() + 5000;
       <p id="parent-school">مدرسة محمد بن حمد الشرقي للحلقة الثانية - بنين</p>
     </div>
   </div>
-  <div class="portal-hero-wrap portal-hero-wrap--strip">
-    <img src="img/portal-hero-banner.png?v=2" alt="بوابة المتابعة الرقمية" class="portal-hero-banner">
+  <div class="portal-hero-block">
+    <div class="portal-hero-sep portal-hero-sep--top" aria-hidden="true"></div>
+    <div class="portal-hero-frame">
+      <img src="img/portal-hero-banner.png?v=3" alt="بوابة المتابعة الرقمية" class="portal-hero-banner">
+    </div>
+    <div class="portal-hero-sep portal-hero-sep--bottom" aria-hidden="true"></div>
   </div>
   <div class="parent-body" id="parent-body"></div>
 </div>
@@ -1030,6 +1049,6 @@ window.__splashDeadline = Date.now() + 5000;
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
 <script src="js/firebase-init.js?v=3"></script>
-<script src="js/app.js?v=26"></script>
+<script src="js/app.js?v=27"></script>
 </body>
 </html>
