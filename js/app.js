@@ -127,12 +127,12 @@ function enterAppAfterSplash(){
     const sp = window._pendingParentAutoLogin;
     try{ Object.assign(APP, JSON.parse(localStorage.getItem('portal_v4')||'{}')); }catch(e){}
     const saved = APP.savedParent || sp;
-    window._currentParent = {
-      cls: saved.cls || sp.cls,
-      name: saved.name || sp.name,
-      mid: saved.mid || sp.mid || '',
-      section: saved.section || sp.section || '',
-    };
+    window._currentParent = enrichParentSession(
+      saved.cls || sp.cls,
+      saved.name || sp.name,
+      saved.mid || sp.mid || '',
+      saved.section || sp.section || ''
+    );
     registerParentSession(window._currentParent);
     showScreen('parent');
     loadParentSubjectTabs(window._currentParent.cls, window._currentParent.name, window._currentParent.mid || '');
@@ -184,9 +184,56 @@ function getGradeStudents(cls, section){
 }
 
 function findStudentInGrade(cls, name, mid, section){
-  return getGradeStudents(cls, section).find(s=>
-    (name && s.name===name) || (mid && String(s.mid)===String(mid))
-  );
+  const match = (list, sec)=>{
+    const hit = list.find(s=>(name && s.name===name) || (mid && String(s.mid)===String(mid)));
+    return hit ? {...hit, section: hit.section || sec || ''} : null;
+  };
+  if(section){
+    const hit = match(getGradeStudents(cls, section), section);
+    if(hit) return hit;
+  }
+  const all = getGradeStudents(cls);
+  const hit = match(all, section || '');
+  if(hit) return hit;
+  const gradeData = window.ADMIN_STUDENTS?.[cls];
+  if(!gradeData) return null;
+  const secs = section ? [section] : Object.keys(gradeData);
+  for(const sec of secs){
+    const secData = gradeData[sec];
+    if(!secData) continue;
+    const arr = Array.isArray(secData) ? secData : Object.values(secData);
+    const s = arr.find(x=>(name && x.name===name) || (mid && String(x.mid)===String(mid)));
+    if(s) return {...s, section: sec};
+  }
+  return null;
+}
+
+function displayStudentName(input, cls, section, mid){
+  const isEn = currentLang === 'en';
+  let student = null;
+  if(input && typeof input === 'object'){
+    student = (input.name || input.nameEn)
+      ? (findStudentInGrade(cls || input.cls, input.name, input.mid || mid, section || input.section) || input)
+      : null;
+  } else {
+    student = findStudentInGrade(cls, input, mid, section);
+  }
+  if(!student){
+    const fallback = typeof input === 'object' ? (input.name || '—') : (input || '—');
+    return String(fallback);
+  }
+  return (isEn && student.nameEn) ? student.nameEn : (student.name || '—');
+}
+
+function enrichParentSession(cls, name, mid, section){
+  const s = findStudentInGrade(cls, name, mid, section);
+  return {
+    cls,
+    name: s?.name || name,
+    nameEn: s?.nameEn || '',
+    mid: mid || s?.mid || '',
+    section: section || s?.section || '',
+  };
 }
 
 window.TEACHER_GRADES = window.TEACHER_GRADES || {};
@@ -342,6 +389,7 @@ async function adminLoadStudents(){
     }catch(e){ console.warn('adminLoadStudents error:',e); }
   }
   if(prog) prog.textContent='';
+  refreshAdminSecFilter();
   // Update per-grade status badges
   ['5','6','7','8'].forEach(g=>{
     const statEl = document.getElementById('admin-grade'+g+'-status');
@@ -410,61 +458,20 @@ function adminImportGrade(input, targetGrade){
   const reader = new FileReader();
   reader.onload = async function(e){
     try{
-      const wb   = XLSX.read(new Uint8Array(e.target.result), {type:'array'});
-      const ws   = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
-
-      // Find header
-      let headerRow=0;
-      for(let i=0;i<Math.min(rows.length,5);i++){
-        if(rows[i].some(c=>String(c||'').trim().includes('الصف')||String(c||'').toLowerCase().includes('grade'))){
-          headerRow=i; break;
-        }
-      }
-      const h  = rows[headerRow].map(c=>String(c||'').trim());
-      const fi = (...kw)=>{ const i=h.findIndex(x=>kw.some(k=>x.includes(k))); return i>=0?i:-1; };
-      const cG = fi('الصف','grade')>=0?fi('الصف','grade'):1;
-      const cS = fi('الشعبة','section')>=0?fi('الشعبة','section'):2;
-      const cM = fi('الرقم','وزاري','mid','ID')>=0?fi('الرقم','وزاري','mid','ID'):3;
-      const cN = fi('العربية','بالعربي')>=0?fi('العربية','بالعربي'):4;
-      const cE = fi('الإنجليزية','الانجليزية','English')>=0?fi('الإنجليزية','الانجليزية','English'):5;
-
-      const bySec = {}; // {section: [{mid,name,nameEn}]}
-      let total = 0;
-
-      for(let i=headerRow+1;i<rows.length;i++){
-        const row     = rows[i];
-        const grade   = String(row[cG]||'').trim();
-        const section = String(row[cS]||'').trim().toUpperCase();
-        const mid     = String(row[cM]||'').trim();
-        const name    = String(row[cN]||'').trim();
-        const nameEn  = String(row[cE]||'').trim();
-        if(!name) continue;
-        // Accept if grade matches OR grade column is empty (single-grade file)
-        if(grade && grade !== targetGrade) continue;
-        if(!bySec[section]) bySec[section]={};
-        bySec[section][mid||('s'+total)] = {mid,name,nameEn};
-        total++;
-      }
+      const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'});
+      const { byGradeSec, total } = parseStudentWorkbook(wb, String(targetGrade));
 
       if(!total){
         if(statEl) statEl.textContent=isEn?`⚠️ No Grade ${targetGrade} students found`:`⚠️ لم يتم العثور على طلاب الصف ${targetGrade}`;
         input.value=''; return;
       }
 
-      // Save to Firebase /students/{targetGrade}/
       if(typeof db!=='undefined'){
-        const updates={};
-        Object.entries(bySec).forEach(([sec,students])=>{
-          updates[`students/${targetGrade}/${sec}`]=students;
-        });
-        await db.ref().update(updates);
-        // Reload
-        const snap = await db.ref(`students/${targetGrade}`).once('value');
-        if(!adminStudentsCache) adminStudentsCache={};
-        adminStudentsCache[targetGrade] = snap.exists()?snap.val():{};
-        const countAll = Object.values(adminStudentsCache[targetGrade]).reduce((s,sec)=>s+Object.keys(sec).length,0);
-        if(statEl) statEl.innerHTML=`<span style="color:var(--green-soft)">✅ ${total} ${isEn?'students':'طالب'}</span>`;
+        await saveStudentRosterToFirebase(byGradeSec);
+        const countAll = Object.values(adminStudentsCache[targetGrade]||{})
+          .reduce((s,sec)=>s+Object.keys(sec).length,0);
+        if(statEl) statEl.innerHTML=`<span style="color:var(--green-soft)">✅ ${countAll} ${isEn?'students':'طالب'}</span>`;
+        refreshAdminSecFilter();
         adminRenderStudents();
         showToast(`✅ ${isEn?`Grade ${targetGrade}: ${total} students uploaded`:`الصف ${targetGrade}: تم رفع ${total} طالب`}`);
       }
@@ -501,73 +508,33 @@ function adminImportStudents(input){
   if(!window.XLSX){ showToast('⚠️ '+(currentLang==="en"?"Excel library not loaded":"مكتبة Excel لم تُحمَّل")); return; }
   const isEn = currentLang==='en';
   const prog = document.getElementById('admin-upload-progress');
-  if(prog) prog.textContent = isEn?'⏳ Reading file...':'⏳ جارٍ قراءة الملف...';
+  if(prog) prog.textContent = isEn?'⏳ Reading all sheets...':'⏳ جارٍ قراءة كل الأوراق...';
 
   const reader = new FileReader();
   reader.onload = async function(e){
     try{
-      const wb   = XLSX.read(new Uint8Array(e.target.result), {type:'array'});
-      const ws   = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
-
-      // Find header row
-      let headerRow = 0;
-      for(let i=0;i<Math.min(rows.length,5);i++){
-        if(rows[i].some(c=>String(c||'').trim().includes('الصف')||String(c||'').toLowerCase().includes('grade'))){
-          headerRow=i; break;
-        }
-      }
-
-      // Detect columns
-      const h    = rows[headerRow].map(c=>String(c||'').trim());
-      const find = (...kw)=>{ const i=h.findIndex(x=>kw.some(k=>x.includes(k))); return i>=0?i:-1; };
-      const cG   = find('الصف','grade','Grade') >= 0 ? find('الصف','grade','Grade') : 1;
-      const cS   = find('الشعبة','section','Section') >= 0 ? find('الشعبة','section','Section') : 2;
-      const cM   = find('الرقم','وزاري','mid','ID') >= 0 ? find('الرقم','وزاري','mid','ID') : 3;
-      const cN   = find('العربية','بالعربي') >= 0 ? find('العربية','بالعربي') : 4;
-      const cE   = find('الإنجليزية','الانجليزية','English') >= 0 ? find('الإنجليزية','الانجليزية','English') : 5;
-
-      // Parse
-      const byGradeSec = {}; // {grade: {section: [{mid,name,nameEn}]}}
-      let total = 0;
-
-      for(let i=headerRow+1;i<rows.length;i++){
-        const row     = rows[i];
-        const grade   = String(row[cG]||'').trim();
-        const section = String(row[cS]||'').trim().toUpperCase();
-        const mid     = String(row[cM]||'').trim();
-        const name    = String(row[cN]||'').trim();
-        const nameEn  = String(row[cE]||'').trim();
-        if(!grade||!name) continue;
-        if(!byGradeSec[grade]) byGradeSec[grade]={};
-        if(!byGradeSec[grade][section]) byGradeSec[grade][section]=[];
-        byGradeSec[grade][section].push({mid,name,nameEn});
-        total++;
-      }
+      const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'});
+      const sheetCount = (wb.SheetNames||[]).length;
+      const { byGradeSec, total } = parseStudentWorkbook(wb, null);
 
       if(!total){
         if(prog) prog.textContent=isEn?'⚠️ No students found in file':'⚠️ لم يتم العثور على طلاب في الملف';
         input.value=''; return;
       }
 
-      if(prog) prog.textContent=isEn?`⏳ Saving ${total} students to Firebase...`:`⏳ حفظ ${total} طالب في Firebase...`;
+      if(prog) prog.textContent=isEn
+        ? `⏳ Saving ${total} students (${sheetCount} sheets)...`
+        : `⏳ حفظ ${total} طالب (${sheetCount} ورقة)...`;
 
-      // Save to Firebase /students/
       if(typeof db!=='undefined'){
-        const updates = {};
-        Object.entries(byGradeSec).forEach(([g,secs])=>{
-          Object.entries(secs).forEach(([sec,students])=>{
-            // Store as object with mid as key for easy lookup
-            const secObj = {};
-            students.forEach((s,i)=>{ secObj[s.mid||('s'+i)] = {mid:s.mid,name:s.name,nameEn:s.nameEn}; });
-            updates[`students/${g}/${sec}`] = secObj;
-          });
-        });
-        await db.ref().update(updates);
-        adminStudentsCache = {}; // will reload
+        await saveStudentRosterToFirebase(byGradeSec);
+        adminStudentsCache = {};
         await adminLoadStudents();
-        if(prog) prog.textContent=isEn?`✅ ${total} students uploaded successfully!`:`✅ تم رفع ${total} طالب بنجاح!`;
-        setTimeout(()=>{ if(prog) prog.textContent=''; },3000);
+        refreshAdminSecFilter();
+        if(prog) prog.textContent=isEn
+          ? `✅ ${total} students uploaded from ${sheetCount} sheets!`
+          : `✅ تم رفع ${total} طالب من ${sheetCount} ورقة!`;
+        setTimeout(()=>{ if(prog) prog.textContent=''; }, 4000);
       } else {
         if(prog) prog.textContent=isEn?'⚠️ Firebase not connected':'⚠️ Firebase غير متصل';
       }
@@ -668,8 +635,125 @@ function showTeacherLogin(){
 
 // ── Build grade/section matrix ──
 const GRADES_LIST   = ['5','6','7','8'];
-const SECTIONS_LIST = ['A','B','C','D','E','F'];
-const SECTIONS_AR   = ['أ','ب','ج','د','هـ','و'];
+const SECTIONS_LIST = ['1','2','3','4','5','6'];
+const SECTIONS_AR   = ['1','2','3','4','5','6']; // legacy alias — numeric sections both langs
+
+function formatSectionLabel(sec, isEn){
+  const n = normalizeSectionCell(sec);
+  if(!n) return isEn ? 'Section' : 'شعبة';
+  return isEn ? ('Section '+n) : ('شعبة '+n);
+}
+
+function getGradeSectionsFromCache(grade){
+  const secs = adminStudentsCache?.[grade] ? Object.keys(adminStudentsCache[grade]) : [];
+  return secs.sort((a,b)=>(Number(a)||0)-(Number(b)||0) || String(a).localeCompare(String(b)));
+}
+
+function refreshAdminSecFilter(){
+  const sel = document.getElementById('admin-sec-filter');
+  if(!sel) return;
+  const isEn = currentLang==='en';
+  const prev = sel.value;
+  const secs = new Set(SECTIONS_LIST);
+  Object.values(adminStudentsCache||{}).forEach(gradeData=>{
+    Object.keys(gradeData||{}).forEach(s=>secs.add(normalizeSectionCell(s)));
+  });
+  const list = [...secs].filter(Boolean).sort((a,b)=>(Number(a)||0)-(Number(b)||0));
+  sel.innerHTML = `<option value="">${isEn?'All Sections':'كل الشعب'}</option>`
+    + list.map(s=>`<option value="${s}">${formatSectionLabel(s, isEn)}</option>`).join('');
+  if(prev && list.includes(prev)) sel.value = prev;
+}
+
+function findStudentRosterHeaderRow(rows){
+  for(let i=0; i<Math.min(rows.length, 20); i++){
+    const h = (rows[i]||[]).map(c=>String(c||'').trim());
+    if(h.some(x=>x.includes('الصف')) && h.some(x=>x.includes('الشعبة')) &&
+       h.some(x=>x.includes('رقم') || x.includes('طالب') || x.toLowerCase().includes('mid'))){
+      return i;
+    }
+  }
+  for(let i=0; i<Math.min(rows.length, 10); i++){
+    const h = (rows[i]||[]).map(c=>String(c||'').trim());
+    if(h.some(x=>x.includes('الصف')) && h.some(x=>x.includes('الشعبة'))) return i;
+  }
+  return 0;
+}
+
+function buildStudentRosterColumnMap(headerRow){
+  const h = (headerRow||[]).map(c=>String(c||'').trim());
+  const fi = (...kw)=> h.findIndex(x=> kw.some(k=> x === k || x.includes(k)));
+  const serialIdx = h.findIndex(x=> x === 'م' || x.toLowerCase() === 'm');
+  return {
+    serial: serialIdx >= 0 ? serialIdx : 0,
+    grade: fi('الصف','grade') >= 0 ? fi('الصف','grade') : 1,
+    section: fi('الشعبة','section') >= 0 ? fi('الشعبة','section') : 2,
+    mid: fi('رقم','طالب','وزاري','mid','ID') >= 0 ? fi('رقم','طالب','وزاري','mid','ID') : 3,
+    nameAr: fi('عرب','بالعرب') >= 0 ? fi('عرب','بالعرب') : 4,
+    nameEn: fi('إنج','انجل','English','أنكل') >= 0 ? fi('إنج','انجل','English','أنكل') : 5,
+  };
+}
+
+function parseSheetNameGradeSection(name){
+  const m = String(name||'').trim().match(/^([5-8])[-_]([1-9]\d*)$/);
+  if(m) return { grade: m[1], section: m[2] };
+  return null;
+}
+
+function parseStudentRosterFromSheet(rows, sheetName){
+  if(!rows?.length) return [];
+  const headerRowIdx = findStudentRosterHeaderRow(rows);
+  const map = buildStudentRosterColumnMap(rows[headerRowIdx]);
+  const sheetHint = parseSheetNameGradeSection(sheetName);
+  const out = [];
+  for(let i=headerRowIdx+1; i<rows.length; i++){
+    const row = rows[i]||[];
+    const nameAr = String(row[map.nameAr]??'').trim();
+    if(!nameAr || nameAr === 'اسم الطالب بالعربية') continue;
+    let grade = normalizeGradeCell(row[map.grade]);
+    let section = normalizeSectionCell(row[map.section]);
+    if(!grade && sheetHint) grade = sheetHint.grade;
+    if(!section && sheetHint) section = sheetHint.section;
+    if(!grade || !section) continue;
+    const mid = String(row[map.mid]??'').trim().replace(/\s/g,'');
+    const nameEn = String(row[map.nameEn]??'').trim();
+    out.push({ grade, section, mid, name: nameAr, nameEn });
+  }
+  return out;
+}
+
+function parseStudentWorkbook(wb, gradeFilter){
+  const byGradeSec = {};
+  let total = 0;
+  (wb.SheetNames||[]).forEach(sheetName=>{
+    const ws = wb.Sheets[sheetName];
+    if(!ws) return;
+    const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:'' });
+    parseStudentRosterFromSheet(rows, sheetName).forEach(s=>{
+      if(gradeFilter && s.grade !== String(gradeFilter)) return;
+      if(!byGradeSec[s.grade]) byGradeSec[s.grade] = {};
+      if(!byGradeSec[s.grade][s.section]) byGradeSec[s.grade][s.section] = {};
+      const key = s.mid || ('s'+total);
+      byGradeSec[s.grade][s.section][key] = { mid: s.mid, name: s.name, nameEn: s.nameEn };
+      total++;
+    });
+  });
+  return { byGradeSec, total };
+}
+
+async function saveStudentRosterToFirebase(byGradeSec){
+  const updates = {};
+  Object.entries(byGradeSec).forEach(([g, secs])=>{
+    Object.entries(secs).forEach(([sec, students])=>{
+      updates[`students/${g}/${sec}`] = students;
+    });
+  });
+  if(!Object.keys(updates).length) return;
+  await db.ref().update(updates);
+  Object.entries(byGradeSec).forEach(([g, secs])=>{
+    if(!adminStudentsCache) adminStudentsCache = {};
+    adminStudentsCache[g] = { ...(adminStudentsCache[g]||{}), ...secs };
+  });
+}
 
 function buildRegGrids(){
   const isEn = currentLang==='en';
@@ -689,7 +773,7 @@ function buildRegGrids(){
           <label style="display:flex;align-items:center;gap:5px;background:var(--teal-pale);padding:6px 8px;border-radius:7px;cursor:pointer;font-size:12px">
             <input type="checkbox" name="reg-sec-${g}" value="${s}"
               style="accent-color:var(--teal-mid)">
-            ${isEn?'Sec '+s:'شعبة '+SECTIONS_AR[i]}
+            ${formatSectionLabel(s, isEn)}
           </label>`).join('')}
       </div>
     </div>`).join('');
@@ -994,8 +1078,8 @@ function goToPin(){
   pinAttempts=0;
   document.getElementById('pin-error').style.display='none';
   document.getElementById('lock-attempts').textContent='';
-  const lockStudent = getGradeStudents(cls).find(s=>s.name===name);
-  document.getElementById('lock-student-name').textContent = currentLang==='en' && lockStudent?.nameEn ? lockStudent.nameEn : name;
+  const lockStudent = findStudentInGrade(cls, name, mid, section);
+  document.getElementById('lock-student-name').textContent = displayStudentName(lockStudent || {name});
   clearPin();
   showScreen('locked');
   setTimeout(()=>document.getElementById('p0')?.focus(), 300);
@@ -1028,10 +1112,15 @@ function checkPin(){
   const key = pendingLogin.cls+'|'+pendingLogin.name;
   // MID from Firebase (passed via goToPin) or fallback to local STUDENTS
   const fMid = pendingLogin.mid;
-  const student = getGradeStudents(pendingLogin.cls).find(s=>s.name===pendingLogin.name);
+  const student = findStudentInGrade(pendingLogin.cls, pendingLogin.name, pendingLogin.mid, pendingLogin.section);
   const correct = fMid || (student ? student.mid : APP.pins[key]);
   if(entered === correct){
-    APP.savedParent = { cls: pendingLogin.cls, name: pendingLogin.name, section: pendingLogin.section||'', mid: pendingLogin.mid||entered };
+    APP.savedParent = enrichParentSession(
+      pendingLogin.cls,
+      pendingLogin.name,
+      pendingLogin.mid || entered,
+      pendingLogin.section || ''
+    );
     saveState();
     registerParentSession(APP.savedParent);
     window._currentParent = { ...APP.savedParent };
@@ -1082,15 +1171,15 @@ function allStudents(cls, sec){
 }
 
 function parseGradeBucket(bucket){
-  const m = String(bucket || '').match(/^([5-8])([A-F\d]+)$/i);
+  const m = String(bucket || '').match(/^([5-8])([1-6A-F]+)$/i);
   if(!m) return null;
-  return { grade: m[1], section: m[2].toUpperCase() };
+  return { grade: m[1], section: normalizeSectionCell(m[2]) };
 }
 
 function getImportedGradeStudents(cls, sec){
   const store = window.TEACHER_GRADES || {};
   const scope = getTeacherScope();
-  const secFilter = sec ? String(sec).toUpperCase() : '';
+  const secFilter = sec ? normalizeSectionCell(sec) : '';
   const list = [];
 
   Object.entries(store).forEach(([bucket, records])=>{
@@ -1162,7 +1251,10 @@ function getTeacherScope(){
 // Get allowed sections for a specific grade
 function getSectionsForGrade(grade){
   const scope = getTeacherScope();
-  if(!scope) return SECTIONS_LIST; // admin
+  if(!scope){
+    const fromCache = getGradeSectionsFromCache(grade);
+    return fromCache.length ? fromCache : SECTIONS_LIST;
+  }
   if(scope.gradeMap && scope.gradeMap[grade]) return scope.gradeMap[grade];
   return scope.sections; // fallback
 }
@@ -1260,8 +1352,7 @@ function buildSectionOptions(gradeSel, sectionSelId, allLabel, onchange){
   const allowedSecs = grade ? getSectionsForGrade(grade) : (getTeacherScope()?.sections || SECTIONS_LIST);
   sectionSel.innerHTML = `<option value="">${allLabel||( isEn?'All Sections':'كل الشعب')}</option>`
     + allowedSecs.map(s=>{
-        const arIdx = SECTIONS_LIST.indexOf(s);
-        const label = isEn ? 'Section '+s : 'شعبة '+(SECTIONS_AR[arIdx]||s);
+        const label = formatSectionLabel(s, isEn);
         return `<option value="${s}">${label}</option>`;
       }).join('');
   if(onchange) sectionSel.onchange=onchange;
@@ -1491,7 +1582,7 @@ function renderAdminComplaints(){
           <span class="admin-complaint-date">${formatAdminDate(c.ts||c.date, isEn)}</span>
         </div>
         <div class="admin-complaint-meta">
-          <span>👨‍🎓 ${escapeHtml(c.studentName||'—')}</span>
+          <span>👨‍🎓 ${escapeHtml(displayStudentName(c.studentName, c.cls, c.section, c.mid))}</span>
           <span>🆔 ${escapeHtml(c.mid||'—')}</span>
           <span>📚 ${isEn?'Grade':'صف'} ${escapeHtml(c.cls||'—')} · ${isEn?'Sec':'ش'} ${escapeHtml(c.section||'—')}</span>
           <span>👨‍🏫 ${escapeHtml(c.teacherName||'—')}</span>
@@ -1761,13 +1852,13 @@ async function adminLoadMonitoring(){
   if(!teachersBody || !parentsBody) return;
 
   if(typeof db==='undefined'){
-    teachersBody.innerHTML = `<tr><td colspan="5" class="empty-state"><p>${isEn?'Firebase not connected':'Firebase غير متصل'}</p></td></tr>`;
+    teachersBody.innerHTML = `<tr><td colspan="6" class="empty-state"><p>${isEn?'Firebase not connected':'Firebase غير متصل'}</p></td></tr>`;
     parentsBody.innerHTML  = `<tr><td colspan="7" class="empty-state"><p>${isEn?'Firebase not connected':'Firebase غير متصل'}</p></td></tr>`;
     if(missingWrap) missingWrap.innerHTML = `<div class="empty-state"><p>${isEn?'Firebase not connected':'Firebase غير متصل'}</p></div>`;
     return;
   }
 
-  teachersBody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--grey-3)">⏳</td></tr>`;
+  teachersBody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--grey-3)">⏳</td></tr>`;
   parentsBody.innerHTML  = `<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--grey-3)">⏳</td></tr>`;
   if(missingWrap) missingWrap.innerHTML = `<div class="empty-state" style="padding:24px"><div class="ico">⏳</div><p>${isEn?'Loading...':'جارٍ التحميل...'}</p></div>`;
 
@@ -1810,15 +1901,23 @@ async function adminLoadMonitoring(){
     const { missingCount } = adminRenderMissingCoverage(teachers, isEn);
 
     if(!teachers.length){
-      teachersBody.innerHTML = `<tr><td colspan="5" class="empty-state"><div class="ico">👨‍🏫</div><p>${isEn?'No registered teachers yet':'لا يوجد معلمون مسجلون بعد'}</p></td></tr>`;
+      teachersBody.innerHTML = `<tr><td colspan="6" class="empty-state"><div class="ico">👨‍🏫</div><p>${isEn?'No registered teachers yet':'لا يوجد معلمون مسجلون بعد'}</p></td></tr>`;
     }else{
-      teachersBody.innerHTML = teachers.map(t=>`<tr>
+      teachersBody.innerHTML = teachers.map(t=>{
+        const keyArg = JSON.stringify(t.key||'');
+        const uidArg = JSON.stringify(t.uid||'');
+        const nameArg = JSON.stringify(t.name||'');
+        const emailArg = JSON.stringify(t.email||'');
+        return `<tr>
           <td style="font-weight:600">${escapeHtml(t.name||'—')}</td>
           <td style="font-size:12px">${escapeHtml(t.email||'—')}</td>
           <td>${escapeHtml(formatAdminSubject(t.subject, isEn))}</td>
           <td style="font-size:12px">${escapeHtml(formatAdminGrades(t, isEn))}</td>
           <td style="font-size:12px;color:var(--grey-3)">${formatAdminDate(t.createdAt, isEn)}</td>
-        </tr>`).join('');
+          <td><button type="button" class="action-btn danger" style="font-size:12px;padding:4px 10px;white-space:nowrap"
+            onclick="adminDeleteTeacher(${keyArg}, ${uidArg}, ${nameArg}, ${emailArg})">🗑️ ${isEn?'Delete':'حذف'}</button></td>
+        </tr>`;
+      }).join('');
     }
 
     const parents = [];
@@ -1837,7 +1936,7 @@ async function adminLoadMonitoring(){
         const midArg = JSON.stringify(p.mid||'');
         const nameArg = JSON.stringify(p.name||'');
         return `<tr>
-        <td style="font-weight:600;text-align:right">${escapeHtml(p.name||'—')}</td>
+        <td style="font-weight:600;text-align:right">${escapeHtml(displayStudentName(p.name, p.cls, p.section, p.mid))}</td>
         <td style="font-family:monospace;font-size:12px">${escapeHtml(p.mid||'—')}</td>
         <td>${escapeHtml(p.cls||'—')}</td>
         <td>${escapeHtml(p.section||'—')}</td>
@@ -1853,7 +1952,7 @@ async function adminLoadMonitoring(){
   }catch(err){
     console.error('adminLoadMonitoring', err);
     showToast(isEn ? '❌ Failed to load monitoring data' : '❌ فشل تحميل بيانات المتابعة');
-    teachersBody.innerHTML = `<tr><td colspan="5" class="empty-state"><p>${isEn?'Load failed':'فشل التحميل'}</p></td></tr>`;
+    teachersBody.innerHTML = `<tr><td colspan="6" class="empty-state"><p>${isEn?'Load failed':'فشل التحميل'}</p></td></tr>`;
     parentsBody.innerHTML  = `<tr><td colspan="7" class="empty-state"><p>${isEn?'Load failed':'فشل التحميل'}</p></td></tr>`;
   }
 }
@@ -1876,6 +1975,48 @@ async function adminDeleteParentRegistration(mid, studentName){
   }catch(err){
     console.error(err);
     showToast(isEn ? '❌ Delete failed' : '❌ فشل الحذف');
+  }
+}
+
+async function adminDeleteTeacher(teacherKey, teacherUid, teacherName, teacherEmail){
+  const isEn = currentLang==='en';
+  if(!teacherKey){
+    showToast(isEn ? '❌ Teacher not found' : '❌ المعلم غير موجود');
+    return;
+  }
+  const label = teacherName || teacherEmail || teacherKey;
+  const confirmMsg = t('adminDeleteTeacherConfirm').replace('{name}', label);
+  if(!confirm(confirmMsg)) return;
+
+  if(typeof auth === 'undefined' || !auth.currentUser){
+    showToast(isEn ? '❌ Admin login required' : '❌ يجب تسجيل دخول المسؤول');
+    return;
+  }
+  if(typeof firebase === 'undefined' || !firebase.functions){
+    showToast(t('adminDeleteTeacherFunctions'));
+    return;
+  }
+
+  try{
+    const callable = firebase.functions().httpsCallable('adminDeleteTeacher');
+    await callable({ key: teacherKey, uid: teacherUid || null });
+    showToast(t('adminDeleteTeacherOk'));
+    adminLoadMonitoring();
+  }catch(e){
+    console.error('adminDeleteTeacher', e);
+    const code = e.code || '';
+    const msg = e.message || '';
+    if(code === 'functions/not-found' || msg.includes('NOT FOUND')){
+      showToast(t('adminDeleteTeacherFunctions'));
+    } else if(code === 'functions/permission-denied'){
+      showToast(isEn ? '❌ Admin permission required' : '❌ صلاحية المسؤول مطلوبة');
+    } else if(code === 'functions/unauthenticated'){
+      showToast(isEn ? '❌ Session expired — log in again' : '❌ انتهت الجلسة — سجّل الدخول مجدداً');
+    } else if(code === 'functions/failed-precondition'){
+      showToast(isEn ? '❌ Cannot delete your own admin account' : '❌ لا يمكن حذف حساب المسؤول الحالي');
+    } else {
+      showToast(t('adminDeleteTeacherFail') + (msg ? ': ' + msg : ''));
+    }
   }
 }
 
@@ -1946,7 +2087,7 @@ function renderOverview(){
     return `<tr>
       <td>${i+1}</td>
       <td><span class="badge badge-teal">${s.cls}</span>${secLbl}</td>
-      <td style="text-align:right;font-weight:500">${currentLang==="en" && s.nameEn ? s.nameEn : s.name}</td>
+      <td style="text-align:right;font-weight:500">${displayStudentName(s, s.grade || gradeF, s.section, s.mid)}</td>
       <td>${diag ? diag.toFixed(1) : '—'}</td>
       <td>${t1.toFixed(1)}</td><td>${t2.toFixed(1)}</td>
       <td>${hw.toFixed(1)}%${bar(hw)}</td>
@@ -2006,7 +2147,7 @@ function renderGradesTab(){
 
   const rows = students.map((s,i)=>{
     const c=s.total>=80?'#1a9a9a':s.total>=70?'#c8961e':'#e53935';
-    const displayName = isEn && s.nameEn ? s.nameEn : s.name;
+    const displayName = displayStudentName(s, cls, s.section, s.mid);
     return `<tr>
       <td>${i+1}</td>
       <td class="name-cell">${displayName}</td>
@@ -2063,7 +2204,7 @@ function renderPinsTab(){
     const key=cls+'|'+s.name;
     const pin = s.mid;
     APP.pins[key] = pin;
-    const displayName = isEn && s.nameEn ? s.nameEn : s.name;
+    const displayName = displayStudentName(s, cls, s.section, s.mid);
     return `<tr>
       <td>${i+1}</td>
       <td style="text-align:${isEn?'left':'right'};font-weight:500">${displayName}</td>
@@ -2112,7 +2253,7 @@ function renderLinksTab(){
   const isEn = currentLang==='en';
   document.getElementById('links-tbody').innerHTML=((getFilteredStudents()[cls])||[]).filter(s=>!sec||s.section===sec).map((s,i)=>{
     const pin = s.mid;
-    const displayName = isEn && s.nameEn ? s.nameEn : s.name;
+    const displayName = displayStudentName(s, cls, s.section, s.mid);
     return `<tr>
       <td>${i+1}</td>
       <td style="text-align:${isEn?'left':'right'};font-weight:500">${displayName}</td>
@@ -2159,7 +2300,7 @@ function populateMsgStudents(){
   students.forEach(s=>{
     const o = document.createElement('option');
     o.value = s.name;
-    o.textContent = isEn && s.nameEn ? s.nameEn : s.name;
+    o.textContent = displayStudentName(s, cls, s.section, s.mid);
     sel.appendChild(o);
   });
 }
@@ -2295,7 +2436,7 @@ function savePinEdit(cls,name,i){
 // ══════════════════════════════════════════════════
 function generateReport(student, cls, rank, total, classSize){
   const tot=student.total;
-  const name=currentLang==='en' && student.nameEn ? student.nameEn.split(' ')[0] : student.name.split(' ')[0];
+  const name=displayStudentName(student).split(' ')[0];
   const isEn = currentLang==='en';
   let lines=[];
 
@@ -2575,6 +2716,11 @@ const TRANSLATIONS = {
     adminThTSubject: 'المادة',
     adminThTGrades: 'الصفوف',
     adminThTDate: 'تاريخ التسجيل',
+    adminDeleteTeacherBtn: 'حذف',
+    adminDeleteTeacherConfirm: 'حذف المعلم "{name}" نهائياً؟\n\nسيُحذف:\n• حساب الدخول (البريد وكلمة المرور)\n• كل الدرجات والملفات المرفوعة\n• الرسائل وسجل السلوك وكل بياناته\n\nلا يمكن التراجع.',
+    adminDeleteTeacherOk: '✅ تم حذف المعلم بالكامل',
+    adminDeleteTeacherFail: '❌ فشل حذف المعلم',
+    adminDeleteTeacherFunctions: '❌ يجب نشر Cloud Functions أولاً: npm run deploy:functions',
     adminThPStudent: 'اسم الطالب',
     adminThPFirst: 'أول دخول',
     adminThPLast: 'آخر دخول',
@@ -2828,6 +2974,11 @@ const TRANSLATIONS = {
     adminThTSubject: 'Subject',
     adminThTGrades: 'Grades',
     adminThTDate: 'Registration Date',
+    adminDeleteTeacherBtn: 'Delete',
+    adminDeleteTeacherConfirm: 'Delete teacher "{name}" permanently?\n\nThis removes:\n• Login account (email & password)\n• All uploaded grades and files\n• Messages, behavior logs, and all their data\n\nThis cannot be undone.',
+    adminDeleteTeacherOk: '✅ Teacher deleted completely',
+    adminDeleteTeacherFail: '❌ Failed to delete teacher',
+    adminDeleteTeacherFunctions: '❌ Deploy Cloud Functions first: npm run deploy:functions',
     adminThPStudent: 'Student Name',
     adminThPFirst: 'First Login',
     adminThPLast: 'Last Login',
@@ -3001,9 +3152,8 @@ function applyGlobalLang(){
   const pinErr = document.getElementById('pin-error');
   if(pinErr) pinErr.textContent = t('pinErrorMsg');
   if(window._currentParent?.name){
-    const ls = findStudentInGrade(window._currentParent.cls, window._currentParent.name, window._currentParent.mid, window._currentParent.section);
     const lockNameEl = document.getElementById('lock-student-name');
-    if(lockNameEl) lockNameEl.textContent = isAr ? window._currentParent.name : (ls?.nameEn || window._currentParent.name);
+    if(lockNameEl) lockNameEl.textContent = displayStudentName(window._currentParent);
   }
 
   // ── لوحة المعلم ──
@@ -3362,6 +3512,7 @@ function applyAdminLang(){
   setText('admin-th-t-subject', 'adminThTSubject');
   setText('admin-th-t-grades', 'adminThTGrades');
   setText('admin-th-t-date', 'adminThTDate');
+  setText('admin-th-t-action', 'adminThPAction');
   setText('admin-th-p-student', 'adminThPStudent');
   setText('admin-th-p-mid', 'adminThMid');
   setText('admin-th-p-grade', 'adminThGrade');
@@ -3373,8 +3524,8 @@ function applyAdminLang(){
   const uploadDesc = document.getElementById('admin-upload-desc');
   if(uploadDesc){
     uploadDesc.innerHTML = isAr
-      ? 'ارفع ملف Excel لكل صف على حدى أو ملف واحد يحتوي كل الصفوف.<br>الهيكل: <strong>م | الصف | الشعبة | الرقم الوزاري | الاسم بالعربية | الاسم بالإنجليزية</strong>'
-      : 'Upload an Excel file per grade or one file containing all grades.<br>Format: <strong># | Grade | Section | Ministry ID | Arabic Name | English Name</strong>';
+      ? 'ارفع ملف Excel لكل صف أو ملفاً واحداً يحتوي كل الصفوف (أوراق بأسماء <strong>5-1</strong> … <strong>8-6</strong>).<br>الهيكل: <strong>م | الصف | الشعبة | رقم الطالب | اسم بالعربية | اسم بالإنجليزية</strong> — الشعب أرقام <strong>1–6</strong>'
+      : 'Upload one Excel per grade or one workbook with all grades (sheets named <strong>5-1</strong> … <strong>8-6</strong>).<br>Columns: <strong># | Grade | Section | Student ID | Arabic Name | English Name</strong> — sections <strong>1–6</strong>';
   }
 
   ['5','6','7','8'].forEach(g=>{
@@ -3415,6 +3566,7 @@ function applyAdminLang(){
     ? '⚠️ الصفوف والشعب — مواد لم يُسجّل معلم لها بعد'
     : '⚠️ Grades & sections — subjects without a teacher yet';
 
+  if(typeof refreshAdminSecFilter === 'function') refreshAdminSecFilter();
   if(typeof adminRenderStudents === 'function' && Object.keys(adminStudentsCache||{}).length){
     try{ adminRenderStudents(); }catch(e){}
   }
@@ -3613,10 +3765,8 @@ function toggleLang(){
         adminRenderStudents();
       }
     } else if(screenId === 'screen-locked' && window._currentParent){
-      const { cls, name, mid, section } = window._currentParent;
-      const ls = findStudentInGrade(cls, name, mid, section);
       const lockNameEl = document.getElementById('lock-student-name');
-      if(lockNameEl) lockNameEl.textContent = currentLang==='en' && ls?.nameEn ? ls.nameEn : name;
+      if(lockNameEl) lockNameEl.textContent = displayStudentName(window._currentParent);
     } else if(screenId === 'screen-login'){
       const grade = document.getElementById('parent-grade')?.value;
       if(grade && typeof populateParentSections === 'function'){
@@ -3839,7 +3989,7 @@ function _refreshParentGradeViews(cls, studentName, mid, teachersList){
 }
 
 function parentGradeBuckets(cls, section){
-  const sec = String(section || '').toUpperCase();
+  const sec = normalizeSectionCell(section);
   const buckets = [];
   if(sec) buckets.push(String(cls) + sec);
   buckets.push(String(cls));
@@ -4124,21 +4274,10 @@ function renderParentSubjectTabs(cls, studentName, mid, teachersList, section){
   const isEn = currentLang==='en';
 
   // Get student info
-  let student = null;
-  if(window.ADMIN_STUDENTS && window.ADMIN_STUDENTS[cls]){
-    const secs = section ? [section] : Object.keys(window.ADMIN_STUDENTS[cls]);
-    for(const sec of secs){
-      const secData = window.ADMIN_STUDENTS[cls][sec];
-      if(!secData) continue;
-      const arr = Array.isArray(secData)?secData:Object.values(secData);
-      student = arr.find(s=>s.name===studentName||s.mid===mid);
-      if(student){ student={...student,section:sec}; break; }
-    }
-  }
-  if(!student) student=(getGradeStudents(cls)||[]).find(s=>s.name===studentName||s.mid===mid);
+  let student = findStudentInGrade(cls, studentName, mid, section);
   if(!student) student={name:studentName,nameEn:'',mid,section};
 
-  const displayName = isEn && student.nameEn ? student.nameEn : student.name;
+  const displayName = displayStudentName(student);
   const secLabel    = student.section||section||'';
 
   // Tabs: Academic + one per subject
@@ -4827,7 +4966,7 @@ function renderSubjectSentComplaintsLog(idx, teacherKey, cls, studentName){
           </div>
         </div>
         <div class="parent-sent-complaint-meta">
-          <span>👨‍🎓 ${escapeHtml(c.studentName||'—')}</span>
+          <span>👨‍🎓 ${escapeHtml(displayStudentName(c.studentName, c.cls, c.section, c.mid))}</span>
           <span>👨‍🏫 ${escapeHtml(c.teacherName||'—')}</span>
           <span>📚 ${isEn?'Grade':'صف'} ${escapeHtml(c.cls||'—')} · ${isEn?'Sec':'ش'} ${escapeHtml(c.section||'—')}</span>
           <span>🆔 ${escapeHtml(c.mid||'—')}</span>
@@ -4838,7 +4977,7 @@ function renderSubjectSentComplaintsLog(idx, teacherKey, cls, studentName){
 }
 
 function renderParentView(cls,name){
-  window._currentParent = {cls, name, mid: pendingLogin?.mid||'', section: pendingLogin?.section||''};
+  window._currentParent = enrichParentSession(cls, name, pendingLogin?.mid||'', pendingLogin?.section||'');
   const body=document.getElementById('parent-body');
   const student=getGradeStudents(cls).find(s=>s.name===name);
   if(!student){ body.innerHTML='<div class="empty-state"><div class="ico">❌</div><p>'+t('notFound')+'</p></div>'; return; }
@@ -4866,7 +5005,7 @@ function renderParentView(cls,name){
   body.innerHTML=`
     <div class="student-card">
       <div class="student-avatar">🎓</div>
-      <div class="student-name">${currentLang==="en" && student.nameEn ? student.nameEn : student.name}</div>
+      <div class="student-name">${displayStudentName(student)}</div>
       <div class="student-meta">${t('classLabel')} ${cls} · ${t('scienceGrade')}</div>
       <div class="score-ring-wrap">
         <div class="score-ring">
@@ -5203,7 +5342,7 @@ function populateBvStudents(){
   const ph = isEn ? '— Select Student —' : '— اختر طالباً —';
   sel.innerHTML = `<option value="">${ph}</option>` +
     ((getFilteredStudents()[cls])||[]).filter(s=>!sec||s.section===sec).map(s => {
-      const display = isEn && s.nameEn ? s.nameEn : s.name;
+      const display = displayStudentName(s, cls, s.section, s.mid);
       return `<option value="${s.name}">${display}</option>`;
     }).join('');
 }
@@ -5354,7 +5493,7 @@ function renderBvLog(){
       return `<tr>
         <td style="font-size:11px;white-space:nowrap;padding-right:28px">${e.date||''}</td>
         <td><span class="badge badge-teal">${e.cls}</span></td>
-        <td style="text-align:${currentLang==='en'?'left':'right'};font-size:12px;font-weight:500">${currentLang==='en' && (getGradeStudents(eCls)||[]).find(s=>s.name===e.name)?.nameEn || e.name}</td>
+        <td style="text-align:${currentLang==='en'?'left':'right'};font-size:12px;font-weight:500">${displayStudentName(e.name, eCls, e.section, e.mid)}</td>
         <td><span class="bv-level-badge bvl-${level}">${bvInfo.icon} ${bvInfo.label.split('—')[0].trim()}</span></td>
         <td style="font-size:12px">${vObj ? vObj.icon+' '+vObj.label : '—'}</td>
         <td style="font-size:12px;color:var(--grey-3)">${e.academic||'—'}</td>
@@ -5370,7 +5509,7 @@ function renderBvLog(){
     const safeIdx = studentNames.indexOf(key);
     const headerRow = `<tr style="background:var(--teal-pale)">
       <td colspan="7" style="text-align:right;font-weight:700;font-size:13px;color:var(--teal-dark);padding:10px 14px">
-        ${currentLang==="en" && (getGradeStudents(eCls)||[]).find(s=>s.name===eName)?.nameEn || eName} — ${studentLogs.length} ${currentLang==="en"?"records":"سجل"} | ${currentLang==="en"?"Level":"مستوى"}: ${bvInfo.icon} ${bvInfo.label.split('—')[0].trim()}
+        ${displayStudentName(eName, eCls)} — ${studentLogs.length} ${currentLang==="en"?"records":"سجل"} | ${currentLang==="en"?"Level":"مستوى"}: ${bvInfo.icon} ${bvInfo.label.split('—')[0].trim()}
       </td>
       <td style="padding:6px 10px">
         <button class="action-btn danger bv-delete-btn"
@@ -5430,7 +5569,7 @@ function refreshDashboard(){
 function refreshParentPage(){
   if(!window._currentParent && APP.savedParent){
     const sp = APP.savedParent;
-    window._currentParent = {cls:sp.cls, name:sp.name, mid:sp.mid||'', section:sp.section||''};
+    window._currentParent = enrichParentSession(sp.cls, sp.name, sp.mid||'', sp.section||'');
   }
   if(!window._currentParent){
     showToast(currentLang==='en'?'⚠️ Please login first':'⚠️ سجّل الدخول أولاً');
@@ -5722,8 +5861,8 @@ function selectQuick(btn, key){
   const lang = currentLang === 'en' ? 'en' : 'ar';
   const studentName = window._currentParent ? window._currentParent.name : '';
   const cls = window._currentParent ? window._currentParent.cls : '';
-  const student = (getGradeStudents(cls)||[]).find(s=>s.name===studentName);
-  const displayName = (lang==='en' && student?.nameEn) ? student.nameEn.split(' ')[0] : studentName.split(' ')[0];
+  const student = findStudentInGrade(cls, studentName, window._currentParent?.mid, window._currentParent?.section);
+  const displayName = displayStudentName(student || {name: studentName}).split(' ')[0];
   const subjLabel = window._parentSubjectContext?.teachers?.[0]?.subjLabel || (lang==='en' ? 'this subject' : 'المادة');
   const tplFn = PARENT_MSG_TEMPLATES[lang]?.[key];
   const text = tplFn ? (tplFn.length > 1 ? tplFn(displayName, subjLabel) : tplFn(displayName)) : t(key);
@@ -5934,7 +6073,7 @@ function renderParentInbox(){
     <div class="inbox-card ${unread?'unread':''}" onclick="markRead('${safeId}')">
       <div class="inbox-header">
         <div style="flex:1">
-          <div class="inbox-name">${(currentLang==="en" && (getGradeStudents(m.cls)||[]).find(s=>s.name===m.name)?.nameEn) || m.name}${subj?' · '+escapeHtml(subj):''} — ${currentLang==="en"?"Class":"الشعبة"} ${m.cls}</div>
+          <div class="inbox-name">${displayStudentName(m.name, m.cls, m.section, m.mid)}${subj?' · '+escapeHtml(subj):''} — ${currentLang==="en"?"Class":"الشعبة"} ${m.cls}</div>
           <div class="inbox-date">${m.date||m.ts||''}</div>
         </div>
         <div style="display:flex;align-items:center;gap:6px">
@@ -6189,7 +6328,7 @@ function renderTeacherComplaints(){
     const isGeneral = c.general || c.anonymous;
     const studentLine = isGeneral
       ? `<span class="teacher-complaint-tag general">🔒 ${isEn?'General complaint (anonymous)':'شكوى عامة — بدون بيانات صاحب الشكوى'}</span>`
-      : `<span>👨‍🎓 ${escapeHtml(c.studentName||'—')} · 🆔 ${escapeHtml(c.mid||'—')}</span>`;
+      : `<span>👨‍🎓 ${escapeHtml(displayStudentName(c.studentName, c.cls, c.section, c.mid))} · 🆔 ${escapeHtml(c.mid||'—')}</span>`;
     return `
       <div class="teacher-complaint-card${c.read?' read':''}" onclick="markTeacherComplaintRead('${c.id}')">
         <div class="teacher-complaint-head">
@@ -6315,7 +6454,7 @@ function importStudentsExcel(input){
       for(let i=headerRow+1; i<rows.length; i++){
         const row     = rows[i];
         const grade   = String(row[colGrade]  ||'').trim();
-        const section = String(row[colSection]||'').trim().toUpperCase();
+        const section = normalizeSectionCell(row[colSection]);
         const mid     = String(row[colMid]    ||'').trim();
         const nameAr  = String(row[colNameAr] ||'').trim();
         const nameEn  = String(row[colNameEn] ||'').trim();
@@ -6410,7 +6549,7 @@ function parseSheetGradeSection(sheetName){
 function isTeacherScopeMatch(scope, grade, section){
   if(!scope) return true;
   const g = String(grade || '');
-  const sec = String(section || '').toUpperCase();
+  const sec = normalizeSectionCell(section);
   if(scope.grades?.length && g && !scope.grades.includes(g)) return false;
   if(scope.gradeMap?.[g] && sec && !scope.gradeMap[g].includes(sec)) return false;
   return true;
@@ -6441,13 +6580,17 @@ function normalizeGradeCell(val){
 }
 
 function normalizeSectionCell(val){
-  let s = String(val||'').trim().toUpperCase();
-  s = s.replace(/شعبة/g,'').trim();
-  if(SECTIONS_AR.includes(s)){
-    const i = SECTIONS_AR.indexOf(s);
-    return SECTIONS_LIST[i] || s;
-  }
-  return s.slice(0, 1);
+  let s = String(val||'').trim().replace(/شعبة/g,'').trim();
+  if(!s) return '';
+  if(/^([1-6])$/.test(s)) return s;
+  const legacyLetters = { A:'1', B:'2', C:'3', D:'4', E:'5', F:'6' };
+  const legacyArabic  = { 'أ':'1', 'ب':'2', 'ج':'3', 'د':'4', 'ه':'5', 'هـ':'5', 'و':'6' };
+  const upper = s.toUpperCase();
+  if(legacyLetters[upper]) return legacyLetters[upper];
+  if(legacyArabic[s]) return legacyArabic[s];
+  const digit = s.match(/([1-6])/);
+  if(digit) return digit[1];
+  return s.replace(/\D/g,'').slice(0,1) || '';
 }
 
 function findStudentByMid(mid, gradeHint, sectionHint){
@@ -6633,7 +6776,7 @@ function importGradeSheet(ws, sheetName, tKey, scope){
 
     const { hit, gradeObj } = parsed;
     const g = hit.grade;
-    const sec = (hit.student.section || sheetHint?.section || '').toUpperCase();
+    const sec = normalizeSectionCell(hit.student.section || sheetHint?.section);
 
     if(scope && !isTeacherScopeMatch(scope, g, sec)) continue;
 
@@ -6786,7 +6929,7 @@ function renderAnalysisTab(){
   listEl.innerHTML = remedial.length
     ? remedial.map(s=>{
         const rec = getStudentGradeRecord(s);
-        const name = isEn && s.nameEn ? s.nameEn : s.name;
+        const name = displayStudentName(s, s.cls || cls, s.section, s.mid);
         const reasons = [];
         if((s.total||0)<70) reasons.push(isEn?'Total below 70%':'المحصلة دون 70%');
         if((s.t1||0)<60) reasons.push(isEn?'Formative 1 weak':'تكويني 1 ضعيف');
@@ -7099,7 +7242,7 @@ function tryAutoLogin(){
   if(!APP.savedParent || !APP.savedParent.cls || !APP.savedParent.name) return;
   const sp = APP.savedParent;
   registerParentSession(sp);
-  window._currentParent = {cls:sp.cls, name:sp.name, mid:sp.mid||'', section:sp.section||''};
+  window._currentParent = enrichParentSession(sp.cls, sp.name, sp.mid||'', sp.section||'');
   showScreen('parent');
   loadParentSubjectTabs(sp.cls, sp.name, sp.mid||'');
 }
@@ -7187,7 +7330,11 @@ function populateParentSections(){
   if(!grade) return;
   document.getElementById('parent-sec-group').style.display = '';
 
-  const secLabelsAr = {A:'أ',B:'ب',C:'ج',D:'د',E:'هـ',F:'و'};
+  const renderSectionOptions = (sections)=>{
+    const list = [...sections].filter(Boolean).sort((a,b)=>(Number(a)||0)-(Number(b)||0) || String(a).localeCompare(String(b)));
+    secSel.innerHTML = `<option value="">${isEn?'— Select Section —':'— اختر الشعبة —'}</option>`
+      + list.map(s=>`<option value="${s}">${formatSectionLabel(s, isEn)}</option>`).join('');
+  };
 
   if(typeof db !== 'undefined'){
     db.ref(`students/${grade}`).once('value').then(snap=>{
@@ -7195,20 +7342,12 @@ function populateParentSections(){
         secSel.innerHTML = `<option value="">${isEn?'No sections available':'لا توجد شعب'}</option>`;
         return;
       }
-      const sections = Object.keys(snap.val()).sort();
-      secSel.innerHTML = `<option value="">${isEn?'— Select Section —':'— اختر الشعبة —'}</option>`
-        + sections.map(s=>{
-            const label = isEn ? 'Section '+s : 'شعبة '+(secLabelsAr[s]||s);
-            return `<option value="${s}">${label}</option>`;
-          }).join('');
+      renderSectionOptions(Object.keys(snap.val()));
     }).catch(()=>{
-      // Fallback: show A-F
-      secSel.innerHTML = `<option value="">${isEn?'— Select Section —':'— اختر الشعبة —'}</option>`
-        + SECTIONS_LIST.map((s,i)=>`<option value="${s}">${isEn?'Section '+s:'شعبة '+SECTIONS_AR[i]}</option>`).join('');
+      renderSectionOptions(SECTIONS_LIST);
     });
   } else {
-    secSel.innerHTML = `<option value="">${isEn?'— Select Section —':'— اختر الشعبة —'}</option>`
-      + SECTIONS_LIST.map((s,i)=>`<option value="${s}">${isEn?'Section '+s:'شعبة '+SECTIONS_AR[i]}</option>`).join('');
+    renderSectionOptions(SECTIONS_LIST);
   }
 }
 
@@ -7248,7 +7387,7 @@ function populateParentNames(){
 
       sel.innerHTML = `<option value="">${isEn?'— Select Student —':'— اختر الاسم —'}</option>`
         + students.map(s=>{
-            const display = isEn && s.nameEn ? s.nameEn : s.name;
+            const display = displayStudentName(s, grade, section, s.mid);
             return `<option value="${s.name}" data-mid="${s.mid||''}">${display}</option>`;
           }).join('');
 
@@ -7278,7 +7417,7 @@ function _loadParentNamesLocal(grade, section, sel, errEl, isEn){
   }
   sel.innerHTML = `<option value="">${isEn?'— Select Student —':'— اختر الاسم —'}</option>`
     + filtered.map(s=>{
-        const display = isEn && s.nameEn ? s.nameEn : s.name;
+        const display = displayStudentName(s, grade, section, s.mid);
         return `<option value="${s.name}">${display}</option>`;
       }).join('');
   sel.onchange = ()=>{

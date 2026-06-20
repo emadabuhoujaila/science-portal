@@ -8,8 +8,10 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 const auth = firebase.auth();
+const functions = firebase.functions();
 window.db = db;
 window.auth = auth;
+window.functions = functions;
 window._fbReady = false;
 
 db.ref('.info/connected').on('value', snap=>{

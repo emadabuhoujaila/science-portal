@@ -231,9 +231,21 @@ tbody td{padding:10px 12px;text-align:center;color:var(--grey-2)}
 
 /* ─── PARENT VIEW ─── */
 #screen-parent{min-height:100vh;background:var(--teal-pale)}
-.parent-header{background:linear-gradient(135deg,var(--teal-dark),var(--teal-mid));color:var(--white);padding:22px 20px 44px;text-align:center;position:relative;z-index:1}
-.parent-header h1{font-size:20px;font-weight:700;margin-bottom:4px}
-.parent-header p{font-size:13px;opacity:.9;margin:0}
+.parent-header{background:linear-gradient(135deg,var(--teal-dark),var(--teal-mid));color:var(--white);padding:0 0 44px;text-align:center;position:relative;z-index:1}
+.parent-header-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px 6px;min-height:48px}
+.parent-header-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.parent-header-btn{background:rgba(255,255,255,.15);border:1.5px solid rgba(255,255,255,.3);color:var(--white);padding:7px 12px;border-radius:8px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;line-height:1.2;flex-shrink:0}
+.parent-header-btn:hover{background:rgba(255,255,255,.25)}
+.parent-header-btn-logout{padding:7px 14px}
+.parent-header-content{padding:6px 16px 0;max-width:100%;box-sizing:border-box}
+.parent-header h1{font-size:clamp(15px,4.2vw,20px);font-weight:700;margin:0 0 6px;line-height:1.35;padding:0 4px;word-break:break-word}
+.parent-header p{font-size:13px;opacity:.9;margin:0;line-height:1.45;padding:0 8px}
+@media(max-width:768px){
+  .parent-header-toolbar{padding:8px 10px 4px}
+  .parent-header-btn{padding:6px 10px;font-size:12px}
+  .parent-header-btn-logout{padding:6px 12px}
+  .parent-header h1{font-size:15px}
+}
 .parent-body{padding:0 16px 32px;max-width:980px;width:100%;margin:-24px auto 0;box-sizing:border-box;position:relative;z-index:2}
 .parent-banner{width:100%;max-width:100%;height:auto;border-radius:14px;margin-bottom:14px;display:block;box-shadow:var(--shadow-lg);object-fit:cover}
 .student-card{background:var(--white);border-radius:16px;box-shadow:var(--shadow-lg);padding:20px 24px 24px;margin-bottom:16px;position:relative;z-index:2}
