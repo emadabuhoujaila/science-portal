@@ -2087,7 +2087,7 @@ function renderOverview(){
     return `<tr>
       <td>${i+1}</td>
       <td><span class="badge badge-teal">${s.cls}</span>${secLbl}</td>
-      <td style="text-align:right;font-weight:500">${displayStudentName(s, s.grade || gradeF, s.section, s.mid)}</td>
+      <td style="text-align:right;font-weight:500">${displayStudentName(s, s.cls || cls, s.section, s.mid)}</td>
       <td>${diag ? diag.toFixed(1) : '—'}</td>
       <td>${t1.toFixed(1)}</td><td>${t2.toFixed(1)}</td>
       <td>${hw.toFixed(1)}%${bar(hw)}</td>
