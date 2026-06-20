@@ -424,6 +424,8 @@ async function adminLoadStudents(){
       : `<span style="color:var(--grey-3)">${currentLang==='en'?'Not uploaded yet':'لم يُرفع بعد'}</span>`;
   });
   adminRenderStudents();
+  adminRefreshTransferStudentList();
+  bindAdminStudentTableActions();
 }
 
 // Render students table
@@ -454,18 +456,260 @@ function adminRenderStudents(){
   if(countEl) countEl.textContent = `(${rows.length} ${isEn?'students':'طالب'})`;
 
   if(!rows.length){
-    tbody.innerHTML = `<tr><td colspan="6" class="empty-state"><div class="ico">👥</div><p>${isEn?'No students yet — upload Excel file':'لا يوجد طلاب بعد — ارفع ملف Excel'}</p></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="empty-state"><div class="ico">👥</div><p>${isEn?'No students yet — upload Excel file':'لا يوجد طلاب بعد — ارفع ملف Excel'}</p></td></tr>`;
     return;
   }
 
-  tbody.innerHTML = rows.map((s,i)=>`<tr>
+  tbody.innerHTML = rows.map((s,i)=>{
+    const mid = s.mid || '';
+    const secOptions = SECTIONS_LIST.filter(sec=>sec !== String(s.section))
+      .map(sec=>`<option value="${sec}">${formatSectionLabel(sec, isEn)}</option>`).join('');
+    return `<tr>
     <td>${i+1}</td>
     <td><span class="badge badge-teal">${isEn?'Grade ':'ص'}${s.grade}</span></td>
     <td><span class="badge badge-grey">${s.section}</span></td>
-    <td style="font-family:monospace;font-size:12px">${s.mid||'—'}</td>
-    <td style="text-align:right;font-weight:500">${s.name}</td>
-    <td style="text-align:left;color:var(--grey-3)">${s.nameEn||'—'}</td>
-  </tr>`).join('');
+    <td style="font-family:monospace;font-size:12px">${escapeHtml(mid||'—')}</td>
+    <td style="text-align:right;font-weight:500">${escapeHtml(s.name||'—')}</td>
+    <td style="text-align:left;color:var(--grey-3)">${escapeHtml(s.nameEn||'—')}</td>
+    <td style="white-space:nowrap">
+      <select class="admin-row-xfer-sec" style="padding:4px 6px;border:1px solid var(--grey-5);border-radius:6px;font-size:11px;margin-left:4px;max-width:72px">
+        <option value="">${isEn?'Sec':'ش'}</option>${secOptions}
+      </select>
+      <button type="button" class="action-btn admin-row-transfer-btn" style="font-size:11px;padding:3px 8px;margin-left:4px"
+        data-grade="${escapeHtml(s.grade)}" data-section="${escapeHtml(s.section)}" data-mid="${escapeHtml(mid)}" data-name="${escapeHtml(s.name||'')}">↔️</button>
+      <button type="button" class="action-btn danger admin-row-delete-btn" style="font-size:11px;padding:3px 8px;margin-left:4px"
+        data-grade="${escapeHtml(s.grade)}" data-section="${escapeHtml(s.section)}" data-mid="${escapeHtml(mid)}" data-name="${escapeHtml(s.name||'')}">🗑️</button>
+    </td>
+  </tr>`;
+  }).join('');
+  bindAdminStudentTableActions();
+}
+
+function adminGetStudentsInSection(grade, section){
+  const secData = adminStudentsCache?.[grade]?.[section];
+  if(!secData) return [];
+  if(Array.isArray(secData)){
+    return secData.map((s,i)=>({ ...s, mid: s.mid || String(i), _fbKey: s.mid || String(i) }));
+  }
+  return Object.entries(secData).map(([key, s])=>({
+    ...(s||{}),
+    mid: (s&&s.mid) || key,
+    _fbKey: key,
+  })).filter(s=>s.name || s.mid);
+}
+
+function adminFindStudentInCache(grade, section, mid){
+  const list = adminGetStudentsInSection(grade, section);
+  return list.find(s=>String(s.mid)===String(mid) || String(s._fbKey)===String(mid)) || null;
+}
+
+function adminRefreshTransferStudentList(){
+  const grade = document.getElementById('admin-xfer-grade')?.value || '5';
+  const section = document.getElementById('admin-xfer-from-sec')?.value || '1';
+  const sel = document.getElementById('admin-xfer-student');
+  if(!sel) return;
+  const isEn = currentLang==='en';
+  const students = adminGetStudentsInSection(grade, section);
+  sel.innerHTML = `<option value="">${isEn?'— Select student —':'— اختر الطالب —'}</option>`
+    + students.sort((a,b)=>(a.name||'').localeCompare(b.name||'','ar')).map(s=>{
+      const mid = s.mid || s._fbKey;
+      return `<option value="${escapeHtml(mid)}">${escapeHtml(s.name||mid)} (${escapeHtml(mid)})</option>`;
+    }).join('');
+}
+
+async function adminSyncParentRecordsAfterStudentMove(grade, oldSection, newSection, student){
+  if(typeof db==='undefined' || !student?.mid || !student?.name) return;
+  const mid = String(student.mid);
+  const updates = {};
+  const oldKey = makeParentSessionKey(grade, oldSection, student.name);
+  const newKey = makeParentSessionKey(grade, newSection, student.name);
+  updates['parentQuickLogin/'+oldKey] = null;
+  try{
+    const snap = await db.ref('registeredParents/'+mid).once('value');
+    if(snap.exists()){
+      const p = snap.val() || {};
+      const now = new Date().toISOString();
+      const record = {
+        cls: String(grade),
+        section: String(newSection),
+        name: student.name,
+        mid,
+        registeredAt: p.registeredAt || now,
+        lastLogin: p.lastLogin || now,
+      };
+      updates['registeredParents/'+mid] = record;
+      updates['parentQuickLogin/'+newKey] = record;
+    }
+    if(Object.keys(updates).length) await db.ref().update(updates);
+  }catch(e){ console.warn('adminSyncParentRecordsAfterStudentMove', e); }
+}
+
+async function adminSyncParentRecordsAfterStudentDelete(grade, section, student){
+  if(typeof db==='undefined' || !student?.name) return;
+  const mid = student.mid ? String(student.mid) : '';
+  const updates = {};
+  const sessionKey = makeParentSessionKey(grade, section, student.name);
+  updates['parentQuickLogin/'+sessionKey] = null;
+  if(mid) updates['registeredParents/'+mid] = null;
+  if(Object.keys(updates).length){
+    try{ await db.ref().update(updates); }catch(e){ console.warn('adminSyncParentRecordsAfterStudentDelete', e); }
+  }
+}
+
+async function adminAddStudent(){
+  const isEn = currentLang==='en';
+  const grade = document.getElementById('admin-add-grade')?.value;
+  const section = normalizeSectionCell(document.getElementById('admin-add-sec')?.value);
+  const mid = (document.getElementById('admin-add-mid')?.value||'').trim().replace(/\s/g,'');
+  const name = (document.getElementById('admin-add-name')?.value||'').trim();
+  const nameEn = (document.getElementById('admin-add-name-en')?.value||'').trim();
+  if(!grade || !section) return showToast(isEn?'Select grade and section':'اختر الصف والشعبة');
+  if(!mid) return showToast(isEn?'Enter ministry ID':'أدخل الرقم الوزاري');
+  if(!name) return showToast(isEn?'Enter Arabic name':'أدخل الاسم بالعربية');
+  if(typeof db==='undefined') return showToast(isEn?'❌ Not connected':'❌ غير متصل');
+  if(adminFindStudentInCache(grade, section, mid)){
+    return showToast(isEn?'Student already exists in this section':'الطالب موجود في هذه الشعبة');
+  }
+  const record = { mid, name, nameEn: nameEn || '' };
+  try{
+    await db.ref(`students/${grade}/${section}/${mid}`).set(record);
+    if(!adminStudentsCache[grade]) adminStudentsCache[grade] = {};
+    if(!adminStudentsCache[grade][section]) adminStudentsCache[grade][section] = {};
+    adminStudentsCache[grade][section][mid] = record;
+    document.getElementById('admin-add-mid').value = '';
+    document.getElementById('admin-add-name').value = '';
+    document.getElementById('admin-add-name-en').value = '';
+    refreshAdminSecFilter();
+    adminRenderStudents();
+    adminRefreshTransferStudentList();
+    showToast(isEn?'✅ Student added':'✅ تمت إضافة الطالب');
+  }catch(e){
+    console.error('adminAddStudent', e);
+    showToast(isEn?'❌ Failed to add student':'❌ فشل إضافة الطالب');
+  }
+}
+
+async function adminTransferStudent(grade, fromSec, mid, toSec){
+  const isEn = currentLang==='en';
+  const fromSection = normalizeSectionCell(fromSec);
+  const toSection = normalizeSectionCell(toSec);
+  if(!grade || !fromSection || !toSection || !mid) return;
+  if(fromSection === toSection) return showToast(isEn?'Choose a different section':'اختر شعبة مختلفة');
+  if(typeof db==='undefined') return showToast(isEn?'❌ Not connected':'❌ غير متصل');
+
+  const student = adminFindStudentInCache(grade, fromSection, mid);
+  if(!student) return showToast(isEn?'Student not found':'الطالب غير موجود');
+  const actualMid = String(student.mid || mid);
+  if(adminFindStudentInCache(grade, toSection, actualMid)){
+    return showToast(isEn?'Student already in target section':'الطالب موجود في الشعبة الهدف');
+  }
+
+  const label = student.name || actualMid;
+  if(!confirm(isEn
+    ? `Move "${label}" from section ${fromSection} to section ${toSection}?`
+    : `نقل "${label}" من الشعبة ${fromSection} إلى الشعبة ${toSection}؟`)) return;
+
+  const record = { mid: actualMid, name: student.name, nameEn: student.nameEn || '' };
+  const updates = {};
+  updates[`students/${grade}/${toSection}/${actualMid}`] = record;
+  updates[`students/${grade}/${fromSection}/${actualMid}`] = null;
+  if(student._fbKey && student._fbKey !== actualMid){
+    updates[`students/${grade}/${fromSection}/${student._fbKey}`] = null;
+  }
+
+  try{
+    await db.ref().update(updates);
+    if(!adminStudentsCache[grade]) adminStudentsCache[grade] = {};
+    if(!adminStudentsCache[grade][toSection]) adminStudentsCache[grade][toSection] = {};
+    adminStudentsCache[grade][toSection][actualMid] = record;
+    if(adminStudentsCache[grade][fromSection]){
+      delete adminStudentsCache[grade][fromSection][actualMid];
+      if(student._fbKey) delete adminStudentsCache[grade][fromSection][student._fbKey];
+      if(!Object.keys(adminStudentsCache[grade][fromSection]).length) delete adminStudentsCache[grade][fromSection];
+    }
+    await adminSyncParentRecordsAfterStudentMove(grade, fromSection, toSection, record);
+    refreshAdminSecFilter();
+    adminRenderStudents();
+    adminRefreshTransferStudentList();
+    showToast(isEn?'✅ Student moved':'✅ تم نقل الطالب');
+  }catch(e){
+    console.error('adminTransferStudent', e);
+    showToast(isEn?'❌ Transfer failed':'❌ فشل النقل');
+  }
+}
+
+function adminTransferStudentFromForm(){
+  const grade = document.getElementById('admin-xfer-grade')?.value;
+  const fromSec = document.getElementById('admin-xfer-from-sec')?.value;
+  const mid = document.getElementById('admin-xfer-student')?.value;
+  const toSec = document.getElementById('admin-xfer-to-sec')?.value;
+  adminTransferStudent(grade, fromSec, mid, toSec).catch(e=>console.error(e));
+}
+
+async function adminDeleteStudent(grade, section, mid, studentName){
+  const isEn = currentLang==='en';
+  const sec = normalizeSectionCell(section);
+  const label = studentName || mid || '';
+  if(!confirm(isEn?`Delete student "${label}"?`:`حذف الطالب "${label}"؟`)) return;
+  if(typeof db==='undefined') return showToast(isEn?'❌ Not connected':'❌ غير متصل');
+
+  const student = adminFindStudentInCache(grade, sec, mid) || { mid, name: studentName || '' };
+  const actualMid = String(student.mid || mid || '');
+  const updates = {};
+  updates[`students/${grade}/${sec}/${actualMid}`] = null;
+  if(student._fbKey && student._fbKey !== actualMid){
+    updates[`students/${grade}/${sec}/${student._fbKey}`] = null;
+  }
+
+  try{
+    await db.ref().update(updates);
+    if(adminStudentsCache[grade]?.[sec]){
+      delete adminStudentsCache[grade][sec][actualMid];
+      if(student._fbKey) delete adminStudentsCache[grade][sec][student._fbKey];
+      if(!Object.keys(adminStudentsCache[grade][sec]).length) delete adminStudentsCache[grade][sec];
+    }
+    await adminSyncParentRecordsAfterStudentDelete(grade, sec, student);
+    refreshAdminSecFilter();
+    adminRenderStudents();
+    adminRefreshTransferStudentList();
+    showToast(isEn?'✅ Student deleted':'✅ تم حذف الطالب');
+  }catch(e){
+    console.error('adminDeleteStudent', e);
+    showToast(isEn?'❌ Delete failed':'❌ فشل الحذف');
+  }
+}
+
+function bindAdminStudentTableActions(){
+  const tbody = document.getElementById('admin-students-tbody');
+  if(!tbody || tbody.dataset.actionsBound === '1') return;
+  tbody.dataset.actionsBound = '1';
+  tbody.addEventListener('click', e=>{
+    const delBtn = e.target.closest('.admin-row-delete-btn');
+    if(delBtn){
+      adminDeleteStudent(
+        delBtn.dataset.grade || '',
+        delBtn.dataset.section || '',
+        delBtn.dataset.mid || '',
+        delBtn.dataset.name || ''
+      ).catch(err=>console.error(err));
+      return;
+    }
+    const xferBtn = e.target.closest('.admin-row-transfer-btn');
+    if(xferBtn){
+      const row = xferBtn.closest('tr');
+      const toSec = row?.querySelector('.admin-row-xfer-sec')?.value || '';
+      if(!toSec){
+        showToast(currentLang==='en'?'Select target section':'اختر الشعبة الهدف');
+        return;
+      }
+      adminTransferStudent(
+        xferBtn.dataset.grade || '',
+        xferBtn.dataset.section || '',
+        xferBtn.dataset.mid || '',
+        toSec
+      ).catch(err=>console.error(err));
+    }
+  });
 }
 
 // Import students from Excel → save to /students/{grade}/{section}/
@@ -1519,23 +1763,6 @@ function adminBuildFilters(){
 // Import students from Excel
 
 
-function adminDeleteStudent(grade, section, mid){
-  const isEn = currentLang==='en';
-  if(!confirm(isEn?`Delete student (${mid})?`:`حذف الطالب (${mid})؟`)) return;
-  if(typeof db!=='undefined' && mid){
-    db.ref(`students/${grade}/${section}/${mid}`).remove().then(()=>{
-      showToast('✅ '+(isEn?'Deleted':'تم الحذف'));
-      adminLoadStudents();
-    });
-  } else {
-    if(window.ADMIN_STUDENTS[grade]?.[section]){
-      window.ADMIN_STUDENTS[grade][section] = window.ADMIN_STUDENTS[grade][section].filter(s=>s.mid!==mid);
-      adminRenderStudents();
-    }
-  }
-}
-
-function adminClearAll(){
   const isEn = currentLang==='en';
   if(!confirm(isEn?'Delete ALL student data? This cannot be undone.':'حذف كل بيانات الطلاب؟ لا يمكن التراجع.')) return;
   if(typeof db!=='undefined'){
@@ -3025,6 +3252,22 @@ const TRANSLATIONS = {
     adminTabMonitor: '📊 المتابعة',
     adminUploadTitle: '📤 رفع قائمة الطلاب',
     adminStudentsTitle: '👥 الطلاب المحملون',
+    adminManageTitle: '✏️ إدارة الطلاب يدوياً',
+    adminManageDesc: 'أضف طالباً جديداً، انقله بين الشعب، أو احذفه — دون الحاجة لرفع ملف Excel من جديد.',
+    adminAddTitle: '➕ إضافة طالب',
+    adminAddLblGrade: 'الصف',
+    adminAddLblSec: 'الشعبة',
+    adminAddLblMid: 'الرقم الوزاري',
+    adminAddLblName: 'الاسم بالعربية',
+    adminAddLblEn: 'الاسم بالإنجليزية',
+    adminAddBtn: '➕ إضافة طالب',
+    adminTransferTitle: '↔️ نقل طالب إلى شعبة أخرى',
+    adminXferLblGrade: 'الصف',
+    adminXferLblFrom: 'من الشعبة',
+    adminXferLblStudent: 'الطالب',
+    adminXferLblTo: 'إلى الشعبة',
+    adminXferBtn: '↔️ نقل الطالب',
+    adminThAction: 'إجراء',
     adminAllOption: 'الكل',
     adminAllSections: 'كل الشعب',
     adminThGrade: 'الصف',
@@ -3324,6 +3567,22 @@ const TRANSLATIONS = {
     adminTabMonitor: '📊 Monitoring',
     adminUploadTitle: '📤 Upload Student List',
     adminStudentsTitle: '👥 Loaded Students',
+    adminManageTitle: '✏️ Manual Student Management',
+    adminManageDesc: 'Add a student, move them between sections, or delete them — without re-uploading Excel.',
+    adminAddTitle: '➕ Add Student',
+    adminAddLblGrade: 'Grade',
+    adminAddLblSec: 'Section',
+    adminAddLblMid: 'Ministry ID',
+    adminAddLblName: 'Arabic Name',
+    adminAddLblEn: 'English Name',
+    adminAddBtn: '➕ Add Student',
+    adminTransferTitle: '↔️ Move Student to Another Section',
+    adminXferLblGrade: 'Grade',
+    adminXferLblFrom: 'From Section',
+    adminXferLblStudent: 'Student',
+    adminXferLblTo: 'To Section',
+    adminXferBtn: '↔️ Move Student',
+    adminThAction: 'Action',
     adminAllOption: 'All',
     adminAllSections: 'All Sections',
     adminThGrade: 'Grade',
@@ -3901,6 +4160,22 @@ function applyAdminLang(){
   setText('admin-tab-btn-complaints', 'tabComplaints');
   setText('admin-upload-title', 'adminUploadTitle');
   setText('admin-students-title', 'adminStudentsTitle');
+  setText('admin-manage-title', 'adminManageTitle');
+  setText('admin-manage-desc', 'adminManageDesc');
+  setText('admin-add-title', 'adminAddTitle');
+  setText('admin-add-lbl-grade', 'adminAddLblGrade');
+  setText('admin-add-lbl-sec', 'adminAddLblSec');
+  setText('admin-add-lbl-mid', 'adminAddLblMid');
+  setText('admin-add-lbl-name', 'adminAddLblName');
+  setText('admin-add-lbl-en', 'adminAddLblEn');
+  setText('admin-add-btn', 'adminAddBtn');
+  setText('admin-transfer-title', 'adminTransferTitle');
+  setText('admin-xfer-lbl-grade', 'adminXferLblGrade');
+  setText('admin-xfer-lbl-from', 'adminXferLblFrom');
+  setText('admin-xfer-lbl-student', 'adminXferLblStudent');
+  setText('admin-xfer-lbl-to', 'adminXferLblTo');
+  setText('admin-xfer-btn', 'adminXferBtn');
+  setText('admin-th-action', 'adminThAction');
   setText('admin-upload-btn', 'adminUploadFull');
   setText('admin-clear-btn', 'adminClearAll');
   setText('admin-complaints-title', 'tabComplaints');

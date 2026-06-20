@@ -37,7 +37,7 @@ window.__splashDeadline = Date.now() + 5000;
 </script>
 <script>
 (function(){
-  var key='portal-cache-reset-v21';
+  var key='portal-cache-reset-v22';
   if(localStorage.getItem(key)) return;
   localStorage.setItem(key,'1');
   var done=function(){ location.reload(); };
@@ -332,6 +332,80 @@ window.__splashDeadline = Date.now() + 5000;
       </div>
     </div>
 
+    <!-- Manual student management -->
+    <div class="card" style="margin-bottom:20px">
+      <div class="card-header">
+        <h3 id="admin-manage-title">✏️ إدارة الطلاب يدوياً</h3>
+      </div>
+      <div style="padding:20px">
+        <p id="admin-manage-desc" style="font-size:13px;color:var(--grey-2);margin:0 0 16px;line-height:1.7">
+          أضف طالباً جديداً، انقله بين الشعب، أو احذفه — دون الحاجة لرفع ملف Excel من جديد.
+        </p>
+
+        <div style="border:1.5px solid var(--grey-5);border-radius:12px;padding:16px;margin-bottom:16px">
+          <h4 id="admin-add-title" style="margin:0 0 12px;color:var(--teal-dark);font-size:14px">➕ إضافة طالب</h4>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px">
+            <div>
+              <label id="admin-add-lbl-grade" style="font-size:12px;color:var(--grey-3);display:block;margin-bottom:4px">الصف</label>
+              <select id="admin-add-grade" style="width:100%;padding:9px 10px;border:1.5px solid var(--grey-5);border-radius:8px;font-family:inherit;font-size:13px">
+                <option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option>
+              </select>
+            </div>
+            <div>
+              <label id="admin-add-lbl-sec" style="font-size:12px;color:var(--grey-3);display:block;margin-bottom:4px">الشعبة</label>
+              <select id="admin-add-sec" style="width:100%;padding:9px 10px;border:1.5px solid var(--grey-5);border-radius:8px;font-family:inherit;font-size:13px">
+                <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option>
+              </select>
+            </div>
+            <div>
+              <label id="admin-add-lbl-mid" style="font-size:12px;color:var(--grey-3);display:block;margin-bottom:4px">الرقم الوزاري</label>
+              <input type="text" id="admin-add-mid" inputmode="numeric" maxlength="12" placeholder="1234567890" style="width:100%;padding:9px 10px;border:1.5px solid var(--grey-5);border-radius:8px;font-family:inherit;font-size:13px">
+            </div>
+            <div>
+              <label id="admin-add-lbl-name" style="font-size:12px;color:var(--grey-3);display:block;margin-bottom:4px">الاسم بالعربية</label>
+              <input type="text" id="admin-add-name" placeholder="اسم الطالب" style="width:100%;padding:9px 10px;border:1.5px solid var(--grey-5);border-radius:8px;font-family:inherit;font-size:13px">
+            </div>
+            <div>
+              <label id="admin-add-lbl-en" style="font-size:12px;color:var(--grey-3);display:block;margin-bottom:4px">الاسم بالإنجليزية</label>
+              <input type="text" id="admin-add-name-en" placeholder="English name" style="width:100%;padding:9px 10px;border:1.5px solid var(--grey-5);border-radius:8px;font-family:inherit;font-size:13px">
+            </div>
+          </div>
+          <button type="button" class="btn-primary" id="admin-add-btn" onclick="adminAddStudent()" style="padding:10px 18px">➕ إضافة طالب</button>
+        </div>
+
+        <div style="border:1.5px solid var(--grey-5);border-radius:12px;padding:16px">
+          <h4 id="admin-transfer-title" style="margin:0 0 12px;color:var(--teal-dark);font-size:14px">↔️ نقل طالب إلى شعبة أخرى</h4>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px">
+            <div>
+              <label id="admin-xfer-lbl-grade" style="font-size:12px;color:var(--grey-3);display:block;margin-bottom:4px">الصف</label>
+              <select id="admin-xfer-grade" onchange="adminRefreshTransferStudentList()" style="width:100%;padding:9px 10px;border:1.5px solid var(--grey-5);border-radius:8px;font-family:inherit;font-size:13px">
+                <option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option>
+              </select>
+            </div>
+            <div>
+              <label id="admin-xfer-lbl-from" style="font-size:12px;color:var(--grey-3);display:block;margin-bottom:4px">من الشعبة</label>
+              <select id="admin-xfer-from-sec" onchange="adminRefreshTransferStudentList()" style="width:100%;padding:9px 10px;border:1.5px solid var(--grey-5);border-radius:8px;font-family:inherit;font-size:13px">
+                <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option>
+              </select>
+            </div>
+            <div style="grid-column:span 2">
+              <label id="admin-xfer-lbl-student" style="font-size:12px;color:var(--grey-3);display:block;margin-bottom:4px">الطالب</label>
+              <select id="admin-xfer-student" style="width:100%;padding:9px 10px;border:1.5px solid var(--grey-5);border-radius:8px;font-family:inherit;font-size:13px">
+                <option value="">— اختر الطالب —</option>
+              </select>
+            </div>
+            <div>
+              <label id="admin-xfer-lbl-to" style="font-size:12px;color:var(--grey-3);display:block;margin-bottom:4px">إلى الشعبة</label>
+              <select id="admin-xfer-to-sec" style="width:100%;padding:9px 10px;border:1.5px solid var(--grey-5);border-radius:8px;font-family:inherit;font-size:13px">
+                <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option>
+              </select>
+            </div>
+          </div>
+          <button type="button" class="btn-icon" id="admin-xfer-btn" onclick="adminTransferStudentFromForm()" style="background:var(--gold-light);color:var(--gold);padding:10px 18px">↔️ نقل الطالب</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Students View Card -->
     <div class="card">
       <div class="card-header">
@@ -365,10 +439,11 @@ window.__splashDeadline = Date.now() + 5000;
               <th id="admin-th-mid">الرقم الوزاري</th>
               <th id="admin-th-name">الاسم بالعربية</th>
               <th id="admin-th-en">الاسم بالإنجليزية</th>
+              <th id="admin-th-action">إجراء</th>
             </tr>
           </thead>
           <tbody id="admin-students-tbody">
-            <tr><td colspan="6" class="empty-state"><div class="ico">👥</div><p id="admin-empty-txt">لا يوجد طلاب بعد — ارفع ملف Excel</p></td></tr>
+            <tr><td colspan="7" class="empty-state"><div class="ico">👥</div><p id="admin-empty-txt">لا يوجد طلاب بعد — ارفع ملف Excel</p></td></tr>
           </tbody>
         </table>
       </div>
@@ -937,6 +1012,6 @@ window.__splashDeadline = Date.now() + 5000;
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
 <script src="js/firebase-init.js?v=3"></script>
-<script src="js/app.js?v=21"></script>
+<script src="js/app.js?v=22"></script>
 </body>
 </html>
