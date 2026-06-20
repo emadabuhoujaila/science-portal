@@ -236,6 +236,29 @@ function enrichParentSession(cls, name, mid, section){
   };
 }
 
+function makeParentSessionKey(cls, section, name){
+  const normalize = v => String(v||'').trim().toLowerCase().replace(/\s+/g, ' ');
+  return [String(cls||'').trim(), String(section||'').trim(), normalize(name)]
+    .join('|')
+    .replace(/[.#$/[\]]/g, '_');
+}
+
+function parentSessionMatches(reg, cls, section, name){
+  if(!reg) return false;
+  return String(reg.cls) === String(cls)
+    && String(reg.section || '') === String(section || '')
+    && String(reg.name || '').trim() === String(name || '').trim();
+}
+
+async function enterParentDashboard(cls, name, mid, section){
+  APP.savedParent = enrichParentSession(cls, name, mid, section);
+  saveState();
+  registerParentSession(APP.savedParent);
+  window._currentParent = { ...APP.savedParent };
+  showScreen('parent');
+  loadParentSubjectTabs(cls, name, mid);
+}
+
 window.TEACHER_GRADES = window.TEACHER_GRADES || {};
 const GRADE_WEEK_COUNT = 11;
 
@@ -1115,6 +1138,10 @@ let pendingLogin = null; // {cls, name}
 let pinAttempts = 0;
 
 function goToPin(){
+  goToPinAsync().catch(e=>console.error('goToPin', e));
+}
+
+async function goToPinAsync(){
   const grade   = document.getElementById('parent-grade')?.value || document.getElementById('parent-class')?.value || '';
   const section = document.getElementById('parent-section')?.value||'';
   const nameSel = document.getElementById('parent-name');
@@ -1123,9 +1150,38 @@ function goToPin(){
   if(errEl) errEl.style.display='none';
   if(!grade||!name){ if(errEl){ errEl.style.display='block'; } return; }
   const cls = grade;
-  // Get MID from selected option data-mid attribute
   const selectedOpt = nameSel?.options[nameSel.selectedIndex];
   const mid = selectedOpt?.dataset?.mid || '';
+
+  const nextBtn = document.getElementById('parent-next-btn');
+  if(nextBtn){
+    nextBtn.disabled = true;
+    nextBtn.textContent = currentLang==='en' ? '⏳ Checking...' : '⏳ جارٍ التحقق...';
+  }
+
+  try{
+    if(typeof db !== 'undefined'){
+      const sessionKey = makeParentSessionKey(cls, section, name);
+      const snap = await db.ref('parentQuickLogin/'+sessionKey).once('value');
+      if(snap.exists()){
+        const reg = snap.val();
+        if(parentSessionMatches(reg, cls, section, name) && reg.mid){
+          pendingLogin = null;
+          pinAttempts = 0;
+          await enterParentDashboard(cls, name, reg.mid, section);
+          return;
+        }
+      }
+    }
+  }catch(e){
+    console.warn('parentQuickLogin check', e);
+  }finally{
+    if(nextBtn){
+      nextBtn.disabled = false;
+      nextBtn.textContent = currentLang==='en' ? 'Next →' : 'التالي ←';
+    }
+  }
+
   pendingLogin={cls, name, section, mid};
   pinAttempts=0;
   document.getElementById('pin-error').style.display='none';
@@ -1155,6 +1211,10 @@ function clearPin(){
 function pinInput(i){ if(i===0) pinInputSingle(document.getElementById('p0')); }
 function pinKey(e,i){ if(e.key==='Enter') checkPin(); }
 function checkPin(){
+  checkPinAsync().catch(e=>console.error('checkPin', e));
+}
+
+async function checkPinAsync(){
   if(!pendingLogin) return;
   const entered = [0,1,2,3,4,5,6,7,8,9].map(i=>{
     const el = document.getElementById('p'+i);
@@ -1162,23 +1222,16 @@ function checkPin(){
   }).join('').replace(/\s/g,'');
   if(entered.length < 4) return;
   const key = pendingLogin.cls+'|'+pendingLogin.name;
-  // MID from Firebase (passed via goToPin) or fallback to local STUDENTS
   const fMid = pendingLogin.mid;
   const student = findStudentInGrade(pendingLogin.cls, pendingLogin.name, pendingLogin.mid, pendingLogin.section);
   const correct = fMid || (student ? student.mid : APP.pins[key]);
   if(entered === correct){
-    APP.savedParent = enrichParentSession(
-      pendingLogin.cls,
-      pendingLogin.name,
-      pendingLogin.mid || entered,
-      pendingLogin.section || ''
-    );
-    saveState();
-    registerParentSession(APP.savedParent);
-    window._currentParent = { ...APP.savedParent };
-    showScreen('parent');
-    loadParentSubjectTabs(pendingLogin.cls, pendingLogin.name, pendingLogin.mid||entered);
+    const loginCls = pendingLogin.cls;
+    const loginName = pendingLogin.name;
+    const loginSection = pendingLogin.section || '';
+    const loginMid = pendingLogin.mid || entered;
     pendingLogin=null; pinAttempts=0;
+    await enterParentDashboard(loginCls, loginName, loginMid, loginSection);
   } else {
     pinAttempts++;
     clearPin();
@@ -1979,6 +2032,9 @@ async function adminLoadMonitoring(){
   const missingWrap  = document.getElementById('admin-missing-coverage');
   if(!teachersBody || !parentsBody) return;
 
+  bindAdminTeacherDeleteButtons();
+  await syncParentQuickLoginFromRegistry();
+
   if(typeof db==='undefined'){
     teachersBody.innerHTML = `<tr><td colspan="6" class="empty-state"><p>${isEn?'Firebase not connected':'Firebase غير متصل'}</p></td></tr>`;
     parentsBody.innerHTML  = `<tr><td colspan="7" class="empty-state"><p>${isEn?'Firebase not connected':'Firebase غير متصل'}</p></td></tr>`;
@@ -2036,20 +2092,24 @@ async function adminLoadMonitoring(){
       teachersBody.innerHTML = `<tr><td colspan="6" class="empty-state"><div class="ico">👨‍🏫</div><p>${isEn?'No registered teachers yet':'لا يوجد معلمون مسجلون بعد'}</p></td></tr>`;
     }else{
       teachersBody.innerHTML = teachers.map(t=>{
-        const keyArg = JSON.stringify(t.key||'');
-        const uidArg = JSON.stringify(t.uid||'');
-        const nameArg = JSON.stringify(t.name||'');
-        const emailArg = JSON.stringify(t.email||'');
+        const key = t.key || '';
+        const uid = t.uid || '';
+        const tName = t.name || '';
+        const tEmail = t.email || '';
         return `<tr>
-          <td style="font-weight:600">${escapeHtml(t.name||'—')}</td>
-          <td style="font-size:12px">${escapeHtml(t.email||'—')}</td>
+          <td style="font-weight:600">${escapeHtml(tName||'—')}</td>
+          <td style="font-size:12px">${escapeHtml(tEmail||'—')}</td>
           <td>${escapeHtml(formatAdminSubject(t.subject, isEn))}</td>
           <td style="font-size:12px">${escapeHtml(formatAdminGrades(t, isEn))}</td>
           <td style="font-size:12px;color:var(--grey-3)">${formatAdminDate(t.createdAt, isEn)}</td>
-          <td><button type="button" class="action-btn danger" style="font-size:12px;padding:4px 10px;white-space:nowrap"
-            onclick="adminDeleteTeacher(${keyArg}, ${uidArg}, ${nameArg}, ${emailArg})">🗑️ ${isEn?'Delete':'حذف'}</button></td>
+          <td><button type="button" class="action-btn danger admin-delete-teacher-btn" style="font-size:12px;padding:4px 10px;white-space:nowrap"
+            data-teacher-key="${escapeHtml(key)}"
+            data-teacher-uid="${escapeHtml(uid)}"
+            data-teacher-name="${escapeHtml(tName)}"
+            data-teacher-email="${escapeHtml(tEmail)}">🗑️ ${isEn?'Delete':'حذف'}</button></td>
         </tr>`;
       }).join('');
+      bindAdminTeacherDeleteButtons();
     }
 
     const parents = [];
@@ -2094,20 +2154,44 @@ async function adminDeleteParentRegistration(mid, studentName){
   if(!mid) return;
   const label = studentName || mid;
   if(!confirm(isEn
-    ? `Remove parent registration for "${label}"?\nThey can register again on next login.`
-    : `حذف تسجيل ولي أمر "${label}"؟\nيمكنه الدخول مجدداً عند تسجيل الدخول التالي.`)) return;
+    ? `Remove parent registration for "${label}"?\nThey will need the ministry ID again on next login.`
+    : `حذف تسجيل ولي أمر "${label}"؟\nسيحتاج الرقم الوزاري مجدداً عند الدخول التالي.`)) return;
   if(typeof db==='undefined'){
     showToast(isEn ? '❌ Not connected' : '❌ غير متصل');
     return;
   }
   try{
-    await db.ref('registeredParents/'+mid).remove();
+    const snap = await db.ref('registeredParents/'+mid).once('value');
+    const p = snap.val();
+    const updates = {};
+    updates['registeredParents/'+mid] = null;
+    if(p?.name){
+      const sessionKey = makeParentSessionKey(p.cls, p.section, p.name);
+      updates['parentQuickLogin/'+sessionKey] = null;
+    }
+    await db.ref().update(updates);
     showToast(isEn ? '✅ Parent registration removed' : '✅ تم حذف تسجيل ولي الأمر');
     adminLoadMonitoring();
   }catch(err){
     console.error(err);
     showToast(isEn ? '❌ Delete failed' : '❌ فشل الحذف');
   }
+}
+
+function bindAdminTeacherDeleteButtons(){
+  const tbody = document.getElementById('admin-teachers-tbody');
+  if(!tbody || tbody.dataset.deleteBound === '1') return;
+  tbody.dataset.deleteBound = '1';
+  tbody.addEventListener('click', e=>{
+    const btn = e.target.closest('.admin-delete-teacher-btn');
+    if(!btn) return;
+    adminDeleteTeacher(
+      btn.dataset.teacherKey || '',
+      btn.dataset.teacherUid || '',
+      btn.dataset.teacherName || '',
+      btn.dataset.teacherEmail || ''
+    );
+  });
 }
 
 async function adminDeleteTeacher(teacherKey, teacherUid, teacherName, teacherEmail){
@@ -2124,31 +2208,61 @@ async function adminDeleteTeacher(teacherKey, teacherUid, teacherName, teacherEm
     showToast(isEn ? '❌ Admin login required' : '❌ يجب تسجيل دخول المسؤول');
     return;
   }
-  if(!getCloudFunctions()){
-    showToast(t('adminDeleteTeacherFunctions'));
+  if(typeof db === 'undefined'){
+    showToast(isEn ? '❌ Not connected' : '❌ غير متصل');
     return;
   }
 
   try{
-    const callable = getCloudFunctions().httpsCallable('adminDeleteTeacher');
-    await callable({ key: teacherKey, uid: teacherUid || null });
-    showToast(t('adminDeleteTeacherOk'));
+    const fn = getCloudFunctions();
+    if(fn){
+      const callable = fn.httpsCallable('adminDeleteTeacher');
+      await callable({ key: teacherKey, uid: teacherUid || null });
+      showToast(t('adminDeleteTeacherOk'));
+      adminLoadMonitoring();
+      return;
+    }
+  }catch(e){
+    console.error('adminDeleteTeacher callable', e);
+    const code = e?.code || '';
+    const msg = e?.message || '';
+    if(code === 'functions/permission-denied'){
+      showToast(isEn ? '❌ Admin permission required' : '❌ صلاحية المسؤول مطلوبة');
+      return;
+    }
+    if(code === 'functions/unauthenticated'){
+      showToast(isEn ? '❌ Session expired — log in again' : '❌ انتهت الجلسة — سجّل الدخول مجدداً');
+      return;
+    }
+    if(code === 'functions/failed-precondition'){
+      showToast(isEn ? '❌ Cannot delete your own admin account' : '❌ لا يمكن حذف حساب المسؤول الحالي');
+      return;
+    }
+    if(code !== 'functions/not-found' && !msg.includes('NOT FOUND')){
+      try{
+        await adminDeleteTeacherDbOnly(teacherKey, teacherUid || null);
+        showToast(isEn
+          ? '✅ Teacher data deleted (login account may remain — redeploy functions for full delete)'
+          : '✅ تم حذف بيانات المعلّم (قد يبقى حساب الدخول — انشر Functions للحذف الكامل)');
+        adminLoadMonitoring();
+        return;
+      }catch(dbErr){
+        console.error('adminDeleteTeacherDbOnly', dbErr);
+      }
+    }
+    showToast(t('adminDeleteTeacherFail') + (msg ? ': ' + msg : ''));
+    return;
+  }
+
+  try{
+    await adminDeleteTeacherDbOnly(teacherKey, teacherUid || null);
+    showToast(isEn
+      ? '✅ Teacher data deleted (login account may remain — deploy functions for full delete)'
+      : '✅ تم حذف بيانات المعلّم (قد يبقى حساب الدخول — انشر Functions للحذف الكامل)');
     adminLoadMonitoring();
   }catch(e){
-    console.error('adminDeleteTeacher', e);
-    const code = e.code || '';
-    const msg = e.message || '';
-    if(code === 'functions/not-found' || msg.includes('NOT FOUND')){
-      showToast(t('adminDeleteTeacherFunctions'));
-    } else if(code === 'functions/permission-denied'){
-      showToast(isEn ? '❌ Admin permission required' : '❌ صلاحية المسؤول مطلوبة');
-    } else if(code === 'functions/unauthenticated'){
-      showToast(isEn ? '❌ Session expired — log in again' : '❌ انتهت الجلسة — سجّل الدخول مجدداً');
-    } else if(code === 'functions/failed-precondition'){
-      showToast(isEn ? '❌ Cannot delete your own admin account' : '❌ لا يمكن حذف حساب المسؤول الحالي');
-    } else {
-      showToast(t('adminDeleteTeacherFail') + (msg ? ': ' + msg : ''));
-    }
+    console.error('adminDeleteTeacherDbOnly', e);
+    showToast(t('adminDeleteTeacherFail'));
   }
 }
 
@@ -2171,6 +2285,61 @@ function registerParentSession(parent){
       registeredAt: current.registeredAt || now,
     };
   }).catch(()=>{});
+
+  const sessionKey = makeParentSessionKey(parent.cls, parent.section, parent.name);
+  db.ref('parentQuickLogin/'+sessionKey).transaction(current=>{
+    if(!current) return { ...payload, registeredAt: now };
+    return {
+      ...current,
+      ...payload,
+      registeredAt: current.registeredAt || now,
+    };
+  }).catch(()=>{});
+}
+
+async function syncParentQuickLoginFromRegistry(){
+  if(window._parentQuickLoginSynced || typeof db==='undefined' || !IS_ADMIN) return;
+  window._parentQuickLoginSynced = true;
+  try{
+    const snap = await db.ref('registeredParents').once('value');
+    if(!snap.exists()) return;
+    const updates = {};
+    snap.forEach(child=>{
+      const p = child.val();
+      if(!p?.mid || !p?.name) return;
+      const sessionKey = makeParentSessionKey(p.cls, p.section, p.name);
+      updates['parentQuickLogin/'+sessionKey] = {
+        cls: p.cls || '',
+        section: p.section || '',
+        name: p.name,
+        mid: String(p.mid),
+        registeredAt: p.registeredAt || null,
+        lastLogin: p.lastLogin || null,
+      };
+    });
+    if(Object.keys(updates).length) await db.ref().update(updates);
+  }catch(e){
+    console.warn('syncParentQuickLoginFromRegistry', e);
+  }
+}
+
+async function adminDeleteTeacherDbOnly(teacherKey, teacherUid){
+  const updates = {};
+  updates['teachers/'+teacherKey] = null;
+  updates['teacherData/'+teacherKey] = null;
+  updates['publicTeachers/'+teacherKey] = null;
+  if(teacherUid) updates['teacherLookup/'+teacherUid] = null;
+  await db.ref().update(updates);
+  try{
+    const complaintsSnap = await db.ref('complaints').once('value');
+    if(complaintsSnap.exists()){
+      const cUpdates = {};
+      complaintsSnap.forEach(child=>{
+        if(child.val()?.teacherKey === teacherKey) cUpdates[child.key] = null;
+      });
+      if(Object.keys(cUpdates).length) await db.ref('complaints').update(cUpdates);
+    }
+  }catch(e){ console.warn('adminDeleteTeacherDbOnly complaints', e); }
 }
 
 function initDashboard(){
