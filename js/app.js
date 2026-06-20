@@ -595,6 +595,9 @@ const SUBJECTS = {
 // Current logged-in teacher profile
 let CURRENT_TEACHER = null;
 let TEACHER_SETTINGS = { oneDriveUrl: '', lastGradeSync: '' };
+let MS_CLIENT_ID = '';
+let msalInstance = null;
+const MS_SCOPES = ['Files.Read', 'User.Read'];
 window.TEACHER_STUDENTS = {}; // students uploaded by this teacher (legacy)
 window.ADMIN_STUDENTS  = {}; // students from admin /students/ path
 
@@ -2765,8 +2768,14 @@ const TRANSLATIONS = {
     settingsUrlLabel: '🌐 رابط التطبيق (URL الكامل)',
     settingsSave: '💾 حفظ',
     settingsGradesLabel: '📊 سجل الدرجات (OneDrive)',
-    settingsOneDriveHelp: 'ارفع ملف Excel على OneDrive وشاركه «أي شخص لديه الرابط». الصق الرابط هنا — عند «تحديث من OneDrive» أو زر تحديث الشريط تُقرأ الدرجات تلقائياً.',
-    settingsOneDrivePH: 'https://1drv.ms/x/s!...',
+    settingsOneDriveHelp: 'ارفع ملف Excel على OneDrive. اضغط «ربط حساب Microsoft» (نفس حساب OneDrive) ثم الصق الرابط. Microsoft لا يسمح بالتحميل التلقائي بدون تسجيل الدخول. بديل: زر 📂 تحديث الدرجات من الشريط.',
+    settingsOneDrivePH: 'https://1drv.ms/x/c/...',
+    settingsMsConnect: '🔗 ربط حساب Microsoft',
+    settingsMsConnected: '✅ Microsoft متصل',
+    settingsMsNotConfigured: '⚠️ يحتاج المسؤول إعداد Azure App (مرة واحدة)',
+    settingsMsLoginRequired: '🔗 سجّل دخول Microsoft أولاً',
+    settingsMsConnectedOk: '✅ تم ربط حساب Microsoft',
+    settingsMsConnectFail: '❌ فشل ربط Microsoft',
     settingsOneDriveUpdate: '🔄 تحديث من OneDrive',
     settingsGradesDelete: '🗑️ حذف الدرجات',
     settingsLastSync: 'آخر تحديث:',
@@ -3051,8 +3060,14 @@ const TRANSLATIONS = {
     settingsUrlLabel: '🌐 App URL (full link)',
     settingsSave: '💾 Save',
     settingsGradesLabel: '📊 Grade record (OneDrive)',
-    settingsOneDriveHelp: 'Upload the Excel file to OneDrive and share it as "Anyone with the link". Paste the link here — "Update from OneDrive" or the toolbar refresh will import grades automatically.',
-    settingsOneDrivePH: 'https://1drv.ms/x/s!...',
+    settingsOneDriveHelp: 'Upload Excel to OneDrive. Click "Connect Microsoft" (same OneDrive account), then paste the link. Microsoft blocks automatic download without sign-in. Alternative: use 📂 Update grades from the toolbar.',
+    settingsOneDrivePH: 'https://1drv.ms/x/c/...',
+    settingsMsConnect: '🔗 Connect Microsoft',
+    settingsMsConnected: '✅ Microsoft connected',
+    settingsMsNotConfigured: '⚠️ Admin must configure Azure App (one-time)',
+    settingsMsLoginRequired: '🔗 Sign in to Microsoft first',
+    settingsMsConnectedOk: '✅ Microsoft account connected',
+    settingsMsConnectFail: '❌ Microsoft connection failed',
     settingsOneDriveUpdate: '🔄 Update from OneDrive',
     settingsGradesDelete: '🗑️ Delete grades',
     settingsLastSync: 'Last update:',
@@ -3651,6 +3666,9 @@ function applySharedUiLang(){
   const odHelp = document.getElementById('settings-onedrive-help');
   if(odHelp) odHelp.textContent = t('settingsOneDriveHelp');
   setPH('settings-onedrive-url', 'settingsOneDrivePH');
+  const msBtn = document.getElementById('settings-ms-connect-btn');
+  if(msBtn) msBtn.textContent = t('settingsMsConnect');
+  if(typeof updateMicrosoftSettingsStatus === 'function') updateMicrosoftSettingsStatus();
   const odUp = document.getElementById('settings-onedrive-update-btn');
   if(odUp) odUp.textContent = t('settingsOneDriveUpdate');
   const odDel = document.getElementById('settings-onedrive-delete-btn');
@@ -5793,6 +5811,131 @@ function getCloudFunctions(){
   catch(e){ return typeof firebase.functions === 'function' ? firebase.functions() : null; }
 }
 
+function getMsRedirectUri(){
+  const raw = (APP.siteUrl || (window.location.origin + window.location.pathname)).trim();
+  const clean = raw.split('#')[0].split('?')[0].replace(/\/?$/, '/');
+  return clean || (window.location.origin + '/');
+}
+
+function getMsalApp(){
+  if(!MS_CLIENT_ID || typeof msal === 'undefined') return null;
+  if(!msalInstance){
+    msalInstance = new msal.PublicClientApplication({
+      auth: {
+        clientId: MS_CLIENT_ID,
+        authority: 'https://login.microsoftonline.com/consumers',
+        redirectUri: getMsRedirectUri(),
+      },
+      cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: false },
+    });
+  }
+  return msalInstance;
+}
+
+function encodeOneDriveShareUrl(shareUrl){
+  const base64 = btoa(unescape(encodeURIComponent(String(shareUrl))))
+    .replace(/=/g, '')
+    .replace(/\//g, '_')
+    .replace(/\+/g, '-');
+  return 'u!' + base64;
+}
+
+function arrayBufferToBase64(buffer){
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  for(let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+function updateMicrosoftSettingsStatus(){
+  const statusEl = document.getElementById('settings-ms-status');
+  const btn = document.getElementById('settings-ms-connect-btn');
+  if(!statusEl && !btn) return;
+  if(!MS_CLIENT_ID){
+    if(statusEl) statusEl.textContent = t('settingsMsNotConfigured');
+    if(btn) btn.style.display = 'none';
+    return;
+  }
+  if(btn) btn.style.display = '';
+  const app = getMsalApp();
+  const connected = !!(app && app.getAllAccounts().length);
+  if(statusEl) statusEl.textContent = connected ? t('settingsMsConnected') : t('settingsMsLoginRequired');
+}
+
+async function loadMicrosoftClientId(){
+  if(typeof db === 'undefined') return;
+  try{
+    const snap = await db.ref('publicConfig/msClientId').once('value');
+    MS_CLIENT_ID = String(snap.val() || '').trim();
+    updateMicrosoftSettingsStatus();
+  }catch(e){ console.warn('loadMicrosoftClientId', e); }
+}
+
+async function acquireMicrosoftAccessToken(interactive){
+  const app = getMsalApp();
+  if(!app) return null;
+  const accounts = app.getAllAccounts();
+  const request = { scopes: MS_SCOPES, account: accounts[0] };
+  try{
+    if(accounts.length){
+      const silent = await app.acquireTokenSilent(request);
+      return silent.accessToken;
+    }
+  }catch(e){
+    if(!interactive) return null;
+  }
+  if(!interactive) return null;
+  const popup = await app.loginPopup({ scopes: MS_SCOPES, prompt: accounts.length ? 'select_account' : 'login' });
+  updateMicrosoftSettingsStatus();
+  return popup.accessToken;
+}
+
+async function connectMicrosoftForOneDrive(){
+  if(!MS_CLIENT_ID){
+    showToast(t('settingsMsNotConfigured'));
+    return;
+  }
+  try{
+    await acquireMicrosoftAccessToken(true);
+    showToast(t('settingsMsConnectedOk'));
+    updateMicrosoftSettingsStatus();
+  }catch(e){
+    console.warn('connectMicrosoftForOneDrive', e);
+    showToast(t('settingsMsConnectFail') + (e.message ? ': ' + e.message : ''));
+  }
+}
+
+async function downloadOneDriveViaMicrosoftGraph(shareUrl, accessToken){
+  const shareId = encodeOneDriveShareUrl(shareUrl);
+  const res = await fetch(
+    `https://graph.microsoft.com/v1.0/shares/${shareId}/driveItem/content`,
+    { headers: { Authorization: 'Bearer ' + accessToken }, redirect: 'follow' }
+  );
+  if(!res.ok){
+    let detail = 'Graph ' + res.status;
+    try{
+      const err = await res.json();
+      detail = err?.error?.message || detail;
+    }catch(_e){}
+    throw new Error(detail);
+  }
+  return arrayBufferToBase64(await res.arrayBuffer());
+}
+
+async function finishOneDriveImport(base64, url, silent){
+  const wb = XLSX.read(base64, { type:'base64' });
+  TEACHER_SETTINGS.oneDriveUrl = url;
+  const ok = await processGradesWorkbook(wb, { silent: !!silent });
+  if(ok && typeof db !== 'undefined'){
+    const tKey = getTeacherKey();
+    const ts = new Date().toISOString();
+    TEACHER_SETTINGS.lastGradeSync = ts;
+    if(tKey) await db.ref('teacherData/'+tKey+'/settings').update({ oneDriveUrl: url, lastGradeSync: ts });
+    populateSettingsGrades();
+  }
+  return ok;
+}
+
 function populateSettingsAccount(){
   const wrap = document.getElementById('settings-account-section');
   const box = document.getElementById('settings-account-info');
@@ -5853,6 +5996,7 @@ function openSettings(){
   if(pw2) pw2.value = '';
   populateSettingsAccount();
   populateSettingsGrades();
+  updateMicrosoftSettingsStatus();
   document.getElementById('settings-modal').classList.add('open');
 }
 
@@ -5976,50 +6120,55 @@ async function updateGradesFromOneDrive(silent){
     if(!silent) showToast(t('settingsOneDriveRequired'));
     return false;
   }
-  if(!getCloudFunctions()){
-    if(!silent) showToast(t('settingsOneDriveFunctions'));
-    return false;
-  }
   if(!silent) showToast(t('settingsOneDriveUpdating'));
-  try{
-    const callable = getCloudFunctions().httpsCallable('fetchOneDriveExcel');
-    const res = await callable({ url });
-    const base64 = res?.data?.base64;
-    if(!base64) throw new Error(isEn ? 'Empty file from OneDrive' : 'ملف فارغ من OneDrive');
-    const wb = XLSX.read(base64, { type:'base64' });
-    TEACHER_SETTINGS.oneDriveUrl = url;
-    const ok = await processGradesWorkbook(wb, { silent: !!silent });
-    if(ok && typeof db !== 'undefined'){
-      const tKey = getTeacherKey();
-      const ts = new Date().toISOString();
-      TEACHER_SETTINGS.lastGradeSync = ts;
-      if(tKey) await db.ref('teacherData/'+tKey+'/settings').update({ oneDriveUrl: url, lastGradeSync: ts });
-      populateSettingsGrades();
-    }
-    return ok;
-  }catch(e){
-    console.error('updateGradesFromOneDrive', e);
-    if(!silent){
-      const code = e?.code || '';
-      const msg = e?.message || '';
-      if(code === 'functions/not-found' && /fetchOneDriveExcel|NOT FOUND|Function/i.test(msg)){
-        showToast(t('settingsOneDriveFunctions'));
-      } else if(code === 'functions/unauthenticated'){
-        showToast(isEn ? '❌ Session expired — log in again' : '❌ انتهت الجلسة — سجّل الدخول مجدداً');
-      } else if(code === 'functions/permission-denied'){
-        showToast(isEn ? '❌ Teachers only' : '❌ للمعلمين المسجّلين فقط');
-      } else if(code === 'functions/invalid-argument'){
-        showToast(t('settingsOneDriveFail') + (msg ? ': '+msg : ''));
-      } else if(code === 'functions/failed-precondition' || code === 'functions/not-found'){
-        showToast(t('settingsOneDriveFail') + (msg ? ': '+msg : ''));
-      } else if(code === 'functions/unavailable' || code === 'functions/internal'){
-        showToast(t('settingsOneDriveFail') + (msg ? ': '+msg : ''));
-      } else {
-        showToast(t('settingsOneDriveFail') + (msg ? ': '+msg : ''));
+  let lastError = null;
+
+  if(MS_CLIENT_ID){
+    try{
+      let token = await acquireMicrosoftAccessToken(false);
+      if(!token && !silent){
+        showToast(t('settingsMsLoginRequired'));
+        token = await acquireMicrosoftAccessToken(true);
       }
+      if(token){
+        const base64 = await downloadOneDriveViaMicrosoftGraph(url, token);
+        return await finishOneDriveImport(base64, url, silent);
+      }
+    }catch(e){
+      console.warn('updateGradesFromOneDrive (Microsoft Graph)', e);
+      lastError = e;
     }
-    return false;
   }
+
+  const fn = getCloudFunctions();
+  if(fn){
+    try{
+      const callable = fn.httpsCallable('fetchOneDriveExcel');
+      const res = await callable({ url });
+      const base64 = res?.data?.base64;
+      if(!base64) throw new Error(isEn ? 'Empty file from OneDrive' : 'ملف فارغ من OneDrive');
+      return await finishOneDriveImport(base64, url, silent);
+    }catch(e){
+      console.error('updateGradesFromOneDrive (Cloud Function)', e);
+      lastError = e;
+    }
+  }
+
+  if(!silent){
+    const msg = lastError?.message || '';
+    if(!MS_CLIENT_ID){
+      showToast(isEn
+        ? '❌ Connect Microsoft or use 📂 Update grades from toolbar'
+        : '❌ اربط Microsoft أو استخدم 📂 تحديث الدرجات من الشريط');
+    } else if(/401|403|denied|Unauthenticated|InvalidAuthenticationToken/i.test(msg)){
+      showToast(t('settingsOneDriveFail') + ': ' + (isEn
+        ? 'Sign in to Microsoft (same OneDrive account) then retry'
+        : 'سجّل دخول Microsoft (نفس حساب OneDrive) ثم أعد المحاولة'));
+    } else {
+      showToast(t('settingsOneDriveFail') + (msg ? ': '+msg : ''));
+    }
+  }
+  return false;
 }
 
 // ══════════════════════════════════════════════════
@@ -7831,4 +7980,5 @@ document.addEventListener('DOMContentLoaded', async ()=>{
       saveState();
     }
   }catch(e){ console.warn('students preload', e); }
+  loadMicrosoftClientId();
 });
