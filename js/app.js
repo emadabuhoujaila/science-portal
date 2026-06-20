@@ -1314,6 +1314,7 @@ function _enterDashboard(teacher){
     }
     // Start Firebase listeners
     startTeacherListener(key);
+    schedulePushRegistration('teacher', teacher);
   }
 
   loadAndInit._teacher = teacher;
@@ -1740,6 +1741,7 @@ function _enterAdminDashboard(){
   if(as){ as.classList.add('active'); as.style.display='block'; as.style.minHeight='100vh'; }
   adminLoadStudents();
   startAdminComplaintsListener();
+  schedulePushRegistration('admin');
 }
 
 
@@ -5037,6 +5039,8 @@ function renderParentSubjectTabs(cls, studentName, mid, teachersList, section){
   if(teachersList.length) loadSubjectTabContent(0, cls, studentName, mid, teachersList);
   // Start listeners for badges + live grades
   setTimeout(()=>_startParentListeners(cls, studentName, mid, teachersList, section), 400);
+  renderNotifButton();
+  schedulePushRegistration('parent', { mid, cls, name: studentName, section: window._parentSubjectContext?.section || '' });
 }
 
 
@@ -8108,22 +8112,116 @@ function showInstallOptions(){
   }
 }
 
-// ─── Notifications ───
+// ─── Notifications (FCM — واتساب) ───
 async function requestNotifPermission(){
   if(!('Notification' in window)) return 'unsupported';
   if(Notification.permission === 'granted') return 'granted';
   return await Notification.requestPermission();
 }
 
-async function requestAndSubscribe(){
-  const perm = await requestNotifPermission();
-  if(perm === 'granted'){
-    showToast('✅ تم تفعيل الإشعارات');
-    renderNotifButton();
-  } else if(perm === 'denied'){
-    showToast('⚠️ مرفوض — فعّل الإشعارات من إعدادات المتصفح');
-    renderNotifButton();
+function showPushOptInModal(onAccept){
+  if(document.getElementById('push-optin-modal')) return;
+  const isEn = typeof currentLang !== 'undefined' && currentLang === 'en';
+  const overlay = document.createElement('div');
+  overlay.id = 'push-optin-modal';
+  overlay.className = 'modal-overlay open';
+  overlay.style.zIndex = '99990';
+  overlay.innerHTML = `
+    <div class="modal-box" style="max-width:400px;text-align:center">
+      <div style="font-size:42px;margin-bottom:8px">🔔</div>
+      <h3 style="color:var(--teal-dark);margin:0 0 8px">${isEn ? 'Enable notifications' : 'فعّل الإشعارات'}</h3>
+      <p style="font-size:14px;color:var(--grey-2);line-height:1.75;margin:0 0 18px">
+        ${isEn
+          ? 'Get messages, notes and complaints instantly — even when the app is closed, like WhatsApp.'
+          : 'استلم الرسائل والملاحظات والشكاوى فوراً — حتى لو التطبيق مغلق، مثل واتساب.'}
+      </p>
+      <button type="button" id="push-optin-yes" class="btn-primary" style="margin-bottom:10px">${isEn ? '✅ Enable now' : '✅ تفعيل الآن'}</button>
+      <button type="button" id="push-optin-later" style="width:100%;background:transparent;border:none;color:var(--grey-3);padding:8px;font-family:inherit;font-size:13px;cursor:pointer">${isEn ? 'Later' : 'لاحقاً'}</button>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#push-optin-yes').onclick = async ()=>{
+    overlay.remove();
+    if(onAccept) await onAccept(true);
+  };
+  overlay.querySelector('#push-optin-later').onclick = ()=>{
+    sessionStorage.setItem('push-optin-dismissed','1');
+    overlay.remove();
+    if(onAccept) onAccept(false);
+  };
+}
+
+async function ensurePushForCurrentUser(opts){
+  opts = opts || {};
+  if(!window.PortalPush) return { ok:false, reason:'no_module' };
+
+  if(opts.role === 'parent' && opts.parent){
+    return PortalPush.registerParent(opts.parent, { forcePrompt: !!opts.forcePrompt });
   }
+  if(opts.role === 'teacher' && opts.teacher){
+    return PortalPush.registerTeacher(opts.teacher, { forcePrompt: !!opts.forcePrompt });
+  }
+  if(opts.role === 'admin'){
+    const uid = (typeof auth !== 'undefined' && auth.currentUser?.uid) || opts.uid;
+    if(uid) return PortalPush.registerAdmin(uid, { forcePrompt: !!opts.forcePrompt });
+  }
+
+  PortalPush.detectContextFromApp();
+  return PortalPush.enable({ forcePrompt: !!opts.forcePrompt });
+}
+
+function schedulePushRegistration(role, data){
+  if(!window.PortalPush) return;
+  const run = async (forcePrompt)=>{
+    let r;
+    if(role === 'parent' && data?.mid){
+      r = await PortalPush.registerParent(data, { forcePrompt });
+    } else if(role === 'teacher' && data){
+      r = await PortalPush.registerTeacher(data, { forcePrompt });
+    } else if(role === 'admin'){
+      const uid = typeof auth !== 'undefined' ? auth.currentUser?.uid : null;
+      if(uid) r = await PortalPush.registerAdmin(uid, { forcePrompt });
+    }
+    if(r?.ok){
+      renderNotifButton();
+      renderSettingsNotifAction();
+    } else if(r?.reason === 'denied'){
+      renderNotifButton();
+    }
+    return r;
+  };
+
+  const perm = ('Notification' in window) ? Notification.permission : 'unsupported';
+  if(perm === 'granted'){
+    setTimeout(()=>run(false), 600);
+    return;
+  }
+  if(perm === 'denied'){
+    renderNotifButton();
+    return;
+  }
+  if(sessionStorage.getItem('push-optin-dismissed')) return;
+  setTimeout(()=>{
+    showPushOptInModal(async (accepted)=>{
+      if(accepted) await run(true);
+    });
+  }, 900);
+}
+
+async function requestAndSubscribe(){
+  const r = await ensurePushForCurrentUser({ forcePrompt: true });
+  if(r?.ok){
+    showToast('✅ تم تفعيل الإشعارات — ستصلك حتى لو التطبيق مغلق');
+  } else if(r?.reason === 'denied'){
+    showToast('⚠️ مرفوض — فعّل الإشعارات من إعدادات الجهاز');
+  } else if(r?.reason === 'no_vapid'){
+    showToast('⚠️ إعداد VAPID غير مكتمل');
+  } else if(r?.reason === 'token_save_failed'){
+    showToast('⚠️ تعذّر حفظ رمز الجهاز — أعد الدخول');
+  } else if(r?.reason !== 'unsupported'){
+    showToast('⚠️ تعذّر تفعيل الإشعارات');
+  }
+  renderNotifButton();
+  renderSettingsNotifAction();
 }
 
 async function sendLocalNotif(title, body){

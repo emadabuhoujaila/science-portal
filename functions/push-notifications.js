@@ -69,7 +69,10 @@ async function removeBadToken(pathPrefix, tokenId) {
 }
 
 async function sendToTokens(tokens, notification, data, tokenPathPrefix) {
-  if (!tokens.length) return { sent: 0, failed: 0 };
+  if (!tokens.length) {
+    console.log('FCM: no tokens at', tokenPathPrefix);
+    return { sent: 0, failed: 0 };
+  }
   const messaging = admin.messaging();
   let sent = 0;
   let failed = 0;

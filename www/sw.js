@@ -15,7 +15,7 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 const APP_URL  = 'https://emadabuhoujaila.github.io/science-portal/';
-const CACHE_VER = 'portal-v7';
+const CACHE_VER = 'portal-v8';
 
 messaging.onBackgroundMessage((payload) => {
   const title = payload.notification?.title || payload.data?.title || '📚 بوابة المتابعة';
