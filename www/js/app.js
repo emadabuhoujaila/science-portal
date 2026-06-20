@@ -315,10 +315,17 @@ function genPin(){ return String(Math.floor(1000+Math.random()*9000)); }
 //  ROUTING
 // ══════════════════════════════════════════════════
 function showScreen(id){
-  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.screen').forEach(s=>{
+    s.classList.remove('active','uae-enter');
+  });
   const el = document.getElementById('screen-'+id);
-  if(el) el.classList.add('active');
-  else console.error('showScreen: screen-'+id+' not found');
+  if(el){
+    el.classList.add('active');
+    void el.offsetWidth;
+    el.classList.add('uae-enter');
+  } else {
+    console.error('showScreen: screen-'+id+' not found');
+  }
 }
 function escapeHtml(value){
   return String(value ?? '')

@@ -1,0 +1,295 @@
+/* ═══════════════════════════════════════════════════════════
+   UAE Visual Identity — تراث معاصر
+   Sadu geometry · light motion · flag accents
+   ═══════════════════════════════════════════════════════════ */
+
+:root {
+  --uae-red: #ce1126;
+  --uae-green: #00732f;
+  --uae-black: #000000;
+  --uae-white: #ffffff;
+  --uae-gold: #c8961e;
+  --uae-gold-soft: #e8c97a;
+  --uae-sadu-teal: rgba(13, 110, 110, 0.08);
+  --uae-sadu-gold: rgba(200, 150, 30, 0.1);
+  --uae-flag-stripe: linear-gradient(
+    to left,
+    var(--uae-red) 0%,
+    var(--uae-red) 25%,
+    var(--uae-green) 25%,
+    var(--uae-green) 50%,
+    var(--uae-black) 50%,
+    var(--uae-black) 75%,
+    var(--uae-white) 75%,
+    var(--uae-white) 100%
+  );
+  --sadu-pattern: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48' viewBox='0 0 48 48'%3E%3Cg fill='none' stroke-width='0.6' opacity='0.55'%3E%3Cpath d='M0 24 L24 0 L48 24 L24 48 Z' stroke='%23c8961e'/%3E%3Cpath d='M12 24 L24 12 L36 24 L24 36 Z' stroke='%230d6e6e'/%3E%3Cpath d='M24 0 L24 48 M0 24 L48 24' stroke='%23c8961e' opacity='0.35'/%3E%3C/g%3E%3C/svg%3E");
+  --uae-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --uae-dur-fast: 0.25s;
+  --uae-dur-med: 0.4s;
+}
+
+/* ─── Sadu page backdrop (login, lock, dashboards) ─── */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.45;
+  background-image: var(--sadu-pattern);
+  background-size: 48px 48px;
+}
+
+.screen.active,
+#screen-splash.splash-screen.splash-active {
+  position: relative;
+  z-index: 1;
+}
+
+/* ─── Splash — gradient + subtle sadu (GIF unchanged) ─── */
+#screen-splash .splash-bg {
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 40%, rgba(13, 110, 110, 0.35) 0%, transparent 70%),
+    linear-gradient(165deg, #041818 0%, #0a4a4a 45%, #0d6e6e 100%);
+}
+#screen-splash .splash-bg::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.18;
+  background-image: var(--sadu-pattern);
+  background-size: 56px 56px;
+}
+#screen-splash .splash-title::after {
+  content: "";
+  display: block;
+  width: min(200px, 60vw);
+  height: 3px;
+  margin: 14px auto 0;
+  border-radius: 99px;
+  background: var(--uae-flag-stripe);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+}
+
+/* ─── UAE flag stripe utility ─── */
+.uae-flag-stripe,
+.login-card::before,
+.lock-card::before,
+.modal-box::before,
+.card::before {
+  content: "";
+  display: block;
+  height: 4px;
+  border-radius: 20px 20px 0 0;
+}
+.login-card::before,
+.lock-card::before {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 5px;
+  border-radius: 20px 20px 0 0;
+  background: var(--uae-flag-stripe);
+}
+.login-card,
+.lock-card {
+  position: relative;
+  overflow: hidden;
+}
+.card::before {
+  height: 3px;
+  background: var(--uae-flag-stripe);
+  margin: -1px -1px 0;
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.modal-box::before {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  border-radius: 16px 16px 0 0;
+  background: var(--uae-flag-stripe);
+}
+.modal-box {
+  position: relative;
+  overflow: hidden;
+}
+
+/* ─── Login & lock screens ─── */
+#screen-login,
+#screen-locked {
+  background:
+    linear-gradient(135deg, rgba(10, 74, 74, 0.97) 0%, rgba(13, 110, 110, 0.92) 55%, rgba(26, 154, 154, 0.88) 100%);
+}
+#screen-login.active .login-card,
+#screen-locked.active .lock-card {
+  box-shadow:
+    0 8px 40px rgba(10, 74, 74, 0.18),
+    0 0 0 1px rgba(200, 150, 30, 0.12);
+}
+
+/* ─── Topbars — sadu overlay + gold accent line ─── */
+.topbar {
+  background:
+    linear-gradient(rgba(10, 74, 74, 0.94), rgba(10, 74, 74, 0.94)),
+    var(--sadu-pattern);
+  background-size: auto, 40px 40px;
+  border-bottom: 2px solid rgba(200, 150, 30, 0.35);
+}
+.parent-header {
+  background:
+    linear-gradient(135deg, rgba(10, 74, 74, 0.96), rgba(13, 110, 110, 0.94)),
+    var(--sadu-pattern);
+  background-size: auto, 44px 44px;
+}
+.parent-header::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: var(--uae-flag-stripe);
+  opacity: 0.85;
+}
+
+/* ─── Stat cards stagger ─── */
+.stat-grid .stat-card {
+  animation: uae-fade-up var(--uae-dur-med) var(--uae-ease) both;
+  border: 1px solid rgba(13, 110, 110, 0.08);
+}
+.stat-grid .stat-card:nth-child(1) { animation-delay: 0.04s; }
+.stat-grid .stat-card:nth-child(2) { animation-delay: 0.08s; }
+.stat-grid .stat-card:nth-child(3) { animation-delay: 0.12s; }
+.stat-grid .stat-card:nth-child(4) { animation-delay: 0.16s; }
+.stat-grid .stat-card:nth-child(5) { animation-delay: 0.2s; }
+.stat-grid .stat-card:nth-child(6) { animation-delay: 0.24s; }
+
+/* ─── Cards & student card ─── */
+.card {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(13, 110, 110, 0.06);
+}
+.student-card {
+  border: 1px solid rgba(200, 150, 30, 0.15);
+  box-shadow: var(--shadow-lg), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+.student-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: var(--uae-flag-stripe);
+  border-radius: 16px 16px 0 0;
+}
+
+/* ─── Buttons — subtle press feedback ─── */
+.btn-primary:active,
+.btn-icon:active,
+.teacher-tb-btn:active,
+.parent-tab:active,
+.login-tab:active {
+  transform: scale(0.98);
+}
+.btn-primary {
+  background: linear-gradient(180deg, var(--teal-soft) 0%, var(--teal-mid) 100%);
+  box-shadow: 0 2px 8px rgba(10, 74, 74, 0.2);
+}
+.btn-primary:hover {
+  background: linear-gradient(180deg, var(--teal-mid) 0%, var(--teal-dark) 100%);
+}
+
+/* ─── Nav tabs active indicator ─── */
+.nav-tab.active {
+  position: relative;
+}
+.nav-tab.active::after {
+  content: "";
+  position: absolute;
+  bottom: -2px;
+  left: 18%;
+  right: 18%;
+  height: 2px;
+  background: var(--uae-gold);
+  border-radius: 99px;
+}
+
+/* ─── Toast — slide + flag accent ─── */
+.toast {
+  background: linear-gradient(135deg, var(--teal-dark), #0a5858);
+  border: 1px solid rgba(200, 150, 30, 0.35);
+  border-top: 3px solid transparent;
+  border-image: linear-gradient(to left, var(--uae-red), var(--uae-green), var(--uae-black), var(--uae-white)) 1;
+  transform: translateX(-50%) translateY(120px);
+  opacity: 0;
+  transition: transform var(--uae-dur-med) var(--uae-ease), opacity var(--uae-dur-med) var(--uae-ease);
+}
+.toast.show {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+}
+
+/* ─── Screen enter animation ─── */
+@keyframes uae-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.screen.uae-enter .login-card,
+.screen.uae-enter .lock-card,
+.screen.uae-enter .main-content,
+.screen.uae-enter .parent-body,
+.screen.uae-enter .teacher-topbar {
+  animation: uae-fade-up var(--uae-dur-med) var(--uae-ease) both;
+}
+.screen.uae-enter .parent-body {
+  animation-delay: 0.06s;
+}
+
+/* ─── Login tabs & lang button polish ─── */
+#global-lang-btn {
+  border: 1px solid rgba(200, 150, 30, 0.4) !important;
+  backdrop-filter: blur(6px);
+}
+.login-tab.active {
+  box-shadow: 0 2px 10px rgba(10, 74, 74, 0.12), inset 0 -2px 0 var(--uae-gold);
+}
+
+/* ─── Help / pin info boxes — sadu corner ─── */
+.help-box,
+.pin-info-box {
+  background-image:
+    linear-gradient(var(--teal-light), var(--teal-light)),
+    var(--sadu-pattern);
+  background-size: auto, 32px 32px;
+  background-blend-mode: normal, multiply;
+}
+
+/* ─── Reduced motion ─── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .screen.uae-enter .login-card,
+  .screen.uae-enter .lock-card,
+  .screen.uae-enter .main-content,
+  .screen.uae-enter .parent-body,
+  .stat-grid .stat-card {
+    animation: none !important;
+  }
+}
