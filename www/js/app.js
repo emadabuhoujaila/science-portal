@@ -3718,6 +3718,7 @@ function applyGlobalLang(){
   setText('login-school',       'schoolName');
   const bannerEl = document.getElementById('login-banner');
   if(bannerEl) bannerEl.alt = t('bannerAlt');
+  document.querySelectorAll('.portal-hero-banner').forEach(el=>{ el.alt = t('bannerAlt'); });
   setText('tab-teacher',        'tabTeacher');
   setText('tab-parent',         'tabParent');
   setText('tab-admin',          'tabAdmin');
@@ -3835,8 +3836,7 @@ function applyGlobalLang(){
   setText('logout-btn',      'parentLogout');
   setText('parent-school',   'schoolName');
   setText('parent-title',    'reportTitle');
-  const parentBanner = document.getElementById('parent-banner');
-  if(parentBanner) parentBanner.alt = t('bannerAlt');
+  document.querySelectorAll('.portal-hero-banner').forEach(el=>{ el.alt = t('bannerAlt'); });
   const langBtn = document.getElementById('lang-btn');
   if(langBtn) langBtn.textContent = isAr ? 'EN' : 'ع';
   const ps=document.getElementById('screen-parent');
@@ -5019,7 +5019,6 @@ function renderParentSubjectTabs(cls, studentName, mid, teachersList, section){
     </div>`).join('');
 
   document.getElementById('parent-body').innerHTML = `
-    <img src="img/portal-banner.png?v=3" alt="بوابة المتابعة الرقمية" class="parent-banner" id="parent-banner">
     <div class="student-card" style="margin-bottom:16px">
       <div class="student-avatar">🎓</div>
       <div class="student-name">${displayName}</div>

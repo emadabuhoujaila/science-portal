@@ -37,7 +37,7 @@ window.__splashDeadline = Date.now() + 5000;
 </script>
 <script>
 (function(){
-  var key='portal-cache-reset-v24';
+  var key='portal-cache-reset-v25';
   if(localStorage.getItem(key)) return;
   localStorage.setItem(key,'1');
   var done=function(){ location.reload(); };
@@ -76,8 +76,10 @@ window.__splashDeadline = Date.now() + 5000;
 <!-- ═══════════ SCREEN: MAIN LOGIN ═══════════ -->
 <div id="screen-login" class="screen">
   <button onclick="toggleLang()" id="global-lang-btn" style="position:fixed;top:16px;left:16px;z-index:999;background:var(--teal-mid);border:none;color:#fff;padding:8px 18px;border-radius:20px;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,.2);letter-spacing:1px">🌐 EN</button>
+  <div class="portal-hero-wrap portal-hero-wrap--login">
+    <img src="img/portal-hero-banner.png?v=1" alt="بوابة المتابعة الرقمية" class="portal-hero-banner" id="login-banner">
+  </div>
   <div class="login-card">
-    <img src="img/portal-banner.png?v=3" alt="بوابة المتابعة الرقمية" class="login-banner" id="login-banner">
     <h1 id="login-title">بوابة المتابعة</h1>
     <div class="login-school-box">
       <div id="login-school">مدرسة محمد بن حمد الشرقي للحلقة الثانية - بنين</div>
@@ -216,6 +218,9 @@ window.__splashDeadline = Date.now() + 5000;
 
 <!-- ═══════════ SCREEN: PIN ENTRY ═══════════ -->
 <div id="screen-locked" class="screen">
+  <div class="portal-hero-wrap portal-hero-wrap--lock">
+    <img src="img/portal-hero-banner.png?v=1" alt="بوابة المتابعة الرقمية" class="portal-hero-banner">
+  </div>
   <div class="lock-card">
     <div class="lock-icon">🔒</div>
     <h2 id="lock-student-name">اسم الطالب</h2>
@@ -255,6 +260,10 @@ window.__splashDeadline = Date.now() + 5000;
       <button class="btn-icon" id="admin-lang-btn" onclick="toggleLang()">🌐 EN</button>
       <button class="btn-icon" onclick="adminLogout()" id="admin-logout-btn">خروج</button>
     </div>
+  </div>
+
+  <div class="portal-hero-wrap">
+    <img src="img/portal-hero-banner.png?v=1" alt="بوابة المتابعة الرقمية" class="portal-hero-banner">
   </div>
 
   <div class="main-content">
@@ -577,6 +586,10 @@ window.__splashDeadline = Date.now() + 5000;
         <span class="teacher-tb-ico">🚪</span><span class="teacher-tb-lbl" id="teacher-logout-lbl">خروج</span>
       </button>
     </div>
+  </div>
+
+  <div class="portal-hero-wrap">
+    <img src="img/portal-hero-banner.png?v=1" alt="بوابة المتابعة الرقمية" class="portal-hero-banner">
   </div>
 
   <div class="nav-tabs">
@@ -912,6 +925,9 @@ window.__splashDeadline = Date.now() + 5000;
       <p id="parent-school">مدرسة محمد بن حمد الشرقي للحلقة الثانية - بنين</p>
     </div>
   </div>
+  <div class="portal-hero-wrap">
+    <img src="img/portal-hero-banner.png?v=1" alt="بوابة المتابعة الرقمية" class="portal-hero-banner">
+  </div>
   <div class="parent-body" id="parent-body"></div>
 </div>
 
@@ -1013,6 +1029,6 @@ window.__splashDeadline = Date.now() + 5000;
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
 <script src="js/firebase-init.js?v=3"></script>
-<script src="js/app.js?v=24"></script>
+<script src="js/app.js?v=25"></script>
 </body>
 </html>
