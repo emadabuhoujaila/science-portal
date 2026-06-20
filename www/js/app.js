@@ -594,6 +594,7 @@ const SUBJECTS = {
 
 // Current logged-in teacher profile
 let CURRENT_TEACHER = null;
+let TEACHER_SETTINGS = { oneDriveUrl: '', lastGradeSync: '' };
 window.TEACHER_STUDENTS = {}; // students uploaded by this teacher (legacy)
 window.ADMIN_STUDENTS  = {}; // students from admin /students/ path
 
@@ -979,6 +980,12 @@ function _enterDashboard(teacher){
         const gradesSnap = await db.ref('teacherData/'+key+'/grades').once('value');
         window.TEACHER_GRADES = gradesSnap.exists() ? gradesSnap.val() : {};
       } catch(e){ console.warn('teacherData grades load error:', e); }
+      try{
+        const settingsSnap = await db.ref('teacherData/'+key+'/settings').once('value');
+        TEACHER_SETTINGS = settingsSnap.exists() ? settingsSnap.val() : {};
+        if(!TEACHER_SETTINGS.oneDriveUrl) TEACHER_SETTINGS.oneDriveUrl = '';
+        if(!TEACHER_SETTINGS.lastGradeSync) TEACHER_SETTINGS.lastGradeSync = '';
+      } catch(e){ console.warn('teacherData settings load error:', e); }
     }
 
     // Step 3: Start Firebase listeners for this teacher's data
@@ -2757,6 +2764,19 @@ const TRANSLATIONS = {
     settingsSaved: '✅ تم حفظ الإعدادات',
     settingsUrlLabel: '🌐 رابط التطبيق (URL الكامل)',
     settingsSave: '💾 حفظ',
+    settingsGradesLabel: '📊 سجل الدرجات (OneDrive)',
+    settingsOneDriveHelp: 'ارفع ملف Excel على OneDrive وشاركه «أي شخص لديه الرابط». الصق الرابط هنا — عند «تحديث من OneDrive» أو زر تحديث الشريط تُقرأ الدرجات تلقائياً.',
+    settingsOneDrivePH: 'https://1drv.ms/x/s!...',
+    settingsOneDriveUpdate: '🔄 تحديث من OneDrive',
+    settingsGradesDelete: '🗑️ حذف الدرجات',
+    settingsLastSync: 'آخر تحديث:',
+    settingsLastSyncNever: 'لم يُحدَّث بعد',
+    settingsOneDriveRequired: '⚠️ أدخل رابط OneDrive أولاً',
+    settingsOneDriveUpdating: '⏳ جارٍ التحميل من OneDrive...',
+    settingsOneDriveFunctions: '❌ يجب نشر Cloud Functions: npm run deploy:functions',
+    settingsOneDriveFail: '❌ فشل التحميل من OneDrive',
+    settingsGradesDeleteConfirm: 'حذف كل درجاتك من التطبيق؟ لا يمكن التراجع.',
+    settingsGradesDeleted: '✅ تم حذف الدرجات',
     settingsCancel: 'إلغاء',
     bvAnalyticsTitle: '📊 تحليل السلوك',
     bvAnalyticsClose: '✕ إغلاق',
@@ -3030,6 +3050,19 @@ const TRANSLATIONS = {
     settingsSaved: '✅ Settings saved',
     settingsUrlLabel: '🌐 App URL (full link)',
     settingsSave: '💾 Save',
+    settingsGradesLabel: '📊 Grade record (OneDrive)',
+    settingsOneDriveHelp: 'Upload the Excel file to OneDrive and share it as "Anyone with the link". Paste the link here — "Update from OneDrive" or the toolbar refresh will import grades automatically.',
+    settingsOneDrivePH: 'https://1drv.ms/x/s!...',
+    settingsOneDriveUpdate: '🔄 Update from OneDrive',
+    settingsGradesDelete: '🗑️ Delete grades',
+    settingsLastSync: 'Last update:',
+    settingsLastSyncNever: 'Not updated yet',
+    settingsOneDriveRequired: '⚠️ Enter a OneDrive link first',
+    settingsOneDriveUpdating: '⏳ Downloading from OneDrive...',
+    settingsOneDriveFunctions: '❌ Deploy Cloud Functions first: npm run deploy:functions',
+    settingsOneDriveFail: '❌ OneDrive download failed',
+    settingsGradesDeleteConfirm: 'Delete all your grades from the app? This cannot be undone.',
+    settingsGradesDeleted: '✅ Grades deleted',
     settingsCancel: 'Cancel',
     bvAnalyticsTitle: '📊 Behavior Analysis',
     bvAnalyticsClose: '✕ Close',
@@ -3614,6 +3647,14 @@ function applySharedUiLang(){
   setLbl('settings-pw-lbl', 'settingsPwLabel');
   setLbl('settings-pw2-lbl', 'settingsPwConfirmLabel');
   setLbl('settings-url-lbl', 'settingsUrlLabel');
+  setLbl('settings-grades-lbl', 'settingsGradesLabel');
+  const odHelp = document.getElementById('settings-onedrive-help');
+  if(odHelp) odHelp.textContent = t('settingsOneDriveHelp');
+  setPH('settings-onedrive-url', 'settingsOneDrivePH');
+  const odUp = document.getElementById('settings-onedrive-update-btn');
+  if(odUp) odUp.textContent = t('settingsOneDriveUpdate');
+  const odDel = document.getElementById('settings-onedrive-delete-btn');
+  if(odDel) odDel.textContent = t('settingsGradesDelete');
   setPH('new-password', 'settingsPwPH');
   setPH('new-password-confirm', 'settingsPwConfirmPH');
   const copyBtn = document.getElementById('settings-copy-url-btn');
@@ -3623,6 +3664,7 @@ function applySharedUiLang(){
   const cancelBtn = document.getElementById('settings-cancel-btn');
   if(cancelBtn) cancelBtn.textContent = t('settingsCancel');
   if(typeof populateSettingsAccount === 'function') populateSettingsAccount();
+  if(typeof populateSettingsGrades === 'function') populateSettingsGrades();
 
   const alertEl = document.querySelector('#new-msg-alert > span');
   if(alertEl) alertEl.textContent = t('newMsgAlert');
@@ -5583,23 +5625,29 @@ function exportBehaviorExcel(){
 
 
 function refreshDashboard(){
-  const btn = event.currentTarget;
-  btn.textContent = '⏳ جارٍ...';
-  btn.disabled = true;
-  // إعادة تحميل البيانات من Firebase
-  if(window.fbReloadAll){
-    window.fbReloadAll().then(()=>{
-      initDashboard();
-      btn.textContent = '🔄 تحديث';
-      btn.disabled = false;
-      showToast('✅ تم تحديث البيانات');
-    });
-  } else {
-    initDashboard();
-    btn.textContent = '🔄 تحديث';
-    btn.disabled = false;
-    showToast('✅ تم التحديث');
+  const btn = event?.currentTarget;
+  if(btn){
+    btn.textContent = '⏳ جارٍ...';
+    btn.disabled = true;
   }
+  const finish = (msg)=>{
+    if(btn){
+      btn.textContent = currentLang==='en' ? '🔄 Refresh' : '🔄 تحديث';
+      btn.disabled = false;
+    }
+    if(msg) showToast(msg);
+  };
+  const run = async ()=>{
+    if(TEACHER_SETTINGS.oneDriveUrl){
+      try{ await updateGradesFromOneDrive(true); }catch(e){ console.warn(e); }
+    }
+    if(window.fbReloadAll){
+      await window.fbReloadAll();
+    }
+    initDashboard();
+    finish(currentLang==='en' ? '✅ Data updated' : '✅ تم تحديث البيانات');
+  };
+  run().catch(()=> finish(currentLang==='en' ? '✅ Refreshed' : '✅ تم التحديث'));
 }
 
 function refreshParentPage(){
@@ -5762,6 +5810,34 @@ function populateSettingsAccount(){
   box.innerHTML = lines.join('<br>');
 }
 
+function formatSettingsSyncTime(iso){
+  if(!iso) return '';
+  try{
+    const d = new Date(iso);
+    if(Number.isNaN(d.getTime())) return iso;
+    return d.toLocaleString(currentLang === 'en' ? 'en-GB' : 'ar-AE');
+  }catch(e){ return iso; }
+}
+
+function populateSettingsGrades(){
+  const wrap = document.getElementById('settings-grades-section');
+  const syncEl = document.getElementById('settings-last-sync');
+  const urlInput = document.getElementById('settings-onedrive-url');
+  if(!wrap) return;
+  if(!CURRENT_TEACHER || CURRENT_TEACHER.isAdmin){
+    wrap.style.display = 'none';
+    return;
+  }
+  wrap.style.display = '';
+  if(urlInput) urlInput.value = TEACHER_SETTINGS.oneDriveUrl || '';
+  if(syncEl){
+    const when = TEACHER_SETTINGS.lastGradeSync
+      ? formatSettingsSyncTime(TEACHER_SETTINGS.lastGradeSync)
+      : t('settingsLastSyncNever');
+    syncEl.textContent = `${t('settingsLastSync')} ${when}`;
+  }
+}
+
 function openSettings(){
   const urlInput = document.getElementById('site-url-input');
   if(urlInput) urlInput.value = APP.siteUrl || '';
@@ -5770,6 +5846,7 @@ function openSettings(){
   if(pw1) pw1.value = '';
   if(pw2) pw2.value = '';
   populateSettingsAccount();
+  populateSettingsGrades();
   document.getElementById('settings-modal').classList.add('open');
 }
 
@@ -5840,6 +5917,20 @@ async function saveSettings(){
 
   APP.siteUrl = urlVal;
   saveState();
+
+  if(CURRENT_TEACHER && !CURRENT_TEACHER.isAdmin){
+    const odUrl = document.getElementById('settings-onedrive-url')?.value.trim() || '';
+    TEACHER_SETTINGS.oneDriveUrl = odUrl;
+    if(typeof db !== 'undefined'){
+      const tKey = getTeacherKey();
+      if(tKey){
+        try{
+          await db.ref('teacherData/'+tKey+'/settings').update({ oneDriveUrl: odUrl });
+        }catch(e){ console.warn('save oneDriveUrl', e); }
+      }
+    }
+  }
+
   closeSettings();
   const su = document.getElementById('site-url-display');
   if(su) su.textContent = APP.siteUrl;
@@ -5847,6 +5938,71 @@ async function saveSettings(){
   if(si) si.value = APP.siteUrl;
   if(window.saveToFirebase) window.saveToFirebase();
   showToast(t('settingsSaved'));
+}
+
+async function deleteTeacherGrades(){
+  if(!CURRENT_TEACHER || CURRENT_TEACHER.isAdmin) return;
+  if(!confirm(t('settingsGradesDeleteConfirm'))) return;
+  const tKey = getTeacherKey();
+  if(!tKey) return;
+  try{
+    if(typeof db !== 'undefined'){
+      await db.ref('teacherData/'+tKey+'/grades').remove();
+    }
+    window.TEACHER_GRADES = {};
+    renderAllTabs();
+    showToast(t('settingsGradesDeleted'));
+  }catch(e){
+    console.error('deleteTeacherGrades', e);
+    showToast('❌ ' + (e.message || ''));
+  }
+}
+
+async function updateGradesFromOneDrive(silent){
+  const isEn = currentLang === 'en';
+  if(!CURRENT_TEACHER || CURRENT_TEACHER.isAdmin) return false;
+  if(!window.XLSX){
+    if(!silent) showToast('⚠️ '+(isEn?'Excel library not loaded':'مكتبة Excel لم تُحمَّل'));
+    return false;
+  }
+  const url = (document.getElementById('settings-onedrive-url')?.value || TEACHER_SETTINGS.oneDriveUrl || '').trim();
+  if(!url){
+    if(!silent) showToast(t('settingsOneDriveRequired'));
+    return false;
+  }
+  if(typeof firebase === 'undefined' || !firebase.functions){
+    if(!silent) showToast(t('settingsOneDriveFunctions'));
+    return false;
+  }
+  if(!silent) showToast(t('settingsOneDriveUpdating'));
+  try{
+    const callable = firebase.functions().httpsCallable('fetchOneDriveExcel');
+    const res = await callable({ url });
+    const base64 = res?.data?.base64;
+    if(!base64) throw new Error(isEn ? 'Empty file from OneDrive' : 'ملف فارغ من OneDrive');
+    const wb = XLSX.read(base64, { type:'base64' });
+    TEACHER_SETTINGS.oneDriveUrl = url;
+    const ok = await processGradesWorkbook(wb, { silent: !!silent });
+    if(ok && typeof db !== 'undefined'){
+      const tKey = getTeacherKey();
+      const ts = new Date().toISOString();
+      TEACHER_SETTINGS.lastGradeSync = ts;
+      if(tKey) await db.ref('teacherData/'+tKey+'/settings').update({ oneDriveUrl: url, lastGradeSync: ts });
+      populateSettingsGrades();
+    }
+    return ok;
+  }catch(e){
+    console.error('updateGradesFromOneDrive', e);
+    if(!silent){
+      const code = e?.code || '';
+      if(String(code).includes('functions') || e.message?.includes('fetchOneDriveExcel')){
+        showToast(t('settingsOneDriveFunctions'));
+      } else {
+        showToast(t('settingsOneDriveFail') + (e.message ? ': '+e.message : ''));
+      }
+    }
+    return false;
+  }
 }
 
 // ══════════════════════════════════════════════════
@@ -6935,6 +7091,88 @@ function importGradeSheet(ws, sheetName, tKey, scope){
   return { imported, unmatched, skipped:false, saves };
 }
 
+async function processGradesWorkbook(wb, opts){
+  const silent = opts?.silent;
+  const isEn = currentLang==='en';
+  if(!wb?.SheetNames?.length){
+    if(!silent) showToast('⚠️ '+(isEn?'File is empty':'الملف فارغ'));
+    return false;
+  }
+
+  const tKey = CURRENT_TEACHER?.email ? emailKey(CURRENT_TEACHER.email) : getTeacherKey();
+  const scope = getTeacherScope();
+  let imported = 0;
+  const unmatchedMap = new Map();
+  const allSaves = [];
+  let sheetsProcessed = 0;
+  let sheetsSkipped = 0;
+  const matchedSheets = [];
+  const skippedSheets = [];
+
+  for(const sheetName of wb.SheetNames){
+    const ws = wb.Sheets[sheetName];
+    if(!ws) continue;
+    const decision = shouldProcessGradeSheet(sheetName, scope);
+    if(!decision.process){
+      sheetsSkipped++;
+      skippedSheets.push(sheetName);
+      continue;
+    }
+    const result = importGradeSheet(ws, sheetName, tKey, scope);
+    if(result.skipped){
+      sheetsSkipped++;
+      skippedSheets.push(sheetName);
+      continue;
+    }
+    sheetsProcessed++;
+    matchedSheets.push(sheetName);
+    imported += result.imported;
+    result.unmatched.forEach(u=>{
+      const key = String(u.mid);
+      if(!unmatchedMap.has(key)) unmatchedMap.set(key, u);
+    });
+    allSaves.push(...result.saves);
+  }
+
+  await Promise.all(allSaves);
+  const unmatched = [...unmatchedMap.values()];
+
+  if(imported > 0){
+    const sheetList = matchedSheets.slice(0, 8).join(', ')
+      + (matchedSheets.length > 8 ? '…' : '');
+    const skipInfo = sheetsSkipped
+      ? (isEn ? ` — ignored ${sheetsSkipped} other sheet(s)` : ` — تم تجاهل ${sheetsSkipped} ورقة أخرى`)
+      : '';
+    if(!silent){
+      showToast(
+        isEn
+          ? `✅ Updated ${imported} student(s) from ${sheetsProcessed} sheet(s): ${sheetList}${skipInfo}`
+          : `✅ تم تحديث ${imported} طالب من ${sheetsProcessed} ورقة: ${sheetList}${skipInfo}`
+      );
+    }
+    renderAllTabs();
+    if(!silent) showImportUnmatchedAlert(unmatched, isEn);
+    return true;
+  }
+
+  if(!silent){
+    const expected = scope
+      ? (scope.grades || []).flatMap(g =>
+          (getSectionsForGrade(g) || []).map(sec => `${g}-${normalizeSectionCell(sec)}`)
+        ).join(', ')
+      : '';
+    const hint = sheetsSkipped && !sheetsProcessed
+      ? (isEn
+        ? (expected ? ` — your sections: ${expected}` : ' — no sheets match your sections')
+        : (expected ? ` — شعبك: ${expected}` : ' — لا توجد أوراق تطابق شعبك'))
+      : '';
+    showToast((isEn ? '⚠️ No grades imported' : '⚠️ لم يتم استيراد أي درجات') + hint);
+    if(skippedSheets.length) console.log('[Import] Skipped sheets:', skippedSheets);
+    showImportUnmatchedAlert(unmatched, isEn);
+  }
+  return false;
+}
+
 function importExcel(input){
   const file = input.files[0];
   if(!file) return;
@@ -6948,78 +7186,14 @@ function importExcel(input){
   reader.onload = async function(e){
     try{
       const wb = XLSX.read(new Uint8Array(e.target.result), { type:'array' });
-      if(!wb.SheetNames?.length){
-        showToast('⚠️ '+(isEn?'File is empty':'الملف فارغ'));
-        return;
+      const ok = await processGradesWorkbook(wb);
+      if(ok && typeof db !== 'undefined'){
+        const tKey = getTeacherKey();
+        const ts = new Date().toISOString();
+        TEACHER_SETTINGS.lastGradeSync = ts;
+        if(tKey) await db.ref('teacherData/'+tKey+'/settings/lastGradeSync').set(ts);
+        populateSettingsGrades();
       }
-
-      const tKey = CURRENT_TEACHER?.email ? emailKey(CURRENT_TEACHER.email) : getTeacherKey();
-      const scope = getTeacherScope();
-      let imported = 0;
-      const unmatchedMap = new Map();
-      const allSaves = [];
-      let sheetsProcessed = 0;
-      let sheetsSkipped = 0;
-      const matchedSheets = [];
-      const skippedSheets = [];
-
-      for(const sheetName of wb.SheetNames){
-        const ws = wb.Sheets[sheetName];
-        if(!ws) continue;
-        const decision = shouldProcessGradeSheet(sheetName, scope);
-        if(!decision.process){
-          sheetsSkipped++;
-          skippedSheets.push(sheetName);
-          continue;
-        }
-        const result = importGradeSheet(ws, sheetName, tKey, scope);
-        if(result.skipped){
-          sheetsSkipped++;
-          skippedSheets.push(sheetName);
-          continue;
-        }
-        sheetsProcessed++;
-        matchedSheets.push(sheetName);
-        imported += result.imported;
-        result.unmatched.forEach(u=>{
-          const key = String(u.mid);
-          if(!unmatchedMap.has(key)) unmatchedMap.set(key, u);
-        });
-        allSaves.push(...result.saves);
-      }
-
-      await Promise.all(allSaves);
-
-      const unmatched = [...unmatchedMap.values()];
-
-      if(imported > 0){
-        const sheetList = matchedSheets.slice(0, 8).join(', ')
-          + (matchedSheets.length > 8 ? '…' : '');
-        const skipInfo = sheetsSkipped
-          ? (isEn ? ` — ignored ${sheetsSkipped} other sheet(s)` : ` — تم تجاهل ${sheetsSkipped} ورقة أخرى`)
-          : '';
-        showToast(
-          isEn
-            ? `✅ Updated ${imported} student(s) from ${sheetsProcessed} sheet(s): ${sheetList}${skipInfo}`
-            : `✅ تم تحديث ${imported} طالب من ${sheetsProcessed} ورقة: ${sheetList}${skipInfo}`
-        );
-        renderAllTabs();
-      } else {
-        const expected = scope
-          ? (scope.grades || []).flatMap(g =>
-              (getSectionsForGrade(g) || []).map(sec => `${g}-${normalizeSectionCell(sec)}`)
-            ).join(', ')
-          : '';
-        const hint = sheetsSkipped && !sheetsProcessed
-          ? (isEn
-            ? (expected ? ` — your sections: ${expected}` : ' — no sheets match your sections')
-            : (expected ? ` — شعبك: ${expected}` : ' — لا توجد أوراق تطابق شعبك'))
-          : '';
-        showToast((isEn ? '⚠️ No grades imported' : '⚠️ لم يتم استيراد أي درجات') + hint);
-        if(skippedSheets.length) console.log('[Import] Skipped sheets:', skippedSheets);
-      }
-
-      showImportUnmatchedAlert(unmatched, isEn);
     } catch(err){
       console.error(err);
       showToast('❌ '+(isEn?'File error: ':'خطأ: ')+err.message);
