@@ -5793,6 +5793,7 @@ function getCloudFunctions(){
   catch(e){ return typeof firebase.functions === 'function' ? firebase.functions() : null; }
 }
 
+function populateSettingsAccount(){
   const wrap = document.getElementById('settings-account-section');
   const box = document.getElementById('settings-account-info');
   if(!wrap || !box) return;
