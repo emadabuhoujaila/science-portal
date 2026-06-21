@@ -2725,7 +2725,9 @@ async function adminDeleteInboxMsgAll(id){
   if(typeof db==='undefined') return;
   try{
     await db.ref('adminInbox/'+id).remove();
+    window.MsgDelete?.hideAdmin('inbox', id);
     showToast(isEn?'✅ Deleted for everyone':'✅ تم الحذف من عند الجميع');
+    renderAdminInbox();
   }catch(e){
     console.error(e);
     showToast(isEn?'❌ Delete failed':'❌ فشل الحذف');
@@ -2741,9 +2743,10 @@ async function _purgeAdminOutboxDeliveries(outboxId, msg){
       if((ch.val()||{}).outboxId === outboxId) updates['teacherData/'+msg.teacherKey+'/adminMessages/'+ch.key] = null;
     });
   }else if(msg?.toRole === 'parent' && msg?.mid){
-    const snap = await db.ref('parentAdminInbox/'+msg.mid).once('value');
+    const mid = String(msg.mid);
+    const snap = await db.ref('parentAdminInbox/'+mid).once('value');
     if(snap.exists()) snap.forEach(ch=>{
-      if((ch.val()||{}).outboxId === outboxId) updates['parentAdminInbox/'+msg.mid+'/'+ch.key] = null;
+      if((ch.val()||{}).outboxId === outboxId) updates['parentAdminInbox/'+mid+'/'+ch.key] = null;
     });
   }else if(msg?.toRole === 'broadcast'){
     const ps = await db.ref('registeredParents').once('value');
@@ -2760,17 +2763,38 @@ async function _purgeAdminOutboxDeliveries(outboxId, msg){
   if(Object.keys(updates).length) await db.ref().update(updates);
 }
 
+async function _purgeComplaintDeliveries(complaintId, c){
+  if(typeof db==='undefined' || !complaintId) return;
+  const updates = {};
+  const mid = c?.mid ? String(c.mid) : '';
+  if(mid){
+    const inboxSnap = await db.ref('parentAdminInbox/'+mid).once('value');
+    if(inboxSnap.exists()) inboxSnap.forEach(ch=>{
+      if((ch.val()||{}).complaintId === complaintId) updates['parentAdminInbox/'+mid+'/'+ch.key] = null;
+    });
+  }
+  if(c?.teacherKey){
+    const snap = await db.ref('teacherData/'+c.teacherKey+'/complaintInbox').once('value');
+    if(snap.exists()) snap.forEach(ch=>{
+      if((ch.val()||{}).complaintId === complaintId) updates['teacherData/'+c.teacherKey+'/complaintInbox/'+ch.key] = null;
+    });
+  }
+  if(Object.keys(updates).length) await db.ref().update(updates);
+}
+
 async function adminDeleteOutboxMsgAll(id){
   const isEn = currentLang==='en';
   if(typeof db==='undefined') return;
   const msg = adminOutboxCache.find(x=>x.id===id);
   try{
-    await _purgeAdminOutboxDeliveries(id, msg);
+    try{ await _purgeAdminOutboxDeliveries(id, msg); }catch(purgeErr){ console.warn('purge outbox deliveries', purgeErr); }
     await db.ref('adminOutbox/'+id).remove();
+    window.MsgDelete?.hideAdmin('outbox', id);
     showToast(isEn?'✅ Deleted for everyone':'✅ تم الحذف من عند الجميع');
+    renderAdminOutbox();
   }catch(e){
     console.error(e);
-    showToast(isEn?'❌ Delete failed':'❌ fشل الحذف');
+    showToast(isEn?'❌ Delete failed':'❌ فشل الحذف');
   }
 }
 
@@ -2778,17 +2802,12 @@ async function adminDeleteComplaintAll(complaintId){
   const isEn = currentLang==='en';
   const c = adminComplaintsCache.find(x=>x.id===complaintId);
   if(typeof db==='undefined') return;
+  const mid = c?.mid ? String(c.mid) : '';
   try{
+    try{ await _purgeComplaintDeliveries(complaintId, c); }catch(purgeErr){ console.warn('purge complaint deliveries', purgeErr); }
+    if(mid) await db.ref('parentComplaintLog/'+mid+'/'+complaintId).remove();
     await db.ref('complaints/'+complaintId).remove();
-    if(c?.mid) await db.ref('parentComplaintLog/'+c.mid+'/'+complaintId).remove();
-    if(c?.teacherKey){
-      const snap = await db.ref('teacherData/'+c.teacherKey+'/complaintInbox').once('value');
-      const updates = {};
-      if(snap.exists()) snap.forEach(ch=>{
-        if((ch.val()||{}).complaintId === complaintId) updates['teacherData/'+c.teacherKey+'/complaintInbox/'+ch.key] = null;
-      });
-      if(Object.keys(updates).length) await db.ref().update(updates);
-    }
+    window.MsgDelete?.hideAdmin('complaint', complaintId);
     showToast(isEn?'✅ Deleted for everyone':'✅ تم الحذف من عند الجميع');
     renderAdminComplaints();
   }catch(e){
@@ -10245,6 +10264,7 @@ async function loadParentGrades(){
   const sel   = document.getElementById('parent-grade');
   const isEn  = currentLang==='en';
   if(!sel) return;
+  const keepGrade = sel.value || '';
 
   // Always show 5-8 but mark which ones have students
   const allGrades = ['5','6','7','8'];
@@ -10266,7 +10286,10 @@ async function loadParentGrades(){
 
   sel.innerHTML = `<option value="">${isEn?'— Select Grade —':'— اختر الصف —'}</option>`
     + uploadedGrades.map(g=>`<option value="${g}">${isEn?'Grade '+g:'الصف '+g}</option>`).join('');
-  // Re-attach onchange (innerHTML rebuilding removes event listeners)
+  if(keepGrade && uploadedGrades.includes(keepGrade)){
+    sel.value = keepGrade;
+    populateParentSections();
+  }
   sel.onchange = populateParentSections;
 }
 

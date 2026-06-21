@@ -119,17 +119,36 @@
       const menu = btn?.closest('.msg-del-wrap')?.querySelector('.msg-del-menu');
       if(!menu) return;
       const open = menu.classList.contains('open');
-      document.querySelectorAll('.msg-del-menu.open').forEach(m=>m.classList.remove('open'));
-      if(!open) menu.classList.add('open');
+      document.querySelectorAll('.msg-del-menu.open').forEach(m=>{
+        m.classList.remove('open');
+        m.hidden = true;
+      });
+      if(!open){
+        menu.hidden = false;
+        menu.classList.add('open');
+      }
     },
 
     closeMenus(){
-      document.querySelectorAll('.msg-del-menu.open').forEach(m=>m.classList.remove('open'));
+      document.querySelectorAll('.msg-del-menu.open').forEach(m=>{
+        m.classList.remove('open');
+        m.hidden = true;
+      });
+    },
+
+    _triggerBtn(title){
+      return `<button type="button" class="msg-del-trigger" onclick="MsgDelete.toggleMenu(this,event)" title="${title}" aria-label="${title}">`
+        + `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">`
+        + `<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/>`
+        + `<path d="M10 11v6"/><path d="M14 11v6"/></svg></button>`;
     },
 
     parentBtn(onclickFn){
       const L = labels();
-      return `<button type="button" class="parent-msg-del" onclick="event.stopPropagation();${onclickFn}" title="${L.delete}">🗑️</button>`;
+      return `<button type="button" class="msg-del-trigger" onclick="event.stopPropagation();${onclickFn}" title="${L.delete}" aria-label="${L.delete}">`
+        + `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">`
+        + `<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/>`
+        + `<path d="M10 11v6"/><path d="M14 11v6"/></svg></button>`;
     },
 
     adminBtn(scope, itemId){
@@ -161,8 +180,8 @@
           + `<button type="button" class="msg-del-opt danger" onclick="event.stopPropagation();adminDeleteMsgAll('${safeId}','${extra}');MsgDelete.closeMenus()">${L.hideAll}</button>`;
       }
       return `<div class="msg-del-wrap" onclick="event.stopPropagation()">`
-        + `<button type="button" class="parent-msg-del" onclick="MsgDelete.toggleMenu(this,event)" title="${L.delete}">🗑️</button>`
-        + `<div class="msg-del-menu">${items}</div></div>`;
+        + this._triggerBtn(L.delete)
+        + `<div class="msg-del-menu" hidden>${items}</div></div>`;
     },
   };
 
