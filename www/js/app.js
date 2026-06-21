@@ -259,12 +259,34 @@ function parentSessionMatches(reg, cls, section, name){
     && String(reg.name || '').trim() === String(name || '').trim();
 }
 
-async function enterParentDashboard(cls, name, mid, section){
+async function enterParentDashboard(cls, name, mid, section, sessionToken){
   APP.savedParent = enrichParentSession(cls, name, mid, section);
+  if(sessionToken) setParentSessionToken(sessionToken);
   saveState();
   window._currentParent = { ...APP.savedParent };
   showScreen('parent');
   loadParentSubjectTabs(cls, name, mid);
+}
+
+function setParentSessionToken(token){
+  if(!token) return;
+  window._parentSessionToken = token;
+  if(window._currentParent) window._currentParent.sessionToken = token;
+  if(APP.savedParent) APP.savedParent.sessionToken = token;
+}
+
+function getParentSessionToken(){
+  return window._parentSessionToken
+    || window._currentParent?.sessionToken
+    || APP.savedParent?.sessionToken
+    || '';
+}
+
+function clearParentGradesPoll(){
+  if(window._parentGradesPollTimer){
+    clearInterval(window._parentGradesPollTimer);
+    window._parentGradesPollTimer = null;
+  }
 }
 
 window.TEACHER_GRADES = window.TEACHER_GRADES || {};
@@ -1471,6 +1493,8 @@ async function logout(){
     window._parentListeners.forEach(ref=>ref.off());
     window._parentListeners=[];
   }
+  clearParentGradesPoll();
+  window._parentSessionToken = '';
   // Reset state
   CURRENT_TEACHER=null;
   window.ADMIN_STUDENTS={};
@@ -1617,10 +1641,16 @@ async function submitParentPinSetupAsync(){
     const { cls, name, section, mid } = pendingLogin;
     const fnName = pendingLogin.pinReset ? 'resetParentPin' : 'setupParentPin';
     const wasReset = !!pendingLogin.pinReset;
-    await fns.httpsCallable(fnName)({ cls, section, name, mid, pin, pinConfirm });
+    const res = await fns.httpsCallable(fnName)({ cls, section, name, mid, pin, pinConfirm });
     const login = { ...pendingLogin };
     pendingLogin = null;
-    await enterParentDashboard(login.cls, login.name, login.mid, login.section || '');
+    await enterParentDashboard(
+      login.cls,
+      login.name,
+      login.mid,
+      login.section || '',
+      res?.data?.sessionToken || ''
+    );
     showToast('✅ ' + (wasReset
       ? (isEn ? 'PIN reset — welcome!' : 'تم تعيين الرمز الجديد — أهلاً بك!')
       : (isEn ? 'PIN saved — welcome!' : 'تم حفظ الرمز — أهلاً بك!')));
@@ -1738,7 +1768,13 @@ async function checkPinAsync(){
         const login = { ...pendingLogin, mid: res.data.mid || pendingLogin.mid };
         pendingLogin = null;
         pinAttempts = 0;
-        await enterParentDashboard(login.cls, login.name, login.mid, login.section || '');
+        await enterParentDashboard(
+          login.cls,
+          login.name,
+          login.mid,
+          login.section || '',
+          res?.data?.sessionToken || ''
+        );
         return;
       }
     }catch(e){
@@ -5476,6 +5512,7 @@ async function rerenderParentDashboard(options={}){
     window._parentListeners.forEach(ref=>ref.off());
     window._parentListeners = [];
   }
+  clearParentGradesPoll();
   const { cls, name, mid } = window._currentParent;
   await loadParentSubjectTabs(cls, name, mid || '');
   if(activeTabId && activeTabId !== 'tab-academic'){
@@ -5737,7 +5774,19 @@ function pickStudentGradeRecord(store, mid, studentName){
 }
 
 async function fetchTeacherGradeRecord(teacherKey, cls, section, mid, studentName){
-  if(typeof db === 'undefined' || !teacherKey) return null;
+  if(!teacherKey) return null;
+
+  const sessionToken = getParentSessionToken();
+  if(sessionToken){
+    try{
+      const data = await callParentPublicFn('getParentGrades', { sessionToken, teacherKey });
+      if(data && Object.prototype.hasOwnProperty.call(data, 'grade')) return data.grade;
+    }catch(e){
+      console.warn('getParentGrades', e);
+    }
+  }
+
+  if(typeof db === 'undefined') return null;
   for(const bucket of parentGradeBuckets(cls, section)){
     try{
       const snap = await db.ref(`teacherData/${teacherKey}/grades/${bucket}`).once('value');
@@ -6343,15 +6392,13 @@ function _startParentListeners(cls, studentName, mid, teachersList, section){
   const sName = studentName.trim();
   const sec = section || window._currentParent?.section || window._parentSubjectContext?.section || '';
 
+  clearParentGradesPoll();
+  window._parentGradesPollTimer = setInterval(()=>{
+    _refreshParentGradeViews(cls, studentName, mid, teachersList);
+  }, 45000);
+
   teachersList.forEach((tc,i)=>{
     if(typeof db==='undefined'||!tc.key) return;
-
-    // Grades → refresh academic + open subject tabs instantly
-    const gradesRef = db.ref('teacherData/'+tc.key+'/grades');
-    gradesRef.on('value', ()=>{
-      _refreshParentGradeViews(cls, studentName, mid, teachersList);
-    });
-    window._parentListeners.push(gradesRef);
 
     // Messages → badge on subject tab
     const msgRef = db.ref('teacherData/'+tc.key+'/messages');
@@ -6617,9 +6664,25 @@ async function renderParentAcademic(cls, studentName, mid, teachersList){
   let allGrades = [];
 
   if(typeof db !== 'undefined'){
+    const sessionToken = getParentSessionToken();
+    let gradeMap = null;
+    if(sessionToken && teachersList?.length){
+      try{
+        const batch = await callParentPublicFn('getParentGradesBatch', {
+          sessionToken,
+          teacherKeys: teachersList.map(tc => tc.key).filter(Boolean),
+        });
+        if(batch?.grades) gradeMap = batch.grades;
+      }catch(e){
+        console.warn('getParentGradesBatch', e);
+      }
+    }
+
     const results = await Promise.all(
       (teachersList || []).map(async tc=>{
-        const s = await fetchTeacherGradeRecord(tc.key, cls, section, mid, studentName);
+        const s = gradeMap
+          ? (gradeMap[tc.key] || null)
+          : await fetchTeacherGradeRecord(tc.key, cls, section, mid, studentName);
         if(!s) return null;
         return {...s, subject:tc.subject, subjLabel:tc.subjLabel, teacherName:tc.name};
       })
@@ -7786,6 +7849,7 @@ function refreshDashboard(){
 function refreshParentPage(){
   if(!window._currentParent && APP.savedParent){
     const sp = APP.savedParent;
+    if(sp.sessionToken) window._parentSessionToken = sp.sessionToken;
     window._currentParent = enrichParentSession(sp.cls, sp.name, sp.mid||'', sp.section||'');
   }
   if(!window._currentParent){
@@ -8365,6 +8429,8 @@ function openInboxFromAlert(){
 }
 
 function parentLogout(){
+  clearParentGradesPoll();
+  window._parentSessionToken = '';
   APP.savedParent = null;
   saveState();
   window._currentParent = null;
