@@ -23,6 +23,16 @@
     catch(e){ return null; }
   }
 
+  function getFirebaseMessagingPlugin(){
+    try { return window.Capacitor?.Plugins?.FirebaseMessaging || null; }
+    catch(e){ return null; }
+  }
+
+  function nativePlatform(){
+    try { return window.Capacitor?.getPlatform?.() || ''; }
+    catch(e){ return ''; }
+  }
+
   async function getVapidKey(){
     if(window._fcmVapidKey !== undefined) return window._fcmVapidKey;
     try{
@@ -79,6 +89,11 @@
 
     async getPermissionState(){
       if(isNative()){
+        const FCM = getFirebaseMessagingPlugin();
+        if(FCM?.checkPermissions){
+          const p = await FCM.checkPermissions();
+          return p.receive || 'prompt';
+        }
         const Push = getPushPlugin();
         if(!Push?.checkPermissions) return 'unsupported';
         const p = await Push.checkPermissions();
@@ -213,53 +228,60 @@
     },
 
     async enableNative(opts){
+      return this.enableNativeFcm(opts);
+    },
+
+    async enableNativeFcm(opts){
       opts = opts || {};
-      const PushNotifications = getPushPlugin();
-      if(!PushNotifications) return { ok:false, reason:'native_plugin_missing' };
+      const FCM = getFirebaseMessagingPlugin();
+      if(!FCM) return { ok:false, reason:'fcm_plugin_missing' };
+      const platform = nativePlatform() === 'ios' ? 'ios' : 'android';
 
       if(!nativeListenersBound){
-        PushNotifications.addListener('registration', async (t)=>{
-          if(!t.value) return;
-          await PortalPush.persistToken(t.value, 'android');
-        });
-        PushNotifications.addListener('registrationError', (err)=>{
-          console.warn('Push registrationError', err);
-        });
-        PushNotifications.addListener('pushNotificationReceived', (notif)=>{
-          PortalPush.playSound();
-        });
-        PushNotifications.addListener('pushNotificationActionPerformed', async ()=>{
-          await PortalPush.clearDeliveredNotifications();
-          if(typeof openInboxFromAlert === 'function') openInboxFromAlert();
-        });
+        if(FCM.addListener){
+          FCM.addListener('notificationReceived', ()=> PortalPush.playSound());
+          FCM.addListener('notificationActionPerformed', async ()=>{
+            await PortalPush.clearDeliveredNotifications();
+            if(typeof openInboxFromAlert === 'function') openInboxFromAlert();
+          });
+        }
         nativeListenersBound = true;
       }
 
-      let perm = await PushNotifications.checkPermissions();
+      let perm = await FCM.checkPermissions();
       if(perm.receive !== 'granted'){
         if(!opts.forcePrompt && perm.receive === 'denied') return { ok:false, reason:'denied' };
-        perm = await PushNotifications.requestPermissions();
+        perm = await FCM.requestPermissions();
       }
       if(perm.receive !== 'granted') return { ok:false, reason:'denied' };
 
-      try{
-        if(PushNotifications.createChannel){
-          await PushNotifications.createChannel({
-            id: 'portal_alerts',
-            name: 'تنبيهات البوابة',
-            description: 'رسائل وملاحظات وشكاوى',
-            importance: 5,
-            visibility: 1,
-            sound: 'default',
-            vibration: true,
-          });
-        }
-      }catch(e){ /* channel API optional */ }
+      if(platform === 'android'){
+        try{
+          const Push = getPushPlugin();
+          if(Push?.createChannel){
+            await Push.createChannel({
+              id: 'portal_alerts',
+              name: 'تنبيهات البوابة',
+              description: 'رسائل وملاحظات وشكاوى',
+              importance: 5,
+              visibility: 1,
+              sound: 'default',
+              vibration: true,
+            });
+          }
+        }catch(e){ /* optional */ }
+      }
 
-      await PushNotifications.register();
-      nativeReady = true;
+      const result = await FCM.getToken();
+      const token = result?.token;
+      if(!token) return { ok:false, reason:'no_token' };
+
+      const saved = await this.persistToken(token, platform);
+      if(!saved) return { ok:false, reason:'token_save_failed' };
+
       this.markOptInEnabled();
-      return { ok:true, reason:'native_registered' };
+      nativeReady = true;
+      return { ok:true, reason: platform + '_registered' };
     },
 
     async persistToken(token, platform){

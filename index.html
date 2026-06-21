@@ -37,7 +37,7 @@ window.__splashDeadline = Date.now() + 5000;
 </script>
 <script>
 (function(){
-  var key='portal-cache-reset-v30';
+  var key='portal-cache-reset-v31';
   if(localStorage.getItem(key)) return;
   localStorage.setItem(key,'1');
   var done=function(){ location.reload(); };
@@ -283,6 +283,7 @@ window.__splashDeadline = Date.now() + 5000;
       <button type="button" class="nav-tab admin-main-tab active" id="admin-tab-btn-upload" onclick="showAdminTab('upload',this)">📋 رفع قوائم الطلبة</button>
       <button type="button" class="nav-tab admin-main-tab" id="admin-tab-btn-monitor" onclick="showAdminTab('monitor',this)">📊 المتابعة</button>
       <button type="button" class="nav-tab admin-main-tab" id="admin-tab-btn-complaints" onclick="showAdminTab('complaints',this)">📢 صندوق الشكاوى</button>
+      <button type="button" class="nav-tab admin-main-tab" id="admin-tab-btn-messages" onclick="showAdminTab('messages',this)">💬 صندوق الرسائل</button>
     </div>
 
     <div id="admin-tab-upload" class="admin-tab-panel">
@@ -346,8 +347,12 @@ window.__splashDeadline = Date.now() + 5000;
             🗑️ مسح كل الطلاب
           </button>
           <button class="btn-icon" onclick="adminClearGrade()"
-            style="background:var(--gold-light);color:var(--gold)">
+            style="background:var(--gold-light);color:var(--gold)" id="admin-clear-grade-btn">
             🗑️ مسح صف محدد
+          </button>
+          <button class="btn-icon" onclick="adminClearSection()"
+            style="background:#fce4ec;color:#c62828" id="admin-clear-section-btn">
+            🗑️ مسح شعبة محددة
           </button>
         </div>
         <div id="admin-upload-progress" style="margin-top:12px;font-size:13px;color:var(--teal-mid)"></div>
@@ -559,6 +564,92 @@ window.__splashDeadline = Date.now() + 5000;
           <p id="admin-complaints-desc" class="admin-help-text">شكاوى أولياء الأمور — تظهر للمسؤول فقط. يمكن توجيهها للمعلم ببيانات الطالب أو كشكوى عامة دون كشف هوية مقدّم الشكوى.</p>
           <div id="admin-complaints-list">
             <div class="empty-state" style="padding:24px"><div class="ico">⏳</div><p id="admin-complaints-empty">جارٍ التحميل...</p></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="admin-tab-messages" class="admin-tab-panel" style="display:none">
+      <div class="admin-msg-subtabs" style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+        <button type="button" class="nav-tab admin-msg-subtab active" id="admin-msg-tab-inbox" onclick="showAdminMsgSubTab('inbox',this)">📥 الوارد</button>
+        <button type="button" class="nav-tab admin-msg-subtab" id="admin-msg-tab-outbox" onclick="showAdminMsgSubTab('outbox',this)">📤 الصادر</button>
+        <button type="button" class="nav-tab admin-msg-subtab" id="admin-msg-tab-compose" onclick="showAdminMsgSubTab('compose',this)">✉️ إرسال رسالة</button>
+      </div>
+
+      <div id="admin-msg-panel-inbox" class="admin-msg-panel">
+        <div class="card">
+          <div class="card-header admin-card-header-teal">
+            <h3 id="admin-inbox-title">📥 الرسائل الواردة</h3>
+            <button type="button" class="btn-icon" style="background:var(--teal-light);color:var(--teal-dark)" onclick="renderAdminInbox()" id="admin-inbox-refresh">🔄 تحديث</button>
+          </div>
+          <div style="padding:16px 20px">
+            <p id="admin-inbox-desc" class="admin-help-text">رسائل من المعلمين وأولياء الأمور — يمكن الرد عليها أو حذفها.</p>
+            <div id="admin-inbox-list"><div class="empty-state" style="padding:24px"><div class="ico">⏳</div><p>جارٍ التحميل...</p></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="admin-msg-panel-outbox" class="admin-msg-panel" style="display:none">
+        <div class="card">
+          <div class="card-header">
+            <h3 id="admin-outbox-title">📤 الرسائل الصادرة</h3>
+            <button type="button" class="btn-icon" style="background:var(--teal-light);color:var(--teal-dark)" onclick="renderAdminOutbox()" id="admin-outbox-refresh">🔄 تحديث</button>
+          </div>
+          <div style="padding:16px 20px">
+            <p id="admin-outbox-desc" class="admin-help-text">سجل رسائل المسؤول المرسلة للمعلمين وأولياء الأمور.</p>
+            <div id="admin-outbox-list"><div class="empty-state" style="padding:24px"><div class="ico">📭</div><p>لا توجد رسائل صادرة بعد</p></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="admin-msg-panel-compose" class="admin-msg-panel" style="display:none">
+        <div class="card">
+          <div class="card-header admin-card-header-teal">
+            <h3 id="admin-compose-title">✉️ إرسال رسالة جديدة</h3>
+          </div>
+          <div style="padding:20px">
+            <p id="admin-compose-desc" class="admin-help-text" style="margin-bottom:16px">اختر الجهة المستهدفة ثم اكتب الرسالة.</p>
+
+            <div class="admin-compose-targets" style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:18px">
+              <label class="admin-compose-radio"><input type="radio" name="admin-msg-target" value="teacher" checked onchange="adminUpdateComposeTarget()"> 👨‍🏫 <span id="admin-compose-lbl-teacher">معلم</span></label>
+              <label class="admin-compose-radio"><input type="radio" name="admin-msg-target" value="parent" onchange="adminUpdateComposeTarget()"> 👨‍👩‍👧 <span id="admin-compose-lbl-parent">ولي أمر</span></label>
+              <label class="admin-compose-radio"><input type="radio" name="admin-msg-target" value="broadcast" onchange="adminUpdateComposeTarget()"> 📢 <span id="admin-compose-lbl-broadcast">تعميم لجميع أولياء الأمور</span></label>
+            </div>
+
+            <div id="admin-compose-teacher-wrap" style="margin-bottom:14px">
+              <label id="admin-compose-lbl-pick-teacher" style="font-size:12px;color:var(--grey-3);display:block;margin-bottom:6px">اختر المعلم</label>
+              <select id="admin-compose-teacher" style="width:100%;max-width:420px;padding:10px 12px;border:1.5px solid var(--grey-5);border-radius:10px;font-family:inherit;font-size:13px"></select>
+            </div>
+
+            <div id="admin-compose-parent-wrap" style="display:none;margin-bottom:14px">
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;max-width:520px">
+                <div>
+                  <label id="admin-compose-lbl-p-grade" style="font-size:12px;color:var(--grey-3);display:block;margin-bottom:4px">الصف</label>
+                  <select id="admin-compose-grade" onchange="adminRefreshComposeStudentList()" style="width:100%;padding:9px 10px;border:1.5px solid var(--grey-5);border-radius:8px;font-family:inherit;font-size:13px">
+                    <option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option>
+                  </select>
+                </div>
+                <div>
+                  <label id="admin-compose-lbl-p-sec" style="font-size:12px;color:var(--grey-3);display:block;margin-bottom:4px">الشعبة</label>
+                  <select id="admin-compose-sec" onchange="adminRefreshComposeStudentList()" style="width:100%;padding:9px 10px;border:1.5px solid var(--grey-5);border-radius:8px;font-family:inherit;font-size:13px">
+                    <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option>
+                  </select>
+                </div>
+                <div style="grid-column:span 2">
+                  <label id="admin-compose-lbl-p-student" style="font-size:12px;color:var(--grey-3);display:block;margin-bottom:4px">الطالب / ولي الأمر</label>
+                  <select id="admin-compose-student" style="width:100%;padding:9px 10px;border:1.5px solid var(--grey-5);border-radius:8px;font-family:inherit;font-size:13px">
+                    <option value="">— اختر الطالب —</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div id="admin-compose-broadcast-wrap" style="display:none;margin-bottom:14px;padding:12px 14px;background:#fff8e1;border:1px solid #ffe082;border-radius:10px;font-size:13px;color:#795548">
+              <span id="admin-compose-broadcast-note">⚠️ سيتم إرسال الرسالة إلى جميع أولياء الأمور المسجّلين في النظام.</span>
+            </div>
+
+            <textarea id="admin-compose-body" rows="5" placeholder="اكتب رسالتك هنا..." style="width:100%;padding:12px 14px;border:1.5px solid var(--grey-5);border-radius:10px;font-family:inherit;font-size:14px;outline:none;resize:vertical;margin-bottom:12px"></textarea>
+            <button type="button" class="btn-primary" id="admin-compose-send-btn" onclick="adminSendMessage()">📤 إرسال الرسالة</button>
           </div>
         </div>
       </div>
