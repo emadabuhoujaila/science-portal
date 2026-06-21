@@ -588,6 +588,8 @@ tbody td{padding:10px 12px;text-align:center;color:var(--grey-2)}
 .parent-admin-kind-label{font-size:11px;font-weight:700;color:inherit}
 .parent-admin-msg-card.broadcast .parent-admin-kind-label{color:#e65100}
 .parent-admin-msg-card.direct .parent-admin-kind-label{color:#1565c0}
+.msg-card.unread{border-color:var(--teal-soft);background:var(--teal-pale);border-right:3px solid var(--teal-mid)}
+.unread-scroll-target{outline:2px solid #e53935;outline-offset:2px;border-radius:10px}
 .parent-complaint-thread-card{margin-bottom:12px}
 .parent-complaint-thread-item{border-radius:8px;padding:10px 12px;margin-top:8px;font-size:13px;line-height:1.7}
 .parent-complaint-thread-item.parent{background:#fff3e0;border-right:3px solid #e65100}

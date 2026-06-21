@@ -239,7 +239,12 @@
 
       if(!nativeListenersBound){
         if(FCM.addListener){
-          FCM.addListener('notificationReceived', ()=> PortalPush.playSound());
+          FCM.addListener('notificationReceived', (event)=>{
+            PortalPush.playSound();
+            const title = event?.notification?.title || event?.data?.title || '📚 بوابة المتابعة';
+            const body = event?.notification?.body || event?.data?.body || 'تحديث جديد';
+            if(typeof sendLocalNotif === 'function') sendLocalNotif(title, body);
+          });
           FCM.addListener('notificationActionPerformed', async ()=>{
             await PortalPush.clearDeliveredNotifications();
             if(typeof openInboxFromAlert === 'function') openInboxFromAlert();

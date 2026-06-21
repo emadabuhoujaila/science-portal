@@ -5009,7 +5009,8 @@ function getActiveParentTabId(){
 
 async function rerenderParentDashboard(options={}){
   if(!window._currentParent) return;
-  const activeTabId = options.preserveTab !== false ? getActiveParentTabId() : 'tab-academic';
+  let activeTabId = options.preserveTab !== false ? getActiveParentTabId() : 'tab-academic';
+  if(activeTabId === 'tab-school') activeTabId = 'tab-parent-school';
   if(window._parentListeners?.length){
     window._parentListeners.forEach(ref=>ref.off());
     window._parentListeners = [];
@@ -5084,6 +5085,77 @@ const _parentSeen = {msgs:{}, bv:{}}; // track seen timestamps
 
 function _getSeenKey(type, cls, name){ return `seen_${type}_${cls}_${name}`; }
 
+function _itemTs(item){
+  return (item && (item.ts || item.date)) || '';
+}
+
+function _maxItemTs(items){
+  return (items || []).reduce((max, i) => {
+    const t = _itemTs(i);
+    return t > max ? t : max;
+  }, '');
+}
+
+function _setSeenTime(type, cls, name, iso){
+  try{ localStorage.setItem(_getSeenKey(type, cls, name), iso); }catch(e){}
+}
+
+function _ensureSeenBaseline(type, cls, name, items){
+  if(_getSeenTime(type, cls, name)) return;
+  _setSeenTime(type, cls, name, _maxItemTs(items) || new Date().toISOString());
+}
+
+function _bootstrapParentSeenBaselines(cls, name){
+  const sName = (name || '').trim();
+  _ensureSeenBaseline('school_admin', cls, name, _getSchoolAdminMessages(cls, sName));
+  _ensureSeenBaseline('msgs', cls, name, (APP.messages || []).filter(m =>
+    m && m.cls === cls && (m.name || '').trim() === sName
+  ));
+  _ensureSeenBaseline('bv', cls, name, (APP.behaviorLog || []).filter(e =>
+    e && e.cls === cls && (e.name || '').trim() === sName
+  ));
+  _ensureComplaintSeenBaselines(cls, name);
+}
+
+function _ensureComplaintSeenBaselines(cls, name){
+  const sName = (name || '').trim();
+  (APP.parentComplaintLog || []).forEach(c => {
+    if(c.cls !== cls || (c.studentName || '').trim() !== sName) return;
+    const adminReplies = (c.thread || []).filter(t => t.role === 'admin');
+    _ensureSeenBaseline('school_complaint_' + c.id, cls, name, adminReplies);
+  });
+}
+
+function _isParentTabVisible(tabId){
+  const body = document.getElementById('parent-body');
+  const el = body?.querySelector('#' + tabId);
+  return !!(el && el.style.display !== 'none');
+}
+
+function _scrollToFirstUnread(container){
+  if(!container) return;
+  const el = container.querySelector('.unread, [data-unread="1"]');
+  if(!el) return;
+  try{
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }catch(e){
+    el.scrollIntoView(true);
+  }
+  el.classList.add('unread-scroll-target');
+  setTimeout(() => el.classList.remove('unread-scroll-target'), 3000);
+}
+
+function _markParentSchoolSeen(cls, name){
+  _markSeen('school_admin', cls, name);
+  _markSeen('school_complaint', cls, name);
+  _markSeen('school_sent', cls, name);
+  (APP.parentComplaintLog || []).forEach(c => {
+    if(c.cls === cls && (c.studentName || '').trim() === (name || '').trim()){
+      _markSeen('school_complaint_' + c.id, cls, name);
+    }
+  });
+}
+
 function _markSeen(type, cls, name){
   try{ localStorage.setItem(_getSeenKey(type,cls,name), new Date().toISOString()); }catch(e){}
   _updateParentBadges();
@@ -5098,8 +5170,8 @@ function _getSeenTime(type, cls, name){
 
 function _countUnseen(items, type, cls, name){
   const seen = _getSeenTime(type, cls, name);
-  if(!seen) return items.length;
-  return items.filter(i=>(i.ts||i.date||'') > seen).length;
+  if(!seen) return 0;
+  return items.filter(i => _itemTs(i) > seen).length;
 }
 
 function _isAdminMsgUnseen(msg, cls, name){
@@ -5177,8 +5249,7 @@ function _refreshParentGradeViews(cls, studentName, mid, teachersList){
   }
 
   (teachersList || []).forEach((tc, i)=>{
-    const tab = document.getElementById('tab-subj-'+i);
-    if(tab && tab.style.display !== 'none'){
+    if(_isParentTabVisible('tab-subj-'+i)){
       loadSubjectTabContent(i, cls, studentName, mid, teachersList);
     }
   });
@@ -5372,8 +5443,9 @@ function _getSchoolTabUnseenCount(cls, name){
   (APP.parentComplaintLog || []).forEach(c => {
     if(c.cls !== cls || (c.studentName || '').trim() !== sName) return;
     const seen = _getSeenTime('school_complaint_' + c.id, cls, name) || _getSeenTime('school_complaint', cls, name);
+    if(!seen) return;
     complaintUnseen += (c.thread || []).filter(t =>
-      t.role === 'admin' && (!seen || (t.ts || '') > seen)
+      t.role === 'admin' && (t.ts || '') > seen
     ).length;
   });
   return _countUnseen(adminMsgs, 'school_admin', cls, name) + complaintUnseen;
@@ -5449,10 +5521,10 @@ function hideParentAdminMsg(encodedHideId, idx){
 }
 
 function renderParentSchoolTab(cls, studentName, mid, teachersList){
-  const wrap = document.getElementById('parent-school-content');
+  const wrap = document.querySelector('#parent-body #parent-school-content');
   if(!wrap) return;
   const isEn = currentLang === 'en';
-  const sName = studentName.trim();
+  const sName = (studentName || '').trim();
 
   const teacherOptions = (teachersList || []).map((tc, i) =>
     `<option value="${i}">${escapeHtml(tc.subjLabel)} · ${escapeHtml(tc.name)}</option>`
@@ -5589,7 +5661,7 @@ function _isComplaintAdminReplyUnseen(c, t){
   if(t.role !== 'admin') return false;
   const seen = _getSeenTime('school_complaint_' + c.id, c.cls, c.studentName) ||
     _getSeenTime('school_complaint', c.cls, c.studentName);
-  return !seen || (t.ts || '') > seen;
+  return !!(seen && (t.ts || '') > seen);
 }
 
 function parentComplaintThreadCard(c, isEn, teachersList){
@@ -5795,6 +5867,7 @@ function _startParentListeners(cls, studentName, mid, teachersList, section){
   window._parentListeners = [];
   window._parentAdminInboxReady = false;
   window._parentSchoolReady = false;
+  window._parentSeenBootstrapped = false;
   const sName = studentName.trim();
   const sec = section || window._currentParent?.section || window._parentSubjectContext?.section || '';
 
@@ -5816,8 +5889,8 @@ function _startParentListeners(cls, studentName, mid, teachersList, section){
       if(document.getElementById('parent-inbox-all')){
         renderParentInboxAll(cls, studentName, teachersList);
       }
-      const tabDiv = document.getElementById('tab-subj-'+i);
-      if(tabDiv && tabDiv.style.display !== 'none'){
+      const tabDiv = document.querySelector('#parent-body #tab-subj-'+i);
+      if(_isParentTabVisible('tab-subj-'+i)){
         loadSubjectTabContent(i, cls, studentName, mid, teachersList);
       }
     });
@@ -5831,8 +5904,7 @@ function _startParentListeners(cls, studentName, mid, teachersList, section){
       if(document.getElementById('parent-behavior-content')){
         renderParentBehaviorTab(cls, studentName, mid, teachersList);
       }
-      const tabDiv = document.getElementById('tab-subj-'+i);
-      if(tabDiv && tabDiv.style.display !== 'none'){
+      if(_isParentTabVisible('tab-subj-'+i)){
         loadSubjectTabContent(i, cls, studentName, mid, teachersList);
       }
     });
@@ -5842,8 +5914,7 @@ function _startParentListeners(cls, studentName, mid, teachersList, section){
     const pmRef = db.ref('teacherData/'+tc.key+'/parentMessages');
     pmRef.on('value', snap=>{
       syncParentTeacherParentMsgs(tc, cls, sName, snap);
-      const tabDiv = document.getElementById('tab-subj-'+i);
-      if(tabDiv && tabDiv.style.display !== 'none'){
+      if(_isParentTabVisible('tab-subj-'+i)){
         renderSubjectSentLog(i, tc.key, cls, studentName);
       }
     });
@@ -5868,8 +5939,12 @@ function _startParentListeners(cls, studentName, mid, teachersList, section){
       } else {
         _notifyParentSchoolUpdates(prevList, APP.parentComplaintLog);
       }
-      _setBadge('btn-tab-school', _getSchoolTabUnseenCount(cls, studentName));
-      if(document.getElementById('tab-school')?.style.display !== 'none'){
+      if(!window._parentSeenBootstrapped){
+        window._parentSeenBootstrapped = true;
+        _bootstrapParentSeenBaselines(cls, studentName);
+      }
+      _setBadge('btn-tab-parent-school', _getSchoolTabUnseenCount(cls, studentName));
+      if(_isParentTabVisible('tab-parent-school')){
         renderParentSchoolAdminMessages(cls, sName);
       }
       teachersList.forEach((tc, i)=> _refreshSubjectTabBadge(i, cls, studentName, tc.key));
@@ -5885,8 +5960,14 @@ function _startParentListeners(cls, studentName, mid, teachersList, section){
       } else {
         window._parentSchoolReady = true;
       }
-      _setBadge('btn-tab-school', _getSchoolTabUnseenCount(cls, studentName));
-      if(document.getElementById('tab-school')?.style.display !== 'none'){
+      if(!window._parentSeenBootstrapped){
+        window._parentSeenBootstrapped = true;
+        _bootstrapParentSeenBaselines(cls, studentName);
+      } else {
+        _ensureComplaintSeenBaselines(cls, studentName);
+      }
+      _setBadge('btn-tab-parent-school', _getSchoolTabUnseenCount(cls, studentName));
+      if(_isParentTabVisible('tab-parent-school')){
         renderParentSchoolComplaintsLog(cls, sName, teachersList);
       }
     });
@@ -5895,7 +5976,7 @@ function _startParentListeners(cls, studentName, mid, teachersList, section){
     const sentAdminRef = db.ref('parentMessagesToAdmin/'+mid);
     sentAdminRef.on('value', snap=>{
       syncParentMessagesToAdmin(mid, snap);
-      if(document.getElementById('tab-school')?.style.display !== 'none'){
+      if(_isParentTabVisible('tab-parent-school')){
         renderParentSchoolSentToAdmin(mid);
       }
     });
@@ -5917,7 +5998,7 @@ function renderParentSubjectTabs(cls, studentName, mid, teachersList, section){
   // Tabs: Academic + one per subject
   const fixedTabs = [
     {id:'tab-academic', icon:'📊', label:t('parentAcademicTab')},
-    {id:'tab-school', icon:'🏫', label:t('parentSchoolTab')}
+    {id:'tab-parent-school', icon:'🏫', label:t('parentSchoolTab')}
   ];
   const subjectTabs = teachersList.map((tc,i)=>({
     id:'tab-subj-'+i, icon:'📚', label:tc.subjLabel, teacher:tc, idx:i
@@ -5938,7 +6019,7 @@ function renderParentSubjectTabs(cls, studentName, mid, teachersList, section){
     </div>
   </div>`;
 
-  const schoolHtml = `<div id="tab-school" class="p-tab-content" style="display:none">
+  const schoolHtml = `<div id="tab-parent-school" class="p-tab-content" style="display:none">
     <div id="parent-school-content">
       <div style="text-align:center;padding:30px;color:var(--grey-3)">⏳</div>
     </div>
@@ -5971,7 +6052,7 @@ function renderParentSubjectTabs(cls, studentName, mid, teachersList, section){
   if(teachersList.length) loadSubjectTabContent(0, cls, studentName, mid, teachersList);
   // Start listeners for badges + live grades
   setTimeout(()=>_startParentListeners(cls, studentName, mid, teachersList, section), 400);
-  setTimeout(()=>_setBadge('btn-tab-school', _getSchoolTabUnseenCount(cls, studentName)), 700);
+  setTimeout(()=>_setBadge('btn-tab-parent-school', _getSchoolTabUnseenCount(cls, studentName)), 700);
   renderNotifButton();
   schedulePushRegistration('parent', { mid, cls, name: studentName, section: window._parentSubjectContext?.section || '' });
 }
@@ -5997,9 +6078,11 @@ function switchSubjectTab(tabId, el){
 // ══════════════════════════════════════════════════
 
 function switchParentMainTab(tabId, el){
-  document.querySelectorAll('.p-tab-content').forEach(c=>c.style.display='none');
+  const body = document.getElementById('parent-body');
+  if(!body) return;
+  body.querySelectorAll('.p-tab-content').forEach(c=>c.style.display='none');
   document.querySelectorAll('.p-main-tab').forEach(b=>b.classList.remove('active'));
-  const target = document.getElementById(tabId);
+  const target = body.querySelector('#' + tabId);
   if(target) target.style.display='block';
   if(el) el.classList.add('active');
 
@@ -6009,27 +6092,27 @@ function switchParentMainTab(tabId, el){
   if(tabId==='tab-academic'){
     renderParentAcademic(ctx.cls, ctx.name, ctx.mid, ctx.teachers);
   }
-  if(tabId==='tab-school'){
-    _markSeen('school_admin', ctx.cls, ctx.name);
-    _markSeen('school_complaint', ctx.cls, ctx.name);
-    _markSeen('school_sent', ctx.cls, ctx.name);
-    (APP.parentComplaintLog || []).forEach(c => {
-      if(c.cls === ctx.cls && (c.studentName || '').trim() === (ctx.name || '').trim()){
-        _markSeen('school_complaint_'+c.id, ctx.cls, ctx.name);
-      }
-    });
-    _setBadge('btn-tab-school', 0);
-    if(window.PortalPush?.clearDeliveredNotifications) PortalPush.clearDeliveredNotifications();
+  if(tabId==='tab-parent-school'){
     renderParentSchoolTab(ctx.cls, ctx.name, ctx.mid, ctx.teachers);
+    setTimeout(()=>{
+      _scrollToFirstUnread(body.querySelector('#tab-parent-school'));
+      _markParentSchoolSeen(ctx.cls, ctx.name);
+      _setBadge('btn-tab-parent-school', 0);
+      if(window.PortalPush?.clearDeliveredNotifications) PortalPush.clearDeliveredNotifications();
+    }, 120);
   }
   if(tabId.startsWith('tab-subj-')){
     const i = parseInt(tabId.replace('tab-subj-',''));
-    _markSeen('msgs', ctx.cls, ctx.name);
-    _markSeen('bv',   ctx.cls, ctx.name);
-    (ctx.teachers || []).forEach((t, ti)=>{
-      if(t?.key) _refreshSubjectTabBadge(ti, ctx.cls, ctx.name, t.key);
-    });
     loadSubjectTabContent(i, ctx.cls, ctx.name, ctx.mid, ctx.teachers);
+    setTimeout(()=>{
+      _scrollToFirstUnread(body.querySelector('#' + tabId));
+      _markSeen('msgs', ctx.cls, ctx.name);
+      _markSeen('bv',   ctx.cls, ctx.name);
+      (ctx.teachers || []).forEach((t, ti)=>{
+        if(t?.key) _refreshSubjectTabBadge(ti, ctx.cls, ctx.name, t.key);
+      });
+      if(window.PortalPush?.clearDeliveredNotifications) PortalPush.clearDeliveredNotifications();
+    }, 150);
   }
 }
 
@@ -6388,18 +6471,22 @@ async function loadSubjectTabContent(idx, cls, studentName, mid, teachersList){
   </div>`;
 
   const mi={praise:'🌟',warning:'⚠️',info:'📘'};
+  const msgsSeen = _getSeenTime('msgs', cls, sName);
   const msgsHtml = messages.length
     ? `<div class="section-title" style="margin-bottom:8px">💬 ${isEn?'Teacher Messages':'رسائل المعلم'}</div>`
-      +[...messages].reverse().map(m=>`
-        <div class="msg-card" style="margin-bottom:8px">
+      +[...messages].reverse().map(m=>{
+        const unread = msgsSeen && _itemTs(m) > msgsSeen;
+        return `
+        <div class="msg-card${unread?' unread':''}" style="margin-bottom:8px"${unread?' data-unread="1"':''}>
           <div class="msg-header">
-            <span class="msg-type ${m.type||'info'}">${mi[m.type]||'📘'}</span>
+            <span class="msg-type ${m.type||'info'}">${mi[m.type]||'📘'}${unread?` · <span class="parent-admin-new-pill inline">${isEn?'New':'جديد'}</span>`:''}</span>
             <div style="display:flex;align-items:center;gap:8px">
               <span class="msg-date">${m.date||''}</span>
               ${parentMsgDeleteBtn('received', tc.key, m, idx)}
             </div>
           </div><p style="margin:4px 0 0">${escapeHtml(m.body||'')}</p>
-        </div>`).join('')
+        </div>`;
+      }).join('')
     : `<div class="empty-state" style="padding:16px"><div class="ico" style="font-size:24px">📭</div>
         <p style="font-size:13px">${t('noMessages')}</p></div>`;
 
