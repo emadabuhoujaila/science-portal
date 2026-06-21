@@ -262,8 +262,14 @@ function parentSessionMatches(reg, cls, section, name){
 async function enterParentDashboard(cls, name, mid, section, sessionToken){
   APP.savedParent = enrichParentSession(cls, name, mid, section);
   if(sessionToken) setParentSessionToken(sessionToken);
+  APP.parentAdminMessages = [];
+  APP.parentComplaintLog = [];
+  APP.parentMessagesToAdmin = [];
+  APP.parentMessages = [];
+  APP.parentComplaints = [];
   saveState();
   window._currentParent = { ...APP.savedParent };
+  if(window.MsgDelete?.syncFromServer) await window.MsgDelete.syncFromServer();
   showScreen('parent');
   loadParentSubjectTabs(cls, name, mid);
 }
@@ -320,10 +326,20 @@ let APP = {
   savedParent: null  // {cls, name} — تذكر ولي الأمر بعد تسجيل الدخول
 };
 
+const APP_VOLATILE_KEYS = [
+  'parentAdminMessages', 'parentComplaintLog', 'parentMessagesToAdmin',
+  'parentMessages', 'parentComplaints', 'complaintInbox',
+  'teacherAdminMessages', 'teacherMessagesToAdmin',
+];
+
 function loadState(){
   try{
     const s=localStorage.getItem('portal_v4');
-    if(s) Object.assign(APP,JSON.parse(s));
+    if(s){
+      const parsed=JSON.parse(s);
+      APP_VOLATILE_KEYS.forEach(k=>{ delete parsed[k]; });
+      Object.assign(APP,parsed);
+    }
   }catch(e){}
   syncPinsFromAdminStudents();
   saveState();
@@ -2081,6 +2097,7 @@ function _enterAdminDashboard(){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   const as = document.getElementById('screen-admin');
   if(as){ as.classList.add('active'); as.style.display='block'; as.style.minHeight='100vh'; }
+  if(window.MsgDelete?.syncFromServer) window.MsgDelete.syncFromServer();
   adminLoadStudents();
   startAdminComplaintsListener();
   startAdminMessagesListener();
@@ -2724,6 +2741,7 @@ async function adminDeleteInboxMsgAll(id){
   const isEn = currentLang==='en';
   if(typeof db==='undefined') return;
   try{
+    await window.MsgDelete?.markGlobal('adminInbox/' + id);
     await db.ref('adminInbox/'+id).remove();
     window.MsgDelete?.hideAdmin('inbox', id);
     showToast(isEn?'✅ Deleted for everyone':'✅ تم الحذف من عند الجميع');
@@ -2735,18 +2753,25 @@ async function adminDeleteInboxMsgAll(id){
 }
 
 async function _purgeAdminOutboxDeliveries(outboxId, msg){
-  if(typeof db==='undefined' || !outboxId) return;
+  if(typeof db==='undefined' || !outboxId) return ['adminOutbox/' + outboxId];
   const updates = {};
+  const tombstones = ['adminOutbox/' + outboxId];
   if(msg?.toRole === 'teacher' && msg?.teacherKey){
     const snap = await db.ref('teacherData/'+msg.teacherKey+'/adminMessages').once('value');
     if(snap.exists()) snap.forEach(ch=>{
-      if((ch.val()||{}).outboxId === outboxId) updates['teacherData/'+msg.teacherKey+'/adminMessages/'+ch.key] = null;
+      if((ch.val()||{}).outboxId === outboxId){
+        updates['teacherData/'+msg.teacherKey+'/adminMessages/'+ch.key] = null;
+        tombstones.push('teacherAdminMsg/'+msg.teacherKey+'/'+ch.key);
+      }
     });
   }else if(msg?.toRole === 'parent' && msg?.mid){
     const mid = String(msg.mid);
     const snap = await db.ref('parentAdminInbox/'+mid).once('value');
     if(snap.exists()) snap.forEach(ch=>{
-      if((ch.val()||{}).outboxId === outboxId) updates['parentAdminInbox/'+mid+'/'+ch.key] = null;
+      if((ch.val()||{}).outboxId === outboxId){
+        updates['parentAdminInbox/'+mid+'/'+ch.key] = null;
+        tombstones.push('parentAdminInbox/'+mid+'/'+ch.key);
+      }
     });
   }else if(msg?.toRole === 'broadcast'){
     const ps = await db.ref('registeredParents').once('value');
@@ -2756,30 +2781,43 @@ async function _purgeAdminOutboxDeliveries(outboxId, msg){
       const snap = await db.ref('parentAdminInbox/'+mid).once('value');
       if(!snap.exists()) continue;
       snap.forEach(ch=>{
-        if((ch.val()||{}).outboxId === outboxId) updates['parentAdminInbox/'+mid+'/'+ch.key] = null;
+        if((ch.val()||{}).outboxId === outboxId){
+          updates['parentAdminInbox/'+mid+'/'+ch.key] = null;
+          tombstones.push('parentAdminInbox/'+mid+'/'+ch.key);
+        }
       });
     }
   }
   if(Object.keys(updates).length) await db.ref().update(updates);
+  return tombstones;
 }
 
 async function _purgeComplaintDeliveries(complaintId, c){
-  if(typeof db==='undefined' || !complaintId) return;
+  if(typeof db==='undefined' || !complaintId) return ['complaint/' + complaintId];
   const updates = {};
+  const tombstones = ['complaint/' + complaintId];
   const mid = c?.mid ? String(c.mid) : '';
   if(mid){
+    tombstones.push('parentComplaint/'+mid+'/'+complaintId);
     const inboxSnap = await db.ref('parentAdminInbox/'+mid).once('value');
     if(inboxSnap.exists()) inboxSnap.forEach(ch=>{
-      if((ch.val()||{}).complaintId === complaintId) updates['parentAdminInbox/'+mid+'/'+ch.key] = null;
+      if((ch.val()||{}).complaintId === complaintId){
+        updates['parentAdminInbox/'+mid+'/'+ch.key] = null;
+        tombstones.push('parentAdminInbox/'+mid+'/'+ch.key);
+      }
     });
   }
   if(c?.teacherKey){
     const snap = await db.ref('teacherData/'+c.teacherKey+'/complaintInbox').once('value');
     if(snap.exists()) snap.forEach(ch=>{
-      if((ch.val()||{}).complaintId === complaintId) updates['teacherData/'+c.teacherKey+'/complaintInbox/'+ch.key] = null;
+      if((ch.val()||{}).complaintId === complaintId){
+        updates['teacherData/'+c.teacherKey+'/complaintInbox/'+ch.key] = null;
+        tombstones.push('teacherComplaint/'+c.teacherKey+'/'+ch.key);
+      }
     });
   }
   if(Object.keys(updates).length) await db.ref().update(updates);
+  return tombstones;
 }
 
 async function adminDeleteOutboxMsgAll(id){
@@ -2787,7 +2825,9 @@ async function adminDeleteOutboxMsgAll(id){
   if(typeof db==='undefined') return;
   const msg = adminOutboxCache.find(x=>x.id===id);
   try{
-    try{ await _purgeAdminOutboxDeliveries(id, msg); }catch(purgeErr){ console.warn('purge outbox deliveries', purgeErr); }
+    let tombstones = ['adminOutbox/' + id];
+    try{ tombstones = await _purgeAdminOutboxDeliveries(id, msg); }catch(purgeErr){ console.warn('purge outbox deliveries', purgeErr); }
+    await window.MsgDelete?.markGlobal(tombstones);
     await db.ref('adminOutbox/'+id).remove();
     window.MsgDelete?.hideAdmin('outbox', id);
     showToast(isEn?'✅ Deleted for everyone':'✅ تم الحذف من عند الجميع');
@@ -2804,7 +2844,9 @@ async function adminDeleteComplaintAll(complaintId){
   if(typeof db==='undefined') return;
   const mid = c?.mid ? String(c.mid) : '';
   try{
-    try{ await _purgeComplaintDeliveries(complaintId, c); }catch(purgeErr){ console.warn('purge complaint deliveries', purgeErr); }
+    let tombstones = ['complaint/' + complaintId];
+    try{ tombstones = await _purgeComplaintDeliveries(complaintId, c); }catch(purgeErr){ console.warn('purge complaint deliveries', purgeErr); }
+    await window.MsgDelete?.markGlobal(tombstones);
     if(mid) await db.ref('parentComplaintLog/'+mid+'/'+complaintId).remove();
     await db.ref('complaints/'+complaintId).remove();
     window.MsgDelete?.hideAdmin('complaint', complaintId);
@@ -3857,6 +3899,7 @@ function deleteSingleTeacherMsgForAll(id){
   saveState(); renderSavedMessages();
   const key = getTeacherKey();
   if(typeof db!=='undefined' && key){
+    window.MsgDelete?.markGlobal('teacherMsg/'+key+'/'+id);
     window.fbDeleteMsg(key, id)
       .then(()=>showToast(currentLang==='en'?'✅ Deleted for everyone':'✅ تم الحذف من عند الجميع'))
       .catch(()=>showToast(currentLang==='en'?'⚠️ Deleted locally':'⚠️ حُذف محلياً'));
@@ -6012,7 +6055,7 @@ function syncParentTeacherParentMsgs(tc, cls, sName, snap){
 function syncParentTeacherMessagesFromList(tc, cls, sName, list){
   const tag = tc.key + '|msg';
   APP.messages = (APP.messages || []).filter(m => m._src !== tag);
-  (list || []).forEach(m => APP.messages.push({ ...m, _src: tag, _teacherKey: tc.key }));
+  (list || []).filter(m => !window.MsgDelete?.isGlobal('teacherMsg/'+tc.key+'/'+(m.id||''))).forEach(m => APP.messages.push({ ...m, _src: tag, _teacherKey: tc.key }));
   saveState();
 }
 
@@ -6026,7 +6069,7 @@ function syncParentTeacherBehaviorFromList(tc, cls, sName, list){
 function syncParentTeacherParentMsgsFromList(tc, cls, sName, list){
   const tag = tc.key + '|pm';
   APP.parentMessages = (APP.parentMessages || []).filter(m => m._src !== tag);
-  (list || []).forEach(m => APP.parentMessages.push({
+  (list || []).filter(m => !window.MsgDelete?.isGlobal('teacherParentMsg/'+tc.key+'/'+(m.id||''))).forEach(m => APP.parentMessages.push({
     ...m,
     teacherKey: tc.key,
     _teacherKey: tc.key,
@@ -6038,6 +6081,7 @@ function syncParentTeacherParentMsgsFromList(tc, cls, sName, list){
 async function refreshParentTeacherDataFromServer(cls, sName, teachersList){
   const sessionToken = getParentSessionToken();
   if(!sessionToken || !teachersList?.length) return false;
+  if(window.MsgDelete?.syncFromServer) await window.MsgDelete.syncFromServer();
   const data = await callParentPublicFn('getParentTeacherDataBatch', {
     sessionToken,
     teacherKeys: teachersList.map(t => t.key).filter(Boolean),
@@ -6085,15 +6129,16 @@ function _refreshParentLiveData(cls, studentName, mid, teachersList){
 async function refreshParentSchoolDataFromServer(cls, sName, mid, teachersList){
   const sessionToken = getParentSessionToken();
   if(!sessionToken || !mid) return false;
+  if(window.MsgDelete?.syncFromServer) await window.MsgDelete.syncFromServer();
   const data = await callParentPublicFn('getParentSchoolData', { sessionToken });
   if(!data) return false;
 
   const prevAdmin = (APP.parentAdminMessages || []).slice();
   const prevComplaints = (APP.parentComplaintLog || []).slice();
 
-  APP.parentAdminMessages = data.adminInbox || [];
-  APP.parentComplaintLog = data.complaintLog || [];
-  APP.parentMessagesToAdmin = data.messagesToAdmin || [];
+  APP.parentAdminMessages = (data.adminInbox || []).filter(m => !window.MsgDelete?.isParentItemDeleted('admin_msg', m, { mid }));
+  APP.parentComplaintLog = (data.complaintLog || []).filter(c => !window.MsgDelete?.isParentItemDeleted('complaint', c, { mid }));
+  APP.parentMessagesToAdmin = (data.messagesToAdmin || []).filter(m => !window.MsgDelete?.isParentItemDeleted('parent_to_admin', m, { mid }));
   (APP.parentComplaintLog || []).forEach(pc=>{
     const match = (APP.parentAdminMessages || []).find(m => m.complaintId === pc.id);
     if(match && pc.status === 'pending') pc.status = 'replied';
@@ -6236,6 +6281,7 @@ function parentAdminMsgHideKey(msg){
 }
 
 function isParentAdminMsgHidden(msg){
+  if(window.MsgDelete?.isParentItemDeleted('admin_msg', msg)) return true;
   return getParentHiddenMsgIds('admin_msg').includes(parentAdminMsgHideKey(msg));
 }
 
@@ -6367,7 +6413,8 @@ function renderParentSchoolSentToAdmin(mid){
   const isEn = currentLang === 'en';
   const list = (APP.parentMessagesToAdmin || [])
     .filter(m => m && String(m.mid) === String(mid))
-    .filter(m => !getParentHiddenMsgIds('parent_to_admin').includes(m.id || m.ts || ''));
+    .filter(m => !getParentHiddenMsgIds('parent_to_admin').includes(m.id || m.ts || ''))
+    .filter(m => !window.MsgDelete?.isParentItemDeleted('parent_to_admin', m, { mid }));
   if(!list.length){ div.innerHTML = ''; return; }
   div.innerHTML = `
     <div style="margin-top:14px">
@@ -7306,6 +7353,7 @@ function parentComplaintHideKey(complaint){
 }
 
 function isParentComplaintHidden(complaint){
+  if(window.MsgDelete?.isParentItemDeleted('complaint', complaint)) return true;
   const key = complaint.id || parentComplaintHideKey(complaint);
   return getParentHiddenMsgIds('complaint').includes(key) ||
     getParentHiddenMsgIds('complaint').includes(parentComplaintHideKey(complaint));
@@ -8389,6 +8437,7 @@ function parentMsgHideKey(teacherKey, msg){
 }
 
 function isParentMsgHidden(type, teacherKey, msg){
+  if(window.MsgDelete?.isParentItemDeleted(type, msg, { teacherKey })) return true;
   return getParentHiddenMsgIds(type).includes(parentMsgHideKey(teacherKey, msg));
 }
 
@@ -8689,11 +8738,7 @@ function deleteSingleParentMsg(id){ teacherMsgDelete(id, 'parent_inbox', 'both')
 
 function deleteSingleParentMsgForAll(id){
   const key = getTeacherKey();
-  const delKey = 'del_pm_'+key;
-  let deletedIds = [];
-  try{ deletedIds = JSON.parse(localStorage.getItem(delKey)||'[]'); }catch(e){}
-  if(!deletedIds.includes(id)) deletedIds.push(id);
-  try{ localStorage.setItem(delKey, JSON.stringify(deletedIds)); }catch(e){}
+  window.MsgDelete?.markGlobal('teacherParentMsg/'+key+'/'+id);
   APP.parentMessages = APP.parentMessages.filter(m=>m.id!==id);
   saveState();
   renderParentInbox();

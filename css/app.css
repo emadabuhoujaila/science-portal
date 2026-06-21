@@ -393,18 +393,12 @@ tbody td{padding:10px 12px;text-align:center;color:var(--grey-2)}
 .parent-msg-send:disabled{opacity:.65;cursor:not-allowed}
 .parent-msg-del,.msg-del-trigger{width:34px;height:34px;border:1.5px solid var(--grey-5);border-radius:10px;background:linear-gradient(180deg,#fff 0%,#f6fafa 100%);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--grey-2);padding:0;line-height:1;box-shadow:0 2px 6px rgba(13,110,110,.08);transition:border-color .15s,background .15s,color .15s,box-shadow .15s,transform .1s}
 .parent-msg-del:hover,.msg-del-trigger:hover{border-color:#f5b4b4;background:linear-gradient(180deg,#fff8f8 0%,#ffefef 100%);color:var(--red-soft);box-shadow:0 3px 10px rgba(229,57,53,.15)}
-.parent-msg-del:active,.msg-del-trigger:active{transform:scale(.96)}
-.parent-msg-del svg,.msg-del-trigger svg{width:16px;height:16px;display:block}
-.msg-del-wrap{position:relative;display:inline-flex;align-items:center;z-index:30;flex-shrink:0}
-.msg-del-menu{display:none;position:absolute;top:calc(100% + 6px);inset-inline-end:0;z-index:200;min-width:210px;background:var(--white);border:1px solid rgba(13,110,110,.12);border-radius:14px;box-shadow:0 12px 32px rgba(0,0,0,.14);padding:8px;overflow:hidden}
-.msg-del-menu.open{display:block;animation:msgDelFade .14s ease}
-@keyframes msgDelFade{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
-.msg-del-opt{display:flex;align-items:center;gap:10px;width:100%;text-align:right;border:none;background:transparent;padding:10px 12px;font-family:inherit;font-size:12px;font-weight:600;color:var(--grey-1);cursor:pointer;border-radius:10px;white-space:nowrap}
-.msg-del-opt::before{content:'';width:8px;height:8px;border-radius:3px;background:var(--teal-soft);flex-shrink:0}
-.msg-del-opt:hover{background:var(--teal-pale)}
-.msg-del-opt.danger{color:var(--red-soft)}
-.msg-del-opt.danger::before{background:var(--red-soft)}
-.msg-del-opt.danger:hover{background:var(--red-pale)}
+.msg-del-row{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end;flex-shrink:0}
+.msg-del-chip{display:inline-flex;align-items:center;justify-content:center;padding:6px 12px;border-radius:10px;border:1.5px solid rgba(13,110,110,.2);background:linear-gradient(180deg,#fff 0%,#f0f8f8 100%);font-family:inherit;font-size:11px;font-weight:700;color:var(--teal-dark);cursor:pointer;white-space:nowrap;line-height:1.2;box-shadow:0 1px 4px rgba(13,110,110,.07);transition:border-color .15s,background .15s,color .15s,transform .1s}
+.msg-del-chip:hover{border-color:var(--teal-soft);background:var(--teal-pale);transform:translateY(-1px)}
+.msg-del-chip:active{transform:scale(.97)}
+.msg-del-chip.danger{border-color:rgba(229,57,53,.28);color:var(--red-soft);background:linear-gradient(180deg,#fff 0%,#fff5f5 100%)}
+.msg-del-chip.danger:hover{border-color:var(--red-soft);background:var(--red-pale)}
 #screen-admin .admin-complaint-actions,.teacher-complaint-head,.inbox-header,.parent-admin-msg-card,.parent-school-sent-card,.msg-card{overflow:visible;position:relative}
 .parent-msg-confirm{text-align:center;padding:12px;background:var(--green-pale);color:var(--green-soft);border-radius:10px;font-weight:600;font-size:14px;margin-top:10px}
 

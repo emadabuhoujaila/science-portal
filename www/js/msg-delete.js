@@ -6,6 +6,7 @@
 
   let _notifyAudio = null;
   let _audioUnlocked = false;
+  const _globalDeleted = new Set();
 
   function labels(){
     const isEn = typeof currentLang !== 'undefined' && currentLang === 'en';
@@ -42,10 +43,48 @@
     return !!id && _readIds(key).includes(id);
   }
 
+  function _normKeys(keys){
+    return [...new Set((Array.isArray(keys) ? keys : [keys]).filter(Boolean).map(String))];
+  }
+
   window.MsgDelete = {
     labels,
 
-    isAdminHidden(scope, id){ return _hasId('admin_hide_' + scope, id); },
+    isGlobal(key){
+      return !!key && _globalDeleted.has(String(key));
+    },
+
+    async syncFromServer(){
+      if(typeof db === 'undefined') return;
+      try{
+        const snap = await db.ref('portalDeleted').once('value');
+        _globalDeleted.clear();
+        if(snap.exists()){
+          Object.keys(snap.val() || {}).forEach(k => _globalDeleted.add(k));
+        }
+      }catch(e){ console.warn('MsgDelete.syncFromServer', e); }
+    },
+
+    markGlobal(keys){
+      const list = _normKeys(keys);
+      if(!list.length) return Promise.resolve();
+      list.forEach(k => _globalDeleted.add(k));
+      if(typeof db === 'undefined') return Promise.resolve();
+      const updates = {};
+      const ts = Date.now();
+      list.forEach(k => { updates['portalDeleted/' + k] = { ts }; });
+      return db.ref().update(updates).catch(e => console.warn('MsgDelete.markGlobal', e));
+    },
+
+    isAdminHidden(scope, id){
+      if(!id) return false;
+      if(_hasId('admin_hide_' + scope, id)) return true;
+      if(scope === 'complaint' && this.isGlobal('complaint/' + id)) return true;
+      if(scope === 'inbox' && this.isGlobal('adminInbox/' + id)) return true;
+      if(scope === 'outbox' && this.isGlobal('adminOutbox/' + id)) return true;
+      return false;
+    },
+
     hideAdmin(scope, id){
       _addId('admin_hide_' + scope, id);
       if(typeof showToast === 'function') showToast(labels().doneHide);
@@ -53,12 +92,46 @@
 
     isTeacherHidden(scope, id){
       const key = typeof getTeacherKey === 'function' ? (getTeacherKey() || 'none') : 'none';
-      return _hasId('teacher_hide_' + key + '_' + scope, id);
+      if(_hasId('teacher_hide_' + key + '_' + scope, id)) return true;
+      if(scope === 'teacher_msg' && this.isGlobal('teacherMsg/' + key + '/' + id)) return true;
+      if(scope === 'parent_inbox' && this.isGlobal('teacherParentMsg/' + key + '/' + id)) return true;
+      if(scope === 'tadmin' && this.isGlobal('teacherAdminMsg/' + key + '/' + id)) return true;
+      if(scope === 'tsent' && this.isGlobal('teacherSentAdmin/' + key + '/' + id)) return true;
+      if(scope === 'complaint' && this.isGlobal('teacherComplaint/' + key + '/' + id)) return true;
+      return false;
     },
+
     hideTeacher(scope, id){
       const key = typeof getTeacherKey === 'function' ? (getTeacherKey() || 'none') : 'none';
       _addId('teacher_hide_' + key + '_' + scope, id);
       if(typeof showToast === 'function') showToast(labels().doneHide);
+    },
+
+    isParentItemDeleted(type, msg, extra){
+      const ctx = window._parentSubjectContext || window._currentParent || {};
+      const mid = String(ctx.mid || extra?.mid || '');
+      const teacherKey = extra?.teacherKey || msg?._teacherKey || msg?.teacherKey || '';
+      if(type === 'admin_msg'){
+        if(this.isGlobal('parentAdminInbox/' + mid + '/' + (msg?.id || ''))) return true;
+        if(msg?.outboxId && this.isGlobal('adminOutbox/' + msg.outboxId)) return true;
+        return false;
+      }
+      if(type === 'complaint'){
+        const cid = msg?.id || extra?.complaintId || '';
+        if(this.isGlobal('complaint/' + cid)) return true;
+        if(mid && this.isGlobal('parentComplaint/' + mid + '/' + cid)) return true;
+        return false;
+      }
+      if(type === 'parent_to_admin'){
+        return this.isGlobal('parentToAdmin/' + mid + '/' + (msg?.id || msg?.ts || ''));
+      }
+      if(type === 'received' || type === 'sent'){
+        return teacherKey && this.isGlobal('teacherParentMsg/' + teacherKey + '/' + (msg?.id || ''));
+      }
+      if(type === 'teacher_msg'){
+        return teacherKey && this.isGlobal('teacherMsg/' + teacherKey + '/' + (msg?.id || ''));
+      }
+      return false;
     },
 
     unlockAudio(){
@@ -114,81 +187,45 @@
       }catch(e){ /* ignore */ }
     },
 
-    toggleMenu(btn, ev){
-      if(ev){ ev.stopPropagation(); ev.preventDefault(); }
-      const menu = btn?.closest('.msg-del-wrap')?.querySelector('.msg-del-menu');
-      if(!menu) return;
-      const open = menu.classList.contains('open');
-      document.querySelectorAll('.msg-del-menu.open').forEach(m=>{
-        m.classList.remove('open');
-        m.hidden = true;
-      });
-      if(!open){
-        menu.hidden = false;
-        menu.classList.add('open');
-      }
-    },
-
-    closeMenus(){
-      document.querySelectorAll('.msg-del-menu.open').forEach(m=>{
-        m.classList.remove('open');
-        m.hidden = true;
-      });
-    },
-
-    _triggerBtn(title){
-      return `<button type="button" class="msg-del-trigger" onclick="MsgDelete.toggleMenu(this,event)" title="${title}" aria-label="${title}">`
-        + `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">`
-        + `<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/>`
-        + `<path d="M10 11v6"/><path d="M14 11v6"/></svg></button>`;
+    _chip(label, onclick, danger){
+      return `<button type="button" class="msg-del-chip${danger ? ' danger' : ''}" onclick="event.stopPropagation();${onclick}">${label}</button>`;
     },
 
     parentBtn(onclickFn){
       const L = labels();
-      return `<button type="button" class="msg-del-trigger" onclick="event.stopPropagation();${onclickFn}" title="${L.delete}" aria-label="${L.delete}">`
-        + `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">`
-        + `<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/>`
-        + `<path d="M10 11v6"/><path d="M14 11v6"/></svg></button>`;
+      return this._chip(L.delete, onclickFn, true);
     },
 
     adminBtn(scope, itemId){
-      return this.menuHtml('admin', itemId, scope);
+      return this.actionsHtml('admin', itemId, scope);
     },
 
     teacherDualBtn(scope, itemId){
-      return this.menuHtml('teacherDual', itemId, scope);
+      return this.actionsHtml('teacherDual', itemId, scope);
     },
 
     teacherOnlyBtn(scope, itemId){
-      return this.menuHtml('teacherOnly', itemId, scope);
+      return this.actionsHtml('teacherOnly', itemId, scope);
     },
 
-    menuHtml(mode, itemId, extra){
+    actionsHtml(mode, itemId, extra){
       extra = extra || '';
       const L = labels();
       const safeId = String(itemId || '').replace(/'/g, "\\'");
-      let items = '';
-      if(mode === 'parent'){
-        items = `<button type="button" class="msg-del-opt" onclick="event.stopPropagation();${extra}">${L.delete}</button>`;
-      }else if(mode === 'teacherDual'){
-        items = `<button type="button" class="msg-del-opt" onclick="event.stopPropagation();teacherMsgDelete('${safeId}','${extra}','me');MsgDelete.closeMenus()">${L.hideMe}</button>`
-          + `<button type="button" class="msg-del-opt danger" onclick="event.stopPropagation();teacherMsgDelete('${safeId}','${extra}','both');MsgDelete.closeMenus()">${L.hideParent}</button>`;
+      let chips = '';
+      if(mode === 'teacherDual'){
+        chips = this._chip(L.hideMe, `teacherMsgDelete('${safeId}','${extra}','me')`)
+          + this._chip(L.hideParent, `teacherMsgDelete('${safeId}','${extra}','both')`, true);
       }else if(mode === 'teacherOnly'){
-        items = `<button type="button" class="msg-del-opt" onclick="event.stopPropagation();teacherMsgDelete('${safeId}','${extra}','me');MsgDelete.closeMenus()">${L.hideMe}</button>`;
+        chips = this._chip(L.hideMe, `teacherMsgDelete('${safeId}','${extra}','me')`);
       }else if(mode === 'admin'){
-        items = `<button type="button" class="msg-del-opt" onclick="event.stopPropagation();adminHideMsg('${safeId}','${extra}');MsgDelete.closeMenus()">${L.hideMe}</button>`
-          + `<button type="button" class="msg-del-opt danger" onclick="event.stopPropagation();adminDeleteMsgAll('${safeId}','${extra}');MsgDelete.closeMenus()">${L.hideAll}</button>`;
+        chips = this._chip(L.hideMe, `adminHideMsg('${safeId}','${extra}')`)
+          + this._chip(L.hideAll, `adminDeleteMsgAll('${safeId}','${extra}')`, true);
       }
-      return `<div class="msg-del-wrap" onclick="event.stopPropagation()">`
-        + this._triggerBtn(L.delete)
-        + `<div class="msg-del-menu" hidden>${items}</div></div>`;
+      return `<div class="msg-del-row" onclick="event.stopPropagation()">${chips}</div>`;
     },
   };
 
-  document.addEventListener('click', (e)=>{
-    if(e.target.closest('.msg-del-wrap')) return;
-    window.MsgDelete.closeMenus();
-  });
   document.addEventListener('touchstart', ()=> window.MsgDelete.unlockAudio(), { once: true, passive: true });
   document.addEventListener('click', ()=> window.MsgDelete.unlockAudio(), { once: true });
 })();

@@ -79,6 +79,7 @@ window._teacherListeners = [];
 
 function startTeacherListener(key){
   if(!key || typeof db==='undefined') return;
+  if(window.MsgDelete?.syncFromServer) window.MsgDelete.syncFromServer();
   window._teacherAdminMsgsReady = false;
   window._teacherListeners.forEach(r=>r.off());
   window._teacherListeners = [];
@@ -86,7 +87,9 @@ function startTeacherListener(key){
   const msgRef = db.ref('teacherData/'+key+'/messages');
   msgRef.on('value', snap=>{
     APP.messages = snap.exists()
-      ? Object.entries(snap.val()).map(([id,v])=>({id,...v})).sort((a,b)=>(a.ts||'').localeCompare(b.ts||''))
+      ? Object.entries(snap.val()).map(([id,v])=>({id,...v}))
+          .filter(m => !window.MsgDelete?.isGlobal('teacherMsg/'+key+'/'+(m.id||'')))
+          .sort((a,b)=>(a.ts||'').localeCompare(b.ts||''))
       : [];
     saveState();
     if(typeof renderSavedMessages === 'function') renderSavedMessages();
@@ -105,13 +108,12 @@ function startTeacherListener(key){
 
   const pmRef = db.ref('teacherData/'+key+'/parentMessages');
   pmRef.on('value', snap=>{
-    const delKey = 'del_pm_'+key;
-    let deletedIds = [];
-    try{ deletedIds = JSON.parse(localStorage.getItem(delKey)||'[]'); }catch(e){}
     const allMsgs = snap.exists()
       ? Object.entries(snap.val()).map(([id,v])=>({id,...v})).sort((a,b)=>(b.ts||'').localeCompare(a.ts||''))
       : [];
-    APP.parentMessages = allMsgs.filter(m=>!deletedIds.includes(m.id));
+    APP.parentMessages = allMsgs.filter(m =>
+      !window.MsgDelete?.isGlobal('teacherParentMsg/'+key+'/'+(m.id||''))
+    );
     saveState();
     const inbox = document.getElementById('parent-inbox');
     if(inbox) renderParentInbox();
