@@ -1,0 +1,78 @@
+═══════════════════════════════════════════════════════════
+  دليل بناء تطبيق Apple (iPhone + iPad)
+  مشروع: science-portal-app
+═══════════════════════════════════════════════════════════
+
+⚠️ مهم: بناء تطبيق iOS يتطلب جهاز Mac + Xcode.
+   على Windows نُعدّ الملفات فقط، والبناء النهائي على Mac.
+
+───────────────────────────────────────────────────────────
+المرحلة 1 — على Windows (تم إعدادها)
+───────────────────────────────────────────────────────────
+1. npm install
+2. npm run cap:sync:ios
+3. انسخ مجلد science-portal-app كاملاً إلى Mac (USB أو GitHub)
+
+───────────────────────────────────────────────────────────
+المرحلة 2 — Firebase لـ iOS (مرة واحدة)
+───────────────────────────────────────────────────────────
+1. افتح: https://console.firebase.google.com/project/students-portal-34231
+2. ⚙️ Project settings → Your apps → Add app → iOS
+3. Bundle ID: com.emad.scienceportal
+4. حمّل GoogleService-Info.plist
+5. ضعه هنا:
+   ios/App/App/GoogleService-Info.plist
+6. Cloud Messaging → Apple app configuration
+   → ارفع APNs Auth Key (.p8) من Apple Developer
+
+───────────────────────────────────────────────────────────
+المرحلة 3 — Apple Developer (مرة واحدة)
+───────────────────────────────────────────────────────────
+1. سجّل في: https://developer.apple.com (99$/سنة)
+2. Certificates, IDs & Profiles → Identifiers
+3. أنشئ App ID: com.emad.scienceportal
+4. فعّل: Push Notifications
+5. Keys → أنشئ APNs Key (.p8) → ارفعه في Firebase (الخطوة 2.6)
+
+───────────────────────────────────────────────────────────
+المرحلة 4 — على Mac (Xcode)
+───────────────────────────────────────────────────────────
+1. ثبّت Xcode من App Store
+2. افتح Terminal في مجلد المشروع:
+   cd science-portal-app
+   npm install
+   npm run cap:sync:ios
+   npm run cap:open:ios
+3. في Xcode:
+   - Signing & Capabilities → Team (حساب Apple Developer)
+   - Bundle Identifier: com.emad.scienceportal
+   - + Capability → Push Notifications
+   - + Capability → Background Modes → Remote notifications
+4. وصّل iPhone/iPad حقيقي (الإشعارات لا تعمل على المحاكي)
+5. Product → Run (▶)
+
+───────────────────────────────────────────────────────────
+المرحلة 5 — نشر App Store (اختياري)
+───────────────────────────────────────────────────────────
+1. Xcode → Product → Archive
+2. Distribute App → App Store Connect
+3. أنشئ التطبيق في App Store Connect
+4. أرسل للمراجعة
+
+───────────────────────────────────────────────────────────
+الأجهزة المدعومة
+───────────────────────────────────────────────────────────
+✅ iPhone (iOS 15+)
+✅ iPad (iOS 15+)
+✅ Mac with Apple Silicon (تشغيل تطبيق iPad عبر App Store إذا فُعّل)
+
+🌐 Mac/Windows بدون تثبيت: افتح الموقع
+   https://emadabuhoujaila.github.io/science-portal/
+
+───────────────────────────────────────────────────────────
+أوامر مفيدة
+───────────────────────────────────────────────────────────
+npm run cap:sync          ← مزامنة Android + iOS
+npm run cap:sync:ios      ← iOS فقط
+npm run cap:open:ios      ← فتح Xcode (على Mac)
+npm run icons:ios         ← توليد أيقونات Apple

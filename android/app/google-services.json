@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "148177464784",
+    "firebase_url": "https://students-portal-34231-default-rtdb.firebaseio.com",
+    "project_id": "students-portal-34231",
+    "storage_bucket": "students-portal-34231.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:148177464784:android:77e0d6cda704d99d885dd5",
+        "android_client_info": {
+          "package_name": "com.emad.scienceportal"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBvimBGUM1a3_DK7jNBWszMdWM-E1aT3Z4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,5 +1,6 @@
 package com.emad.scienceportal;
 
+import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.media.AudioAttributes;
@@ -26,7 +27,7 @@ public class MainActivity extends BridgeActivity {
         channel.setDescription("رسائل وملاحظات وشكاوى — مثل واتساب");
         channel.enableVibration(true);
         channel.setVibrationPattern(new long[]{400, 100, 400, 100, 400});
-        channel.setLockscreenVisibility(NotificationChannel.VISIBILITY_PUBLIC);
+        channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
 
         Uri sound = android.provider.Settings.System.DEFAULT_NOTIFICATION_URI;
         AudioAttributes attrs = new AudioAttributes.Builder()

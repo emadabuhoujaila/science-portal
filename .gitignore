@@ -1,0 +1,5 @@
+serviceAccountKey.json
+*-firebase-adminsdk-*.json
+node_modules/
+.DS_Store
+ios/App/App/GoogleService-Info.plist

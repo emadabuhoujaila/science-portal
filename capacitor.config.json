@@ -1,0 +1,18 @@
+{
+  "appId": "com.emad.scienceportal",
+  "appName": "بوابة المتابعة",
+  "webDir": "www",
+  "ios": {
+    "contentInset": "automatic",
+    "allowsLinkPreview": false,
+    "scrollEnabled": true
+  },
+  "android": {
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "FirebaseMessaging": {
+      "presentationOptions": ["alert", "badge", "sound"]
+    }
+  }
+}
