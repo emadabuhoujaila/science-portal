@@ -77,6 +77,7 @@ window._teacherListeners = [];
 
 function startTeacherListener(key){
   if(!key || typeof db==='undefined') return;
+  window._teacherAdminMsgsReady = false;
   window._teacherListeners.forEach(r=>r.off());
   window._teacherListeners = [];
 
@@ -122,11 +123,37 @@ function startTeacherListener(key){
       ? Object.entries(snap.val()).map(([id,v])=>({id,...v})).sort((a,b)=>(b.forwardedAt||b.ts||'').localeCompare(a.forwardedAt||a.ts||''))
       : [];
     saveState();
-    const inbox = document.getElementById('teacher-complaints-inbox');
-    if(inbox && typeof renderTeacherComplaints === 'function') renderTeacherComplaints();
-    if(typeof updateTeacherComplaintsBadge === 'function') updateTeacherComplaintsBadge();
+    if(document.getElementById('teacher-complaints-inbox') && typeof renderTeacherComplaints === 'function') renderTeacherComplaints();
+    if(typeof updateTeacherSchoolBadge === 'function') updateTeacherSchoolBadge();
   });
   window._teacherListeners.push(ciRef);
+
+  const amRef = db.ref('teacherData/'+key+'/adminMessages');
+  amRef.on('value', snap=>{
+    const prev = (APP.teacherAdminMessages || []).slice();
+    APP.teacherAdminMessages = snap.exists()
+      ? Object.entries(snap.val()).map(([id,v])=>({id,...v})).sort((a,b)=>(b.ts||'').localeCompare(a.ts||''))
+      : [];
+    saveState();
+    if(!window._teacherAdminMsgsReady){
+      window._teacherAdminMsgsReady = true;
+    } else if(typeof _notifyNewTeacherAdminMessages === 'function'){
+      _notifyNewTeacherAdminMessages(prev);
+    }
+    if(document.getElementById('teacher-admin-msgs-list') && typeof renderTeacherAdminMessages === 'function') renderTeacherAdminMessages();
+    if(typeof updateTeacherSchoolBadge === 'function') updateTeacherSchoolBadge();
+  });
+  window._teacherListeners.push(amRef);
+
+  const tmaRef = db.ref('teacherMessagesToAdmin/'+key);
+  tmaRef.on('value', snap=>{
+    APP.teacherMessagesToAdmin = snap.exists()
+      ? Object.entries(snap.val()).map(([id,v])=>({id,...v})).sort((a,b)=>(b.ts||'').localeCompare(a.ts||''))
+      : [];
+    saveState();
+    if(document.getElementById('teacher-admin-sent-list') && typeof renderTeacherSentToAdmin === 'function') renderTeacherSentToAdmin();
+  });
+  window._teacherListeners.push(tmaRef);
 }
 
 auth.onAuthStateChanged(async user=>{

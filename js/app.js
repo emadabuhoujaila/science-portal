@@ -285,6 +285,8 @@ let APP = {
   parentMessagesToAdmin:[], // رسائل ولي الأمر للمسؤول
   parentAdminMessages:[], // رسائل المسؤول لولي الأمر
   complaintInbox:[], // شكاوى موجّهة من المسؤول
+  teacherAdminMessages:[], // رسائل المسؤول للمعلم
+  teacherMessagesToAdmin:[], // رسائل المعلم للمسؤول
   savedParent: null  // {cls, name} — تذكر ولي الأمر بعد تسجيل الدخول
 };
 
@@ -352,8 +354,10 @@ function showTab(name,el){
     renderSavedMessages(); renderParentInbox();
     if(window.PortalPush?.clearDeliveredNotifications) PortalPush.clearDeliveredNotifications();
   }
-  if(name==='complaints'){
-    renderTeacherComplaints(); markAllTeacherComplaintsRead();
+  if(name==='school'){
+    renderTeacherSchoolTab();
+    markAllTeacherAdminMsgsSeen();
+    markAllTeacherComplaintsRead();
     if(window.PortalPush?.clearDeliveredNotifications) PortalPush.clearDeliveredNotifications();
   }
 }
@@ -1287,6 +1291,7 @@ function _enterDashboard(teacher){
     else teacher._key = 'teacher_' + Date.now();
   }
   CURRENT_TEACHER = teacher;
+  window._teacherAdminMsgsReady = false;
   // ALWAYS reset teacher students on new login
   window.TEACHER_STUDENTS = {};
   // Store in session
@@ -3706,6 +3711,17 @@ const TRANSLATIONS = {
     anRemedialTitle: '🎯 الطلاب المستهدفون بخطة علاجية',
     allSections: 'كل الشعب',
     teacherComplaintsEmpty: 'لا توجد شكاوى موجّهة بعد',
+    teacherSchoolTab: '🏫 المدرسة',
+    teacherSchoolAdminTitle: '🏫 رسائل المسؤول',
+    teacherSchoolAdminDesc: 'رسائل مباشرة من إدارة المدرسة.',
+    teacherSchoolAdminEmpty: 'لا توجد رسائل من المسؤول بعد',
+    teacherSchoolSendTitle: '✉️ رسالة للمسؤول',
+    teacherSchoolSendDesc: 'أرسل رسالة مباشرة لمسؤول المدرسة.',
+    teacherSchoolSendPH: 'اكتب رسالتك لمسؤول المدرسة...',
+    teacherSchoolSendBtn: '📤 إرسال للمسؤول',
+    teacherSchoolSentAdmin: '📤 رسائلي للمسؤول',
+    teacherSchoolComplaintsTitle: '📢 الشكاوى الموجّهة',
+    teacherSchoolComplaintsDesc: 'شكاوى وجّهها المسؤول — قد تكون عامة دون بيانات مقدّم الشكوى.',
     parentAcademicTab: 'الأكاديمي',
     parentSchoolTab: '🏫 المدرسة',
     parentSchoolAdminTitle: 'رسائل المسؤول',
@@ -4050,6 +4066,17 @@ const TRANSLATIONS = {
     anRemedialTitle: '🎯 Students Targeted for Remedial Plan',
     allSections: 'All Sections',
     teacherComplaintsEmpty: 'No forwarded complaints yet',
+    teacherSchoolTab: '🏫 School',
+    teacherSchoolAdminTitle: '🏫 Admin Messages',
+    teacherSchoolAdminDesc: 'Direct messages from the school admin.',
+    teacherSchoolAdminEmpty: 'No admin messages yet',
+    teacherSchoolSendTitle: '✉️ Message the Admin',
+    teacherSchoolSendDesc: 'Send a direct message to the school admin.',
+    teacherSchoolSendPH: 'Write your message to the admin...',
+    teacherSchoolSendBtn: '📤 Send to Admin',
+    teacherSchoolSentAdmin: '📤 Sent to Admin',
+    teacherSchoolComplaintsTitle: '📢 Forwarded Complaints',
+    teacherSchoolComplaintsDesc: 'Complaints forwarded by the admin — may be anonymous.',
     parentAcademicTab: 'Academic',
     parentSchoolTab: '🏫 School',
     parentSchoolAdminTitle: 'Admin Messages',
@@ -4796,9 +4823,18 @@ function applyTeacherLang(){
   setText('ttab-pins',     'tabPins');
   setText('ttab-behavior', 'tabBehavior');
   setText('ttab-messages', 'tabMessages');
-  setText('ttab-complaints', 'tabComplaints');
+  setText('ttab-school', 'teacherSchoolTab');
   setText('ttab-share',    'tabShare');
-  setText('teacher-complaints-title', 'tabComplaints');
+  setText('teacher-school-admin-title', 'teacherSchoolAdminTitle');
+  setText('teacher-school-admin-desc', 'teacherSchoolAdminDesc');
+  setText('teacher-school-send-title', 'teacherSchoolSendTitle');
+  setText('teacher-school-send-desc', 'teacherSchoolSendDesc');
+  setText('teacher-school-send-btn', 'teacherSchoolSendBtn');
+  setText('teacher-school-complaints-title', 'teacherSchoolComplaintsTitle');
+  setText('teacher-school-complaints-desc', 'teacherSchoolComplaintsDesc');
+  setText('teacher-complaints-empty', 'teacherComplaintsEmpty');
+  const teacherSchoolInput = document.getElementById('teacher-school-admin-input');
+  if(teacherSchoolInput) teacherSchoolInput.placeholder = t('teacherSchoolSendPH');
   // Rebuild grade dropdowns with correct language
   try{ refreshGradeDropdowns(); }catch(e){}
 
@@ -4915,6 +4951,8 @@ function toggleLang(){
       try{ renderSavedMessages(); }catch(e){}
       try{ renderParentInbox(); }catch(e){}
       try{ renderTeacherComplaints(); }catch(e){}
+      try{ renderTeacherSchoolTab(); }catch(e){}
+      try{ updateTeacherSchoolBadge(); }catch(e){}
       try{ renderLinksTab(); }catch(e){}
     } else if(screenId === 'screen-parent' && window._currentParent){
       rerenderParentDashboard({ preserveTab:true }).catch(e=>console.warn('parent rerender:', e));
@@ -8135,6 +8173,181 @@ async function submitParentComplaint(idx, teacherKey, cls, studentName, mid){
   }
 }
 
+function renderTeacherSchoolTab(){
+  renderTeacherAdminMessages();
+  renderTeacherSentToAdmin();
+  renderTeacherComplaints();
+}
+
+function getTeacherAdminMsgReadIds(key){
+  try{ return JSON.parse(localStorage.getItem('read_tadmin_'+key)||'[]'); }catch(e){ return []; }
+}
+
+function teacherAdminMsgReadId(m){
+  if(!m) return '';
+  return m.id || ((m.ts||m.date||'')+'|'+(m.body||'').slice(0,40));
+}
+
+function isTeacherAdminMsgRead(m){
+  const key = getTeacherKey();
+  if(!key || !m) return true;
+  return getTeacherAdminMsgReadIds(key).includes(teacherAdminMsgReadId(m));
+}
+
+function markTeacherAdminMsgRead(m){
+  const key = getTeacherKey();
+  if(!key || !m) return;
+  const readId = teacherAdminMsgReadId(m);
+  const ids = getTeacherAdminMsgReadIds(key);
+  if(readId && !ids.includes(readId)) ids.push(readId);
+  try{ localStorage.setItem('read_tadmin_'+key, JSON.stringify(ids)); }catch(e){}
+  updateTeacherSchoolBadge();
+  renderTeacherAdminMessages();
+}
+
+function markAllTeacherAdminMsgsSeen(){
+  const key = getTeacherKey();
+  if(!key) return;
+  const ids = getTeacherAdminMsgReadIds(key);
+  (APP.teacherAdminMessages||[]).forEach(m=>{
+    const readId = teacherAdminMsgReadId(m);
+    if(readId && !ids.includes(readId)) ids.push(readId);
+  });
+  try{ localStorage.setItem('read_tadmin_'+key, JSON.stringify(ids)); }catch(e){}
+  updateTeacherSchoolBadge();
+  renderTeacherAdminMessages();
+}
+
+function _notifyNewTeacherAdminMessages(prevList){
+  if(!window._teacherAdminMsgsReady) return;
+  const prevIds = new Set((prevList||[]).map(m=>m.id));
+  const fresh = (APP.teacherAdminMessages||[]).filter(m=>!prevIds.has(m.id));
+  if(!fresh.length) return;
+  const isEn = currentLang==='en';
+  const msg = isEn ? '🏫 New message from admin' : '🏫 رسالة جديدة من المسؤول';
+  showToast(msg);
+  if(typeof sendLocalNotif === 'function') sendLocalNotif(msg, (fresh[0].body||'').slice(0,120));
+  else if(window.PortalPush?.playSound) PortalPush.playSound();
+}
+
+function renderTeacherAdminMessages(){
+  const wrap = document.getElementById('teacher-admin-msgs-list');
+  if(!wrap) return;
+  const isEn = currentLang==='en';
+  const list = (APP.teacherAdminMessages||[]).slice().sort((a,b)=>(b.ts||'').localeCompare(a.ts||''));
+  if(!list.length){
+    wrap.innerHTML = `<div class="empty-state" style="padding:24px"><div class="ico">📭</div><p>${isEn?'No admin messages yet':'لا توجد رسائل من المسؤول بعد'}</p></div>`;
+    return;
+  }
+  const hasUnread = list.some(m=>!isTeacherAdminMsgRead(m));
+  wrap.innerHTML = `
+    <div class="parent-admin-msgs-wrap${hasUnread?' has-unread':''}">
+      ${list.map(m=>{
+        const unread = !isTeacherAdminMsgRead(m);
+        return `
+        <div class="parent-admin-msg-card direct${unread?' unread':''}" onclick="markTeacherAdminMsgReadById('${m.id}')">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px;flex-wrap:wrap">
+            <span class="parent-admin-kind-label">🏫 ${isEn?'School Admin':'إدارة المدرسة'}${unread?` · <span class="parent-admin-new-pill inline">${isEn?'New':'جديد'}</span>`:''}</span>
+            <span style="font-size:11px;color:var(--grey-3)">${m.date||formatAdminDate(m.ts, isEn)}</span>
+          </div>
+          <p style="margin:0;font-size:13px;color:var(--grey-2);white-space:pre-line;line-height:1.7">${escapeHtml(m.body||'')}</p>
+        </div>`;
+      }).join('')}
+    </div>`;
+}
+
+function markTeacherAdminMsgReadById(id){
+  const m = (APP.teacherAdminMessages||[]).find(x=>x.id===id);
+  if(m) markTeacherAdminMsgRead(m);
+  if(window.PortalPush?.clearDeliveredNotifications) PortalPush.clearDeliveredNotifications();
+}
+
+function renderTeacherSentToAdmin(){
+  const wrap = document.getElementById('teacher-admin-sent-list');
+  if(!wrap) return;
+  const isEn = currentLang==='en';
+  const list = APP.teacherMessagesToAdmin || [];
+  if(!list.length){ wrap.innerHTML=''; return; }
+  wrap.innerHTML = `
+    <div style="margin-top:14px">
+      <h5 class="parent-school-subtitle">${isEn?'📤 Sent to Admin':'📤 رسائلي للمسؤول'}</h5>
+      ${list.map(m=>`
+        <div class="parent-school-sent-card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px">
+            <span style="font-size:11px;font-weight:700;color:var(--teal-mid)">📤 ${isEn?'Sent':'أُرسلت'}</span>
+            <span style="font-size:11px;color:var(--grey-3)">${m.date||formatAdminDate(m.ts, isEn)}</span>
+          </div>
+          <p style="margin:0;font-size:13px;color:var(--grey-2);white-space:pre-line;line-height:1.7">${escapeHtml(m.body||'')}</p>
+        </div>`).join('')}
+    </div>`;
+}
+
+async function submitTeacherMessageToAdmin(){
+  const isEn = currentLang==='en';
+  const key = getTeacherKey();
+  const body = (document.getElementById('teacher-school-admin-input')?.value||'').trim();
+  if(!body){
+    showToast('⚠️ '+(isEn?'Write your message first':'اكتب رسالتك أولاً'));
+    return;
+  }
+  if(!key || typeof db==='undefined'){
+    showToast('⚠️ '+(isEn?'Cannot send — not connected':'تعذّر الإرسال — لا يوجد اتصال'));
+    return;
+  }
+  const now = new Date();
+  const dateStr = now.toLocaleDateString(isEn?'en-AE':'ar-AE')+' '+now.toLocaleTimeString(isEn?'en-AE':'ar-AE',{hour:'2-digit',minute:'2-digit'});
+  const ts = now.toISOString();
+  const subj = SUBJECTS[CURRENT_TEACHER?.subject];
+  const subjLabel = subj ? (isEn?subj.en:subj.ar) : (CURRENT_TEACHER?.subject||'');
+  const btn = document.getElementById('teacher-school-send-btn');
+  if(btn){ btn.disabled=true; btn.textContent=isEn?'Sending…':'جارٍ الإرسال…'; }
+  try{
+    const payload = {
+      fromRole:'teacher',
+      teacherKey:key,
+      teacherName: CURRENT_TEACHER?.name||'',
+      subject: CURRENT_TEACHER?.subject||'',
+      subjLabel,
+      email: CURRENT_TEACHER?.email||'',
+      body, ts, date:dateStr,
+    };
+    const inboxRef = db.ref('adminInbox').push();
+    const sentRef = db.ref('teacherMessagesToAdmin/'+key).push();
+    await inboxRef.set({ ...payload, id: inboxRef.key });
+    await sentRef.set({ ...payload, id: sentRef.key, outboxId: inboxRef.key });
+    document.getElementById('teacher-school-admin-input').value = '';
+    renderTeacherSentToAdmin();
+    showToast('✅ '+(isEn?'Message sent to admin':'تم إرسال الرسالة للمسؤول'));
+  }catch(e){
+    console.error('submitTeacherMessageToAdmin', e);
+    showToast('⚠️ '+(isEn?'Send failed':'فشل الإرسال'));
+  }finally{
+    if(btn){ btn.disabled=false; btn.textContent=isEn?'📤 Send to Admin':'📤 إرسال للمسؤول'; }
+  }
+}
+
+function updateTeacherSchoolBadge(){
+  const adminUnread = (APP.teacherAdminMessages||[]).filter(m=>!isTeacherAdminMsgRead(m)).length;
+  const complaintUnread = (APP.complaintInbox||[]).filter(c=>!c.read).length;
+  const total = adminUnread + complaintUnread;
+  const tab = document.getElementById('ttab-school');
+  if(!tab) return;
+  let badge = tab.querySelector('.inbox-badge');
+  if(total>0){
+    if(!badge){
+      badge=document.createElement('span');
+      badge.className='inbox-badge';
+      badge.style.cssText='background:var(--red-soft);color:#fff;border-radius:20px;font-size:11px;font-weight:700;padding:1px 7px;margin-right:6px;display:inline-block';
+      tab.prepend(badge);
+    }
+    badge.textContent=total;
+  } else if(badge){ badge.remove(); }
+}
+
+function updateTeacherComplaintsBadge(){
+  updateTeacherSchoolBadge();
+}
+
 function renderTeacherComplaints(){
   const wrap = document.getElementById('teacher-complaints-inbox');
   if(!wrap) return;
@@ -8162,22 +8375,6 @@ function renderTeacherComplaints(){
         <p class="teacher-complaint-body">${escapeHtml(c.body||'')}</p>
       </div>`;
   }).join('');
-}
-
-function updateTeacherComplaintsBadge(){
-  const unread = (APP.complaintInbox||[]).filter(c=>!c.read).length;
-  const tab = document.getElementById('ttab-complaints');
-  if(!tab) return;
-  let badge = tab.querySelector('.inbox-badge');
-  if(unread>0){
-    if(!badge){
-      badge=document.createElement('span');
-      badge.className='inbox-badge';
-      badge.style.cssText='background:var(--red-soft);color:#fff;border-radius:20px;font-size:11px;font-weight:700;padding:1px 7px;margin-right:6px;display:inline-block';
-      tab.prepend(badge);
-    }
-    badge.textContent=unread;
-  } else if(badge){ badge.remove(); }
 }
 
 async function markTeacherComplaintRead(id){

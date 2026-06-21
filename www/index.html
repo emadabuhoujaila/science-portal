@@ -37,7 +37,7 @@ window.__splashDeadline = Date.now() + 5000;
 </script>
 <script>
 (function(){
-  var key='portal-cache-reset-v35';
+  var key='portal-cache-reset-v36';
   if(localStorage.getItem(key)) return;
   localStorage.setItem(key,'1');
   var done=function(){ location.reload(); };
@@ -706,7 +706,7 @@ window.__splashDeadline = Date.now() + 5000;
     <button class="nav-tab" onclick="showTab('pins',this)" id="ttab-pins">🔑 الرموز السرية</button>
     <button class="nav-tab" onclick="showTab('behavior',this)" id="ttab-behavior">🧑‍🎓 السلوك</button>
     <button class="nav-tab" onclick="showTab('messages',this)" id="ttab-messages">💬 الرسائل</button>
-    <button class="nav-tab" onclick="showTab('complaints',this)" id="ttab-complaints">📢 صندوق الشكاوى</button>
+    <button class="nav-tab" onclick="showTab('school',this)" id="ttab-school">🏫 المدرسة</button>
     <button class="nav-tab" onclick="showTab('links',this)" id="ttab-share">🔗 مشاركة أولياء الأمور</button>
   </div>
 
@@ -969,14 +969,44 @@ window.__splashDeadline = Date.now() + 5000;
       </div>
     </div>
 
-    <!-- TAB: COMPLAINTS -->
-    <div class="tab-content" id="tab-complaints">
+    <!-- TAB: SCHOOL (Admin messages + send to admin + forwarded complaints) -->
+    <div class="tab-content" id="tab-school">
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header admin-card-header-teal">
+          <h3 id="teacher-school-admin-title">🏫 رسائل المسؤول</h3>
+        </div>
+        <div style="padding:16px 20px">
+          <p id="teacher-school-admin-desc" class="admin-help-text">رسائل مباشرة من إدارة المدرسة.</p>
+          <div id="teacher-admin-msgs-list">
+            <div class="empty-state" style="padding:24px"><div class="ico">📭</div><p id="teacher-admin-msgs-empty">لا توجد رسائل من المسؤول بعد</p></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header">
+          <h3 id="teacher-school-send-title">✉️ رسالة للمسؤول</h3>
+        </div>
+        <div style="padding:20px">
+          <p id="teacher-school-send-desc" class="admin-help-text" style="margin-bottom:12px">أرسل رسالة مباشرة لمسؤول المدرسة.</p>
+          <textarea id="teacher-school-admin-input" class="parent-msg-textarea" rows="4"
+            placeholder="اكتب رسالتك لمسؤول المدرسة..."></textarea>
+          <button type="button" class="btn-primary" id="teacher-school-send-btn" onclick="submitTeacherMessageToAdmin()" style="margin-top:10px">
+            📤 إرسال للمسؤول
+          </button>
+          <div id="teacher-admin-sent-list"></div>
+        </div>
+      </div>
+
       <div class="card">
         <div class="card-header">
-          <h3 id="teacher-complaints-title">📢 صندوق الشكاوى</h3>
+          <h3 id="teacher-school-complaints-title">📢 الشكاوى الموجّهة</h3>
         </div>
-        <div style="padding:16px" id="teacher-complaints-inbox">
-          <div class="empty-state"><div class="ico">📭</div><p id="teacher-complaints-empty">لا توجد شكاوى موجّهة بعد</p></div>
+        <div style="padding:16px 20px">
+          <p id="teacher-school-complaints-desc" class="admin-help-text">شكاوى وجّهها المسؤول — قد تكون عامة دون بيانات مقدّم الشكوى.</p>
+          <div id="teacher-complaints-inbox">
+            <div class="empty-state"><div class="ico">📭</div><p id="teacher-complaints-empty">لا توجد شكاوى موجّهة بعد</p></div>
+          </div>
         </div>
       </div>
     </div>
@@ -1141,7 +1171,7 @@ window.__splashDeadline = Date.now() + 5000;
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script>
 <script src="js/push-notifications.js?v=3"></script>
-<script src="js/firebase-init.js?v=4"></script>
-<script src="js/app.js?v=35"></script>
+<script src="js/firebase-init.js?v=36"></script>
+<script src="js/app.js?v=36"></script>
 </body>
 </html>
