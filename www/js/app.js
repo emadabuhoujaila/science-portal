@@ -92,7 +92,7 @@
 //  INIT — تهيئة الصفحة فور التحميل
 // ══════════════════════════════════════════════════
 window._splashDone = false;
-window._pendingParentAutoLogin = null;
+window._pendingParentPrefill = null;
 const SPLASH_DURATION_MS = 5000;
 
 (function initPage(){
@@ -123,22 +123,31 @@ function finishSplashScreen(){
 }
 
 function enterAppAfterSplash(){
-  if(window._pendingParentAutoLogin){
-    const sp = window._pendingParentAutoLogin;
-    try{ Object.assign(APP, JSON.parse(localStorage.getItem('portal_v4')||'{}')); }catch(e){}
-    const saved = APP.savedParent || sp;
-    window._currentParent = enrichParentSession(
-      saved.cls || sp.cls,
-      saved.name || sp.name,
-      saved.mid || sp.mid || '',
-      saved.section || sp.section || ''
-    );
-    registerParentSession(window._currentParent);
-    showScreen('parent');
-    loadParentSubjectTabs(window._currentParent.cls, window._currentParent.name, window._currentParent.mid || '');
-    return;
-  }
   showScreen('login');
+  if(window._pendingParentPrefill){
+    setTimeout(()=>prefillParentLoginForm(window._pendingParentPrefill), 150);
+    window._pendingParentPrefill = null;
+  }
+}
+
+function prefillParentLoginForm(sp){
+  if(!sp?.cls || !sp?.name) return;
+  try{
+    const parentTab = document.querySelector('[onclick*="parent"]') || document.getElementById('tab-parent');
+    if(parentTab) parentTab.click();
+  }catch(e){}
+  const gradeSel = document.getElementById('parent-grade') || document.getElementById('parent-class');
+  if(gradeSel) gradeSel.value = sp.cls;
+  if(typeof populateParentSections === 'function') populateParentSections();
+  setTimeout(()=>{
+    const secSel = document.getElementById('parent-section');
+    if(secSel && sp.section) secSel.value = sp.section;
+    if(typeof populateParentNames === 'function') populateParentNames();
+    setTimeout(()=>{
+      const nameSel = document.getElementById('parent-name');
+      if(nameSel) nameSel.value = sp.name;
+    }, 200);
+  }, 150);
 }
 
 function startSplashScreen(){
@@ -253,7 +262,6 @@ function parentSessionMatches(reg, cls, section, name){
 async function enterParentDashboard(cls, name, mid, section){
   APP.savedParent = enrichParentSession(cls, name, mid, section);
   saveState();
-  registerParentSession(APP.savedParent);
   window._currentParent = { ...APP.savedParent };
   showScreen('parent');
   loadParentSubjectTabs(cls, name, mid);
@@ -555,9 +563,18 @@ async function adminSyncParentRecordsAfterStudentMove(grade, oldSection, newSect
         mid,
         registeredAt: p.registeredAt || now,
         lastLogin: p.lastLogin || now,
+        hasPin: !!p.pinHash,
+        ...(p.pinHash ? { pinHash: p.pinHash, pinSalt: p.pinSalt, pinVersion: p.pinVersion || 1 } : {}),
       };
       updates['registeredParents/'+mid] = record;
-      updates['parentQuickLogin/'+newKey] = record;
+      updates['parentQuickLogin/'+newKey] = {
+        cls: record.cls,
+        section: record.section,
+        name: record.name,
+        hasPin: !!p.pinHash,
+        registeredAt: record.registeredAt,
+        lastLogin: record.lastLogin,
+      };
     }
     if(Object.keys(updates).length) await db.ref().update(updates);
   }catch(e){ console.warn('adminSyncParentRecordsAfterStudentMove', e); }
@@ -1432,7 +1449,163 @@ async function logout(){
 
 
 
-let pendingLogin = null; // {cls, name}
+let pendingLogin = null; // { cls, name, section, mid, mode: 'mid'|'pin' }
+
+function configurePinEntryScreen(mode, studentDisplayName){
+  const isEn = currentLang === 'en';
+  const input = document.getElementById('p0');
+  const instruction = document.getElementById('pin-instruction');
+  const errEl = document.getElementById('pin-error');
+  const btn = document.getElementById('pin-login-btn');
+  const lockName = document.getElementById('lock-student-name');
+  const forgotBtn = document.getElementById('pin-forgot-btn');
+  const backPinBtn = document.getElementById('pin-back-to-pin-btn');
+  if(lockName) lockName.textContent = studentDisplayName || '';
+  if(errEl) errEl.style.display = 'none';
+  if(input){
+    input.disabled = false;
+    input.type = 'password';
+    input.autocomplete = mode === 'pin' ? 'current-password' : 'off';
+    if(mode === 'pin'){
+      input.maxLength = 6;
+      input.placeholder = isEn ? 'Enter your PIN (4–6 digits)' : 'أدخل الرمز السري (4–6 أرقام)';
+    } else {
+      input.maxLength = 12;
+      input.placeholder = isEn ? 'Enter ministry ID (up to 12 digits)' : 'أدخل الرقم الوزاري (حتى 12 رقم)';
+    }
+  }
+  if(instruction){
+    if(mode === 'pin'){
+      instruction.textContent = isEn ? 'Enter your personal PIN to continue' : 'أدخل الرمز السري الشخصي للمتابعة';
+    } else if(mode === 'reset-mid'){
+      instruction.textContent = isEn
+        ? 'Enter ministry ID to reset your forgotten PIN'
+        : 'أدخل الرقم الوزاري لإعادة تعيين الرمز المنسي';
+    } else {
+      instruction.textContent = isEn ? 'Enter ministry ID — first time only' : 'أدخل الرقم الوزاري — للمرة الأولى فقط';
+    }
+  }
+  if(btn){
+    btn.textContent = mode === 'reset-mid'
+      ? (isEn ? 'Continue ←' : 'متابعة ←')
+      : (isEn ? 'Sign in ←' : 'دخول ←');
+  }
+  if(forgotBtn){
+    forgotBtn.style.display = mode === 'pin' ? 'inline-block' : 'none';
+    forgotBtn.textContent = isEn ? 'Forgot your PIN?' : 'نسيت الرمز السري؟';
+  }
+  if(backPinBtn){
+    backPinBtn.style.display = mode === 'reset-mid' ? 'inline-block' : 'none';
+    backPinBtn.textContent = isEn ? '← Back to PIN entry' : '← العودة لإدخال الرمز';
+  }
+  const backBtn = document.getElementById('pin-back-btn');
+  if(backBtn) backBtn.textContent = isEn ? '← Back' : '← العودة';
+}
+
+function startParentPinReset(){
+  if(!pendingLogin || pendingLogin.mode !== 'pin') return;
+  pendingLogin.mode = 'reset-mid';
+  pendingLogin.pinReset = true;
+  pinAttempts = 0;
+  document.getElementById('lock-attempts').textContent = '';
+  const student = findStudentInGrade(pendingLogin.cls, pendingLogin.name, pendingLogin.mid, pendingLogin.section);
+  configurePinEntryScreen('reset-mid', displayStudentName(student || { name: pendingLogin.name }));
+  clearPin();
+  setTimeout(()=>document.getElementById('p0')?.focus(), 150);
+}
+
+function cancelParentPinReset(){
+  if(!pendingLogin) return;
+  pendingLogin.mode = 'pin';
+  pendingLogin.pinReset = false;
+  pinAttempts = 0;
+  document.getElementById('lock-attempts').textContent = '';
+  const student = findStudentInGrade(pendingLogin.cls, pendingLogin.name, pendingLogin.mid, pendingLogin.section);
+  configurePinEntryScreen('pin', displayStudentName(student || { name: pendingLogin.name }));
+  clearPin();
+  setTimeout(()=>document.getElementById('p0')?.focus(), 150);
+}
+
+function showParentPinSetupScreen(isReset){
+  const isEn = currentLang === 'en';
+  if(!pendingLogin) return;
+  pendingLogin.pinReset = !!isReset;
+  const student = findStudentInGrade(pendingLogin.cls, pendingLogin.name, pendingLogin.mid, pendingLogin.section);
+  const nameEl = document.getElementById('pin-setup-student-name');
+  if(nameEl) nameEl.textContent = displayStudentName(student || { name: pendingLogin.name });
+  const errEl = document.getElementById('pin-setup-error');
+  if(errEl){ errEl.style.display = 'none'; errEl.textContent = ''; }
+  const np = document.getElementById('parent-new-pin');
+  const cp = document.getElementById('parent-confirm-pin');
+  if(np) np.value = '';
+  if(cp) cp.value = '';
+  const setEl = (id, key)=>{ const el = document.getElementById(id); if(el) el.textContent = t(key); };
+  setEl('pin-setup-desc', isReset ? 'pinSetupDescReset' : 'pinSetupDesc');
+  setEl('pin-setup-lbl-new', 'pinSetupLblNew');
+  setEl('pin-setup-lbl-confirm', 'pinSetupLblConfirm');
+  setEl('pin-setup-hint', isReset ? 'pinSetupHintReset' : 'pinSetupHint');
+  const btn = document.getElementById('pin-setup-submit-btn');
+  if(btn) btn.textContent = isEn
+    ? (isReset ? 'Save new PIN & enter ←' : 'Save PIN & enter ←')
+    : (isReset ? 'حفظ الرمز الجديد والدخول ←' : 'حفظ الرمز والدخول ←');
+  showScreen('parent-pin-setup');
+  setTimeout(()=>np?.focus(), 200);
+}
+
+async function submitParentPinSetup(){
+  await submitParentPinSetupAsync().catch(e=>console.error('submitParentPinSetup', e));
+}
+
+async function submitParentPinSetupAsync(){
+  const isEn = currentLang === 'en';
+  if(!pendingLogin?.mid) return;
+  const pin = (document.getElementById('parent-new-pin')?.value || '').replace(/\D/g, '');
+  const pinConfirm = (document.getElementById('parent-confirm-pin')?.value || '').replace(/\D/g, '');
+  const errEl = document.getElementById('pin-setup-error');
+  const showErr = (msg)=>{
+    if(errEl){ errEl.textContent = msg; errEl.style.display = 'block'; }
+    else showToast('⚠️ ' + msg);
+  };
+  if(pin.length < 4 || pin.length > 6){
+    return showErr(isEn ? 'PIN must be 4–6 digits' : 'الرمز السري 4–6 أرقام');
+  }
+  if(pin !== pinConfirm){
+    return showErr(isEn ? 'PIN confirmation does not match' : 'تأكيد الرمز غير متطابق');
+  }
+  const btn = document.getElementById('pin-setup-submit-btn');
+  if(btn){ btn.disabled = true; btn.textContent = isEn ? 'Saving…' : 'جارٍ الحفظ…'; }
+  try{
+    const fns = getCloudFunctions();
+    if(!fns) throw new Error(isEn ? 'Service unavailable' : 'الخدمة غير متاحة');
+    const { cls, name, section, mid } = pendingLogin;
+    const fnName = pendingLogin.pinReset ? 'resetParentPin' : 'setupParentPin';
+    const wasReset = !!pendingLogin.pinReset;
+    await fns.httpsCallable(fnName)({ cls, section, name, mid, pin, pinConfirm });
+    const login = { ...pendingLogin };
+    pendingLogin = null;
+    await enterParentDashboard(login.cls, login.name, login.mid, login.section || '');
+    showToast('✅ ' + (wasReset
+      ? (isEn ? 'PIN reset — welcome!' : 'تم تعيين الرمز الجديد — أهلاً بك!')
+      : (isEn ? 'PIN saved — welcome!' : 'تم حفظ الرمز — أهلاً بك!')));
+  }catch(e){
+    console.error(e);
+    const msg = parentAuthErrorMessage(e, isEn);
+    showErr(msg);
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = isEn ? 'Save PIN & enter ←' : 'حفظ الرمز والدخول ←'; }
+  }
+}
+
+function parentAuthErrorMessage(err, isEn){
+  const code = err?.code || '';
+  const msg = err?.message || '';
+  if(code === 'functions/permission-denied') return isEn ? 'Incorrect PIN or ministry ID' : 'الرمز أو الرقم الوزاري غير صحيح';
+  if(code === 'functions/resource-exhausted') return isEn ? 'Too many attempts — try again in 15 minutes' : 'محاولات كثيرة — حاول بعد 15 دقيقة';
+  if(code === 'functions/invalid-argument') return msg || (isEn ? 'Invalid input' : 'إدخال غير صالح');
+  if(code === 'functions/already-exists') return isEn ? 'PIN already set — use PIN login' : 'الرمز مسجّل مسبقاً — استخدم الرمز السري';
+  return msg || (isEn ? 'Verification failed' : 'فشل التحقق');
+}
+
 let pinAttempts = 0;
 
 function goToPin(){
@@ -1457,22 +1630,15 @@ async function goToPinAsync(){
     nextBtn.textContent = currentLang==='en' ? '⏳ Checking...' : '⏳ جارٍ التحقق...';
   }
 
+  let mode = 'mid';
   try{
-    if(typeof db !== 'undefined'){
-      const sessionKey = makeParentSessionKey(cls, section, name);
-      const snap = await db.ref('parentQuickLogin/'+sessionKey).once('value');
-      if(snap.exists()){
-        const reg = snap.val();
-        if(parentSessionMatches(reg, cls, section, name) && reg.mid){
-          pendingLogin = null;
-          pinAttempts = 0;
-          await enterParentDashboard(cls, name, reg.mid, section);
-          return;
-        }
-      }
+    const fns = getCloudFunctions();
+    if(fns){
+      const res = await fns.httpsCallable('checkParentRegistration')({ cls, section, name });
+      if(res?.data?.registered) mode = 'pin';
     }
   }catch(e){
-    console.warn('parentQuickLogin check', e);
+    console.warn('checkParentRegistration', e);
   }finally{
     if(nextBtn){
       nextBtn.disabled = false;
@@ -1480,12 +1646,12 @@ async function goToPinAsync(){
     }
   }
 
-  pendingLogin={cls, name, section, mid};
-  pinAttempts=0;
+  pendingLogin = { cls, name, section, mid, mode };
+  pinAttempts = 0;
   document.getElementById('pin-error').style.display='none';
   document.getElementById('lock-attempts').textContent='';
   const lockStudent = findStudentInGrade(cls, name, mid, section);
-  document.getElementById('lock-student-name').textContent = displayStudentName(lockStudent || {name});
+  configurePinEntryScreen(mode, displayStudentName(lockStudent || {name}));
   clearPin();
   showScreen('locked');
   setTimeout(()=>document.getElementById('p0')?.focus(), 300);
@@ -1514,33 +1680,90 @@ function checkPin(){
 
 async function checkPinAsync(){
   if(!pendingLogin) return;
-  const entered = [0,1,2,3,4,5,6,7,8,9].map(i=>{
-    const el = document.getElementById('p'+i);
-    return el ? el.value : '';
-  }).join('').replace(/\s/g,'');
+  const isEn = currentLang === 'en';
+  const entered = (document.getElementById('p0')?.value || '').replace(/\s/g,'');
+  const mode = pendingLogin.mode || 'mid';
+
+  if(mode === 'pin'){
+    if(entered.length < 4) return;
+    const btn = document.getElementById('pin-login-btn');
+    if(btn){ btn.disabled = true; }
+    try{
+      const fns = getCloudFunctions();
+      if(!fns) throw new Error(isEn ? 'Service unavailable' : 'الخدمة غير متاحة');
+      const res = await fns.httpsCallable('verifyParentPin')({
+        cls: pendingLogin.cls,
+        section: pendingLogin.section || '',
+        name: pendingLogin.name,
+        pin: entered,
+      });
+      if(res?.data?.ok){
+        const login = { ...pendingLogin, mid: res.data.mid || pendingLogin.mid };
+        pendingLogin = null;
+        pinAttempts = 0;
+        await enterParentDashboard(login.cls, login.name, login.mid, login.section || '');
+        return;
+      }
+    }catch(e){
+      pinAttempts++;
+      clearPin();
+      const errEl = document.getElementById('pin-error');
+      if(errEl){
+        errEl.textContent = parentAuthErrorMessage(e, isEn);
+        errEl.style.display = 'block';
+      }
+      document.getElementById('lock-attempts').textContent =
+        e?.code === 'functions/resource-exhausted'
+          ? (isEn ? 'Locked for 15 minutes' : 'مقفل لمدة 15 دقيقة')
+          : (isEn ? `Attempts: ${pinAttempts}` : `محاولات: ${pinAttempts}`);
+    }finally{
+      if(btn){ btn.disabled = false; }
+      setTimeout(()=>document.getElementById('p0')?.focus(), 100);
+    }
+    return;
+  }
+
   if(entered.length < 4) return;
-  const key = pendingLogin.cls+'|'+pendingLogin.name;
-  const fMid = pendingLogin.mid;
-  const student = findStudentInGrade(pendingLogin.cls, pendingLogin.name, pendingLogin.mid, pendingLogin.section);
-  const correct = fMid || (student ? student.mid : APP.pins[key]);
-  if(entered === correct){
-    const loginCls = pendingLogin.cls;
-    const loginName = pendingLogin.name;
-    const loginSection = pendingLogin.section || '';
-    const loginMid = pendingLogin.mid || entered;
-    pendingLogin=null; pinAttempts=0;
-    await enterParentDashboard(loginCls, loginName, loginMid, loginSection);
-  } else {
+  const btn = document.getElementById('pin-login-btn');
+  if(btn){ btn.disabled = true; }
+  try{
+    const fns = getCloudFunctions();
+    if(!fns) throw new Error(isEn ? 'Service unavailable' : 'الخدمة غير متاحة');
+    const fnName = mode === 'reset-mid' ? 'verifyParentMidForReset' : 'verifyParentMid';
+    const res = await fns.httpsCallable(fnName)({
+      cls: pendingLogin.cls,
+      section: pendingLogin.section || '',
+      name: pendingLogin.name,
+      mid: entered,
+    });
+    if(res?.data?.ok){
+      pendingLogin.mid = res.data.mid || entered;
+      pinAttempts = 0;
+      clearPin();
+      showParentPinSetupScreen(mode === 'reset-mid');
+      return;
+    }
+  }catch(e){
     pinAttempts++;
     clearPin();
-    document.getElementById('pin-error').style.display='block';
-    const left=5-pinAttempts;
-    document.getElementById('lock-attempts').textContent=
-      pinAttempts>=5?'تم تجاوز عدد المحاولات — يرجى التواصل مع المعلم':
-      `محاولات متبقية: ${left}`;
-    if(pinAttempts>=5){
-      for(let i=0;i<10;i++){const el=document.getElementById('p'+i);if(el)el.disabled=true;}
+    const errEl = document.getElementById('pin-error');
+    if(errEl){
+      errEl.textContent = parentAuthErrorMessage(e, isEn);
+      errEl.style.display = 'block';
     }
+    const left = 5 - pinAttempts;
+    document.getElementById('lock-attempts').textContent =
+      e?.code === 'functions/resource-exhausted'
+        ? (isEn ? 'Locked for 15 minutes' : 'مقفل لمدة 15 دقيقة')
+        : pinAttempts >= 5
+          ? (isEn ? 'Too many attempts — contact the school' : 'تجاوزت المحاولات — تواصل مع المدرسة')
+          : (isEn ? `Attempts left: ${left}` : `محاولات متبقية: ${left}`);
+    if(pinAttempts >= 5){
+      const inp = document.getElementById('p0');
+      if(inp) inp.disabled = true;
+    }
+  }finally{
+    if(btn){ btn.disabled = false; }
     setTimeout(()=>document.getElementById('p0')?.focus(), 100);
   }
 }
@@ -2894,8 +3117,8 @@ async function adminDeleteParentRegistration(mid, studentName){
   if(!mid) return;
   const label = studentName || mid;
   if(!confirm(isEn
-    ? `Remove parent registration for "${label}"?\nThey will need the ministry ID again on next login.`
-    : `حذف تسجيل ولي أمر "${label}"؟\nسيحتاج الرقم الوزاري مجدداً عند الدخول التالي.`)) return;
+    ? `Remove parent registration for "${label}"?\nThey will need ministry ID + new PIN on next login.`
+    : `حذف تسجيل ولي أمر "${label}"؟\nسيحتاج الرقم الوزاري ورمزاً جديداً عند الدخول التالي.`)) return;
   if(typeof db==='undefined'){
     showToast(isEn ? '❌ Not connected' : '❌ غير متصل');
     return;
@@ -2991,35 +3214,8 @@ async function adminDeleteTeacher(teacherKey, teacherUid, teacherName, teacherEm
 }
 
 function registerParentSession(parent){
-  if(typeof db==='undefined' || !parent?.mid || !parent?.name) return;
-  const mid = String(parent.mid);
-  const now = new Date().toISOString();
-  const payload = {
-    cls: parent.cls || '',
-    section: parent.section || '',
-    name: parent.name,
-    mid,
-    lastLogin: now,
-  };
-  const sessionKey = makeParentSessionKey(parent.cls, parent.section, parent.name);
-
-  db.ref('registeredParents/'+mid).once('value').then(snap=>{
-    const existing = snap.val() || {};
-    const record = {
-      ...payload,
-      registeredAt: existing.registeredAt || now,
-    };
-    return db.ref('registeredParents/'+mid).set(record);
-  }).catch(err=>{ console.warn('registerParentSession', err); });
-
-  db.ref('parentQuickLogin/'+sessionKey).once('value').then(snap=>{
-    const existing = snap.val() || {};
-    const record = {
-      ...payload,
-      registeredAt: existing.registeredAt || now,
-    };
-    return db.ref('parentQuickLogin/'+sessionKey).set(record);
-  }).catch(err=>{ console.warn('registerParentSession quickLogin', err); });
+  // Server-side session is managed by Cloud Functions (setupParentPin / verifyParentPin).
+  if(parent?.mid) saveState();
 }
 
 async function syncParentQuickLoginFromRegistry(){
@@ -3037,7 +3233,7 @@ async function syncParentQuickLoginFromRegistry(){
         cls: p.cls || '',
         section: p.section || '',
         name: p.name,
-        mid: String(p.mid),
+        hasPin: !!p.pinHash,
         registeredAt: p.registeredAt || null,
         lastLogin: p.lastLogin || null,
       };
@@ -3293,7 +3489,7 @@ function renderLinksTab(){
 }
 function buildWAMsg(cls, name, pin){
   const url = APP.siteUrl;
-  return `السلام عليكم ولي أمر الطالب ${name} 👋\n\nيمكنكم الاطلاع على التقرير الأكاديمي لابنكم عبر الرابط:\n${url}\n\nطريقة الدخول:\n1️⃣ اختر (ولي الأمر)\n2️⃣ اختر الشعبة: ${cls}\n3️⃣ اختر اسم ابنك\n4️⃣ أدخل الرقم الوزاري: *${pin}*\n\n— معلم العلوم · الصف السابع`;
+  return `السلام عليكم ولي أمر الطالب ${name} 👋\n\nيمكنكم الاطلاع على التقرير الأكاديمي لابنكم عبر الرابط:\n${url}\n\nطريقة الدخول:\n1️⃣ اختر (ولي الأمر)\n2️⃣ اختر الصف والشعبة\n3️⃣ اختر اسم ابنك\n4️⃣ أول مرة: الرقم الوزاري ${pin} ثم اختيار رمز سري\n5️⃣ بعد ذلك: الرمز السري فقط\n\n— بوابة المتابعة`;
 }
 function sendWA(cls,name,pin){
   window.open('https://wa.me/?text='+encodeURIComponent(buildWAMsg(cls,name,pin)),'_blank');
@@ -3764,6 +3960,18 @@ const TRANSLATIONS = {
     pinPH: 'أدخل الرقم الوزاري (حتى 12 رقم)',
     pinBack: '← العودة',
     pinErrorMsg: 'الرقم الوزاري غير صحيح — يرجى المحاولة مرة أخرى',
+    parentPinPH: 'أدخل الرمز السري (4–6 أرقام)',
+    parentPinInstruction: 'أدخل الرمز السري الشخصي للمتابعة',
+    parentMidInstruction: 'أدخل الرقم الوزاري — للمرة الأولى فقط',
+    pinSetupDesc: 'اختر رمزاً سرياً (4–6 أرقام) لاستخدامه في كل دخول لاحق',
+    pinSetupLblNew: 'الرمز السري الجديد',
+    pinSetupLblConfirm: 'تأكيد الرمز السري',
+    pinSetupHint: '⚠️ لا تشارك الرمز السري مع أحد. الرقم الوزاري لن يُطلب بعد الآن.',
+    pinSetupDescReset: 'اختر رمزاً سرياً جديداً (4–6 أرقام)',
+    pinSetupHintReset: '⚠️ احفظ الرمز الجديد في مكان آمن ولا تشاركه مع أحد.',
+    pinForgotBtn: 'نسيت الرمز السري؟',
+    pinBackToPinBtn: '← العودة لإدخال الرمز',
+    parentMidResetInstruction: 'أدخل الرقم الوزاري لإعادة تعيين الرمز المنسي',
     bannerAlt: 'بوابة المتابعة الرقمية',
     adminSchoolName: 'لوحة المسؤول — بوابة المتابعة',
     adminSub: 'إدارة بيانات الطلاب',
@@ -4119,6 +4327,18 @@ const TRANSLATIONS = {
     pinPH: 'Enter Ministry ID (up to 12 digits)',
     pinBack: '← Back',
     pinErrorMsg: 'Incorrect Ministry ID — please try again',
+    parentPinPH: 'Enter your PIN (4–6 digits)',
+    parentPinInstruction: 'Enter your personal PIN to continue',
+    parentMidInstruction: 'Enter ministry ID — first time only',
+    pinSetupDesc: 'Choose a personal PIN (4–6 digits) for future sign-in',
+    pinSetupLblNew: 'New PIN',
+    pinSetupLblConfirm: 'Confirm PIN',
+    pinSetupHint: '⚠️ Do not share your PIN. Ministry ID will not be required again.',
+    pinSetupDescReset: 'Choose a new PIN (4–6 digits)',
+    pinSetupHintReset: '⚠️ Keep your new PIN safe and do not share it.',
+    pinForgotBtn: 'Forgot your PIN?',
+    pinBackToPinBtn: '← Back to PIN entry',
+    parentMidResetInstruction: 'Enter ministry ID to reset your forgotten PIN',
     bannerAlt: 'Digital Follow-up Portal',
     adminSchoolName: 'Admin Dashboard — Follow-up Portal',
     adminSub: 'Student data management',
@@ -4306,7 +4526,7 @@ function applyGlobalLang(){
   if(splashFlag) splashFlag.alt = t('splashFlagAlt');
 
   // ── Direction on all screens ──
-  ['screen-login','screen-locked','screen-teacher','screen-parent','screen-admin'].forEach(id=>{
+  ['screen-login','screen-locked','screen-parent-pin-setup','screen-teacher','screen-parent','screen-admin'].forEach(id=>{
     const el=document.getElementById(id);
     if(el) el.setAttribute('dir', dir);
   });
@@ -9696,25 +9916,19 @@ async function sendPushNotification(){
 // ─── تسجيل Service Worker ───
 
 
-// ─── تسجيل دخول تلقائي لولي الأمر — ينتظر Firebase أولاً ───
+// ─── Prefill parent login only (PIN required each time) ───
 function tryAutoLogin(){
-  if(!APP.savedParent || !APP.savedParent.cls || !APP.savedParent.name) return;
-  const sp = APP.savedParent;
-  registerParentSession(sp);
-  window._currentParent = enrichParentSession(sp.cls, sp.name, sp.mid||'', sp.section||'');
-  showScreen('parent');
-  loadParentSubjectTabs(sp.cls, sp.name, sp.mid||'');
+  if(!APP.savedParent?.cls || !APP.savedParent?.name) return;
+  prefillParentLoginForm(APP.savedParent);
 }
-// سيُستدعى من loadAll().then() بعد تحميل Firebase
-// ─── تسجيل دخول فوري من localStorage (بعد شاشة الافتتاح) ───
 (function(){
   try {
     const saved = JSON.parse(localStorage.getItem('portal_v4')||'{}');
     const sp = saved.savedParent;
-    if(sp && sp.cls && sp.name){
-      window._pendingParentAutoLogin = sp;
+    if(sp?.cls && sp?.name){
+      window._pendingParentPrefill = sp;
     }
-  } catch(e){ console.warn('Auto-login prep error:', e); }
+  } catch(e){ console.warn('Parent prefill prep error:', e); }
 })();
 
 if('serviceWorker' in navigator) window.addEventListener('load', registerSW);
