@@ -51,3 +51,118 @@ exports.listParentStudentNames = region.https.onCall(async (data) => {
   students.sort((a, b) => a.name.localeCompare(b.name, 'ar'));
   return { students };
 });
+
+async function assertParentSession(sessionToken) {
+  const token = String(sessionToken || '').trim();
+  if (!token) {
+    throw new functions.https.HttpsError('unauthenticated', 'Session required');
+  }
+  const snap = await admin.database().ref(`parentSessions/${token}`).once('value');
+  const session = snap.val();
+  if (!session?.mid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Invalid session');
+  }
+  if (session.expiresAt && Date.now() > session.expiresAt) {
+    await admin.database().ref(`parentSessions/${token}`).remove();
+    throw new functions.https.HttpsError('unauthenticated', 'Session expired');
+  }
+  return session;
+}
+
+function parentGradeBuckets(cls, section) {
+  const sec = String(section || '').trim();
+  const buckets = [];
+  if (sec) buckets.push(String(cls) + sec);
+  buckets.push(String(cls));
+  return [...new Set(buckets)];
+}
+
+function pickStudentGradeRecord(store, mid, studentName) {
+  if (!store || typeof store !== 'object') return null;
+  const sName = String(studentName || '').trim();
+  const m = String(mid || '').trim();
+  if (m && store[m] && typeof store[m] === 'object') return store[m];
+  const arr = Array.isArray(store) ? store : Object.values(store);
+  return (
+    arr.find(
+      (x) =>
+        x &&
+        typeof x === 'object' &&
+        ((m && String(x.mid).trim() === m) ||
+          (sName && String(x.name).trim() === sName))
+    ) || null
+  );
+}
+
+async function fetchTeacherGradeRecordServer(teacherKey, cls, section, mid, studentName) {
+  for (const bucket of parentGradeBuckets(cls, section)) {
+    const snap = await admin
+      .database()
+      .ref(`teacherData/${teacherKey}/grades/${bucket}`)
+      .once('value');
+    if (!snap.exists()) continue;
+    const hit = pickStudentGradeRecord(snap.val(), mid, studentName);
+    if (hit) return hit;
+  }
+
+  const m = String(mid || '').trim();
+  if (m) {
+    for (const bucket of parentGradeBuckets(cls, section)) {
+      const snap = await admin
+        .database()
+        .ref(`teacherData/${teacherKey}/grades/${bucket}/${m}`)
+        .once('value');
+      if (snap.exists()) return snap.val();
+    }
+  }
+
+  const allSnap = await admin
+    .database()
+    .ref(`teacherData/${teacherKey}/grades`)
+    .once('value');
+  if (!allSnap.exists()) return null;
+  for (const [bucket, store] of Object.entries(allSnap.val() || {})) {
+    if (!String(bucket).startsWith(String(cls))) continue;
+    const hit = pickStudentGradeRecord(store, mid, studentName);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+exports.getParentGrades = region.https.onCall(async (data) => {
+  const session = await assertParentSession(data?.sessionToken);
+  const teacherKey = String(data?.teacherKey || '').trim();
+  if (!teacherKey) {
+    throw new functions.https.HttpsError('invalid-argument', 'teacherKey required');
+  }
+  const grade = await fetchTeacherGradeRecordServer(
+    teacherKey,
+    session.cls,
+    session.section,
+    session.mid,
+    session.name
+  );
+  return { grade: grade || null };
+});
+
+exports.getParentGradesBatch = region.https.onCall(async (data) => {
+  const session = await assertParentSession(data?.sessionToken);
+  const teacherKeys = Array.isArray(data?.teacherKeys)
+    ? [...new Set(data.teacherKeys.map((k) => String(k || '').trim()).filter(Boolean))]
+    : [];
+  if (!teacherKeys.length) return { grades: {} };
+
+  const grades = {};
+  await Promise.all(
+    teacherKeys.map(async (teacherKey) => {
+      grades[teacherKey] = await fetchTeacherGradeRecordServer(
+        teacherKey,
+        session.cls,
+        session.section,
+        session.mid,
+        session.name
+      );
+    })
+  );
+  return { grades };
+});

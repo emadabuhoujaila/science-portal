@@ -6,8 +6,7 @@ const region = functions.region('us-central1');
 const BUCKET = 'students-portal-34231.firebasestorage.app';
 
 const IMAGE_MAX = 5 * 1024 * 1024;
-const PDF_MAX = 10 * 1024 * 1024;
-const ALLOWED = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
+const PDF_MAX = 6 * 1024 * 1024;
 
 function safeName(name) {
   return String(name || 'file')
@@ -16,12 +15,60 @@ function safeName(name) {
     .slice(0, 120) || 'file';
 }
 
+function sniffBufferType(b) {
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
+  if (b.length >= 4 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return 'image/png';
+  if (b.length >= 12 && b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46
+    && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return 'image/webp';
+  if (b.length >= 6 && b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return 'image/gif';
+  if (b.length >= 2 && b[0] === 0x42 && b[1] === 0x4d) return 'image/bmp';
+  if (b.length >= 4 && b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46) return 'application/pdf';
+  if (b.length >= 12 && b[4] === 0x66 && b[5] === 0x74 && b[6] === 0x79 && b[7] === 0x70) {
+    const brand = String.fromCharCode(b[8], b[9], b[10], b[11]);
+    if (/heic|heix|hevc|hevx|mif1|msf1/i.test(brand)) return 'image/heic';
+    if (/avif/i.test(brand)) return 'image/avif';
+  }
+  return '';
+}
+
+function isAllowedType(type) {
+  const t = String(type || '').trim().toLowerCase();
+  return t === 'application/pdf' || t.startsWith('image/');
+}
+
+function normalizeContentType(contentType, fileName, buffer) {
+  const aliases = {
+    'image/jpg': 'image/jpeg',
+    'image/pjpeg': 'image/jpeg',
+    'image/x-citrix-jpeg': 'image/jpeg',
+    'image/x-png': 'image/png',
+    'image/x-bmp': 'image/bmp',
+    'application/x-pdf': 'application/pdf',
+  };
+  let type = aliases[String(contentType || '').trim().toLowerCase()] || String(contentType || '').trim().toLowerCase();
+  if (isAllowedType(type)) return type;
+
+  const ext = String(fileName || '').split('.').pop().toLowerCase();
+  const extMap = {
+    jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp',
+    gif: 'image/gif', bmp: 'image/bmp', tif: 'image/tiff', tiff: 'image/tiff',
+    heic: 'image/heic', heif: 'image/heif', avif: 'image/avif', svg: 'image/svg+xml',
+    pdf: 'application/pdf',
+  };
+  if (extMap[ext]) return extMap[ext];
+
+  const sniffed = sniffBufferType(buffer || Buffer.alloc(0));
+  if (sniffed) return sniffed;
+
+  return type;
+}
+
 function validateMeta(contentType, size) {
-  if (!ALLOWED.has(contentType)) {
+  if (!isAllowedType(contentType)) {
     throw new functions.https.HttpsError('invalid-argument', 'Unsupported file type');
   }
   if (contentType === 'application/pdf') {
-    if (size > PDF_MAX) throw new functions.https.HttpsError('invalid-argument', 'PDF max 10 MB');
+    if (size > PDF_MAX) throw new functions.https.HttpsError('invalid-argument', 'PDF max 6 MB');
   } else if (size > IMAGE_MAX) {
     throw new functions.https.HttpsError('invalid-argument', 'Image max 5 MB');
   }
@@ -128,7 +175,6 @@ async function assertUploadAccess(data, context) {
 exports.uploadAttachment = region.runWith({ timeoutSeconds: 120, memory: '512MB' }).https.onCall(async (data, context) => {
   try {
     const fileName = String(data?.fileName || 'file');
-    const contentType = String(data?.contentType || '');
     const fileBase64 = data?.fileBase64;
     if (!fileBase64 || typeof fileBase64 !== 'string') {
       throw new functions.https.HttpsError('invalid-argument', 'Missing file data');
@@ -138,6 +184,7 @@ exports.uploadAttachment = region.runWith({ timeoutSeconds: 120, memory: '512MB'
     if (!buffer.length) {
       throw new functions.https.HttpsError('invalid-argument', 'Empty file');
     }
+    const contentType = normalizeContentType(data?.contentType, fileName, buffer);
     validateMeta(contentType, buffer.length);
 
     const access = await assertUploadAccess(data, context);

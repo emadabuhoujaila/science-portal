@@ -7,6 +7,21 @@ const MAX_PIN_ATTEMPTS = 5;
 const LOCKOUT_MS = 15 * 60 * 1000;
 const PIN_MIN = 4;
 const PIN_MAX = 6;
+const PARENT_SESSION_MS = 24 * 60 * 60 * 1000;
+
+async function issueParentSession(mid, cls, section, name) {
+  const token = crypto.randomBytes(32).toString('hex');
+  const now = Date.now();
+  await admin.database().ref(`parentSessions/${token}`).set({
+    mid: String(mid),
+    cls: String(cls),
+    section: String(section || ''),
+    name: String(name),
+    createdAt: new Date(now).toISOString(),
+    expiresAt: now + PARENT_SESSION_MS,
+  });
+  return token;
+}
 
 function makeSessionKey(cls, section, name) {
   const normalize = (v) => String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -191,8 +206,9 @@ exports.setupParentPin = region.https.onCall(async (data) => {
   await writeRegistration(mid, cls, section, name, pinRecord, existing);
   const sessionKey = makeSessionKey(cls, section, name);
   await clearAttempts(sessionKey);
+  const sessionToken = await issueParentSession(mid, cls, section, name);
 
-  return { ok: true, mid };
+  return { ok: true, mid, sessionToken };
 });
 
 exports.verifyParentPin = region.https.onCall(async (data) => {
@@ -223,7 +239,14 @@ exports.verifyParentPin = region.https.onCall(async (data) => {
     [`parentQuickLogin/${sessionKey}/lastLogin`]: now,
   });
 
-  return { ok: true, mid: student.mid };
+  const sessionToken = await issueParentSession(
+    student.mid,
+    cls,
+    section,
+    name
+  );
+
+  return { ok: true, mid: student.mid, sessionToken };
 });
 
 exports.verifyParentMid = region.https.onCall(async (data) => {
@@ -306,6 +329,7 @@ exports.resetParentPin = region.https.onCall(async (data) => {
   await writeRegistration(mid, cls, section, name, pinRecord, existing);
   const sessionKey = makeSessionKey(cls, section, name);
   await clearAttempts(sessionKey);
+  const sessionToken = await issueParentSession(mid, cls, section, name);
 
-  return { ok: true, mid };
+  return { ok: true, mid, sessionToken };
 });
