@@ -1819,17 +1819,23 @@ function adminBuildFilters(){
 
 
 function showAdminTab(tab, el){
+  const wasOnMessages = _isAdminMessagesTabOpen();
   document.querySelectorAll('.admin-tab-panel').forEach(p=>p.style.display='none');
   document.querySelectorAll('.admin-main-tab').forEach(b=>b.classList.remove('active'));
   const panel = document.getElementById('admin-tab-'+tab);
   if(panel) panel.style.display='block';
   if(el) el.classList.add('active');
+  if(wasOnMessages && tab !== 'messages'){
+    _markAdminInboxSeen();
+  }
   if(tab==='monitor') adminLoadMonitoring();
   if(tab==='complaints') renderAdminComplaints();
   if(tab==='messages'){
     adminLoadMessagesTeachers();
     renderAdminMessages();
     showAdminMsgSubTab('inbox', document.getElementById('admin-msg-tab-inbox'));
+    updateAdminMessagesBadge();
+    updateAdminInboxSubBadge();
   }
 }
 
@@ -2112,6 +2118,62 @@ async function adminForwardComplaint(complaintId, anonymous){
 let adminInboxCache = [];
 let adminOutboxCache = [];
 window.adminTeachersForMsg = window.adminTeachersForMsg || [];
+const ADMIN_INBOX_SEEN_KEY = 'portal_admin_inbox_seen_ts';
+
+function _getAdminInboxSeenTs(){
+  try{ return localStorage.getItem(ADMIN_INBOX_SEEN_KEY) || ''; }catch(e){ return ''; }
+}
+
+function _setAdminInboxSeenTs(iso){
+  try{ localStorage.setItem(ADMIN_INBOX_SEEN_KEY, iso); }catch(e){}
+}
+
+function _bootstrapAdminInboxSeen(){
+  if(_getAdminInboxSeenTs()) return;
+  const maxTs = (adminInboxCache || []).reduce((max, m) => {
+    const t = m?.ts || m?.date || '';
+    return t > max ? t : max;
+  }, '');
+  _setAdminInboxSeenTs(maxTs || new Date().toISOString());
+}
+
+function _isAdminInboxMsgNew(m){
+  const seen = _getAdminInboxSeenTs();
+  if(!seen) return false;
+  return (m?.ts || m?.date || '') > seen;
+}
+
+function _countAdminInboxNew(){
+  return (adminInboxCache || []).filter(m => _isAdminInboxMsgNew(m)).length;
+}
+
+function _markAdminInboxSeen(){
+  _setAdminInboxSeenTs(new Date().toISOString());
+  updateAdminMessagesBadge();
+  updateAdminInboxSubBadge();
+}
+
+function _isAdminMessagesTabOpen(){
+  return document.getElementById('admin-tab-messages')?.style.display !== 'none';
+}
+
+function updateAdminInboxSubBadge(){
+  const tab = document.getElementById('admin-msg-tab-inbox');
+  if(!tab) return;
+  const count = _isAdminMessagesTabOpen() ? _countAdminInboxNew() : 0;
+  let badge = tab.querySelector('.inbox-badge');
+  if(count > 0){
+    if(!badge){
+      badge = document.createElement('span');
+      badge.className = 'inbox-badge';
+      badge.style.cssText = 'background:var(--red-soft);color:#fff;border-radius:20px;font-size:11px;font-weight:700;padding:1px 7px;margin-right:6px;display:inline-block';
+      tab.prepend(badge);
+    }
+    badge.textContent = count;
+  } else if(badge){
+    badge.remove();
+  }
+}
 
 function showAdminMsgSubTab(tab, el){
   document.querySelectorAll('.admin-msg-panel').forEach(p=>p.style.display='none');
@@ -2122,6 +2184,7 @@ function showAdminMsgSubTab(tab, el){
   if(tab==='inbox') renderAdminInbox();
   if(tab==='outbox') renderAdminOutbox();
   if(tab==='compose'){ adminLoadMessagesTeachers(); adminUpdateComposeTarget(); }
+  updateAdminInboxSubBadge();
 }
 
 function startAdminMessagesListener(){
@@ -2131,8 +2194,13 @@ function startAdminMessagesListener(){
     adminInboxCache = snap.exists()
       ? Object.entries(snap.val()).map(([id,v])=>({id,...v})).sort((a,b)=>(b.ts||'').localeCompare(a.ts||''))
       : [];
+    if(!window._adminInboxBootstrapped){
+      window._adminInboxBootstrapped = true;
+      _bootstrapAdminInboxSeen();
+    }
     updateAdminMessagesBadge();
-    if(document.getElementById('admin-tab-messages')?.style.display !== 'none'){
+    updateAdminInboxSubBadge();
+    if(_isAdminMessagesTabOpen()){
       renderAdminInbox();
     }
   });
@@ -2150,19 +2218,25 @@ function startAdminMessagesListener(){
 }
 
 function updateAdminMessagesBadge(){
-  const unread = adminInboxCache.filter(m=>!m.read).length;
   const tab = document.getElementById('admin-tab-btn-messages');
   if(!tab) return;
   let badge = tab.querySelector('.inbox-badge');
-  if(unread>0){
+  if(_isAdminMessagesTabOpen()){
+    if(badge) badge.remove();
+    return;
+  }
+  const unread = _countAdminInboxNew();
+  if(unread > 0){
     if(!badge){
-      badge=document.createElement('span');
-      badge.className='inbox-badge';
-      badge.style.cssText='background:var(--red-soft);color:#fff;border-radius:20px;font-size:11px;font-weight:700;padding:1px 7px;margin-right:6px;display:inline-block';
+      badge = document.createElement('span');
+      badge.className = 'inbox-badge';
+      badge.style.cssText = 'background:var(--red-soft);color:#fff;border-radius:20px;font-size:11px;font-weight:700;padding:1px 7px;margin-right:6px;display:inline-block';
       tab.prepend(badge);
     }
-    badge.textContent=unread;
-  } else if(badge){ badge.remove(); }
+    badge.textContent = unread;
+  } else if(badge){
+    badge.remove();
+  }
 }
 
 function renderAdminMessages(){
@@ -2222,10 +2296,12 @@ function renderAdminInbox(){
     wrap.innerHTML = `<div class="empty-state" style="padding:32px"><div class="ico">📭</div><p>${isEn?'No incoming messages yet':'لا توجد رسائل واردة بعد'}</p></div>`;
     return;
   }
-  wrap.innerHTML = list.map(m=>`
-    <div class="admin-complaint-card${m.read?'':' pending'}" style="border-right-color:${m.fromRole==='teacher'?'var(--teal-soft)':'#1565c0'}">
+  wrap.innerHTML = list.map(m=>{
+    const isNew = _isAdminInboxMsgNew(m);
+    return `
+    <div class="admin-complaint-card admin-inbox-msg${isNew?' pending admin-inbox-unread':''}" style="border-right-color:${m.fromRole==='teacher'?'var(--teal-soft)':'#1565c0'}">
       <div class="admin-complaint-head">
-        <span class="admin-complaint-status ${m.fromRole==='teacher'?'forwarded':'replied'}">${m.fromRole==='teacher'?(isEn?'From teacher':'من معلم'):(isEn?'From parent':'من ولي أمر')}</span>
+        <span class="admin-complaint-status ${m.fromRole==='teacher'?'forwarded':'replied'}">${m.fromRole==='teacher'?(isEn?'From teacher':'من معلم'):(isEn?'From parent':'من ولي أمر')}${isNew?` · <span class="parent-admin-new-pill inline">${isEn?'New':'جديد'}</span>`:''}</span>
         <span class="admin-complaint-date">${formatAdminDate(m.ts||m.date, isEn)}</span>
       </div>
       <div class="admin-complaint-meta">
@@ -2238,7 +2314,8 @@ function renderAdminInbox(){
         <button type="button" class="btn-icon admin-complaint-btn reply" onclick="adminReplyToInbox('${m.id}')">💬 ${isEn?'Reply':'رد'}</button>
         <button type="button" class="btn-icon admin-complaint-btn danger" style="background:var(--red-pale);color:var(--red-soft)" onclick="adminDeleteInboxMsg('${m.id}')">🗑️ ${isEn?'Delete':'حذف'}</button>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function renderAdminOutbox(){
