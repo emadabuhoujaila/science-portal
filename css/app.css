@@ -391,8 +391,16 @@ tbody td{padding:10px 12px;text-align:center;color:var(--grey-2)}
 .parent-msg-send{width:100%;padding:13px;background:var(--teal-mid);color:var(--white);border:none;border-radius:10px;font-family:inherit;font-size:15px;font-weight:600;cursor:pointer;transition:background .2s}
 .parent-msg-send:hover{background:var(--teal-dark)}
 .parent-msg-send:disabled{opacity:.65;cursor:not-allowed}
-.parent-msg-del{border:none;background:transparent;cursor:pointer;font-size:14px;padding:2px 6px;border-radius:6px;line-height:1;opacity:.75}
+.parent-msg-del{border:none;background:transparent;cursor:pointer;font-size:16px;padding:4px 8px;border-radius:6px;line-height:1;opacity:.85}
 .parent-msg-del:hover{opacity:1;background:var(--grey-5)}
+.msg-del-wrap{position:relative;display:inline-flex;align-items:center;z-index:20;flex-shrink:0}
+.msg-del-menu{display:none;position:absolute;top:100%;inset-inline-end:0;z-index:100;min-width:190px;background:var(--white);border:1px solid var(--grey-5);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.15);padding:6px;margin-top:4px}
+.msg-del-menu.open{display:block}
+.msg-del-opt{display:block;width:100%;text-align:right;border:none;background:transparent;padding:9px 12px;font-family:inherit;font-size:12px;color:var(--grey-1);cursor:pointer;border-radius:8px;white-space:nowrap}
+.msg-del-opt:hover{background:var(--grey-5)}
+.msg-del-opt.danger{color:var(--red-soft)}
+.msg-del-opt.danger:hover{background:var(--red-pale)}
+#screen-admin .admin-complaint-actions,.teacher-complaint-head,.inbox-header{overflow:visible;position:relative}
 .parent-msg-confirm{text-align:center;padding:12px;background:var(--green-pale);color:var(--green-soft);border-radius:10px;font-weight:600;font-size:14px;margin-top:10px}
 
 /* ─── INBOX CARD (teacher side) ─── */

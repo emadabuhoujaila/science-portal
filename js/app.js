@@ -2250,7 +2250,7 @@ function renderAdminComplaints(){
     if(c.status==='forwarded') return isEn?'Forwarded to teacher':'مُوجّهة للمعلم';
     return c.status||'—';
   };
-  wrap.innerHTML = list.map(c=>{
+  wrap.innerHTML = list.filter(c => !window.MsgDelete?.isAdminHidden('complaint', c.id)).map(c=>{
     const pending = c.status==='pending';
     const subj = escapeHtml(c.subjLabel || formatAdminSubject(c.subject, isEn));
     const replyOpen = window._adminOpenReply === c.id;
@@ -2280,6 +2280,7 @@ function renderAdminComplaints(){
             💬 ${isEn?'Reply':'رد'}
           </button>
           ${forwardActions}
+          ${window.MsgDelete?.adminBtn('complaint', c.id) || ''}
         </div>
         <div id="admin-reply-panel-${c.id}" class="admin-reply-panel" style="display:${replyOpen?'block':'none'}">
           <div class="admin-reply-quick">${adminReplyQuickButtons(c.id, isEn)}</div>
@@ -2595,7 +2596,7 @@ function renderAdminInbox(){
     wrap.innerHTML = `<div class="empty-state" style="padding:32px"><div class="ico">📭</div><p>${isEn?'No incoming messages yet':'لا توجد رسائل واردة بعد'}</p></div>`;
     return;
   }
-  wrap.innerHTML = list.map(m=>{
+  wrap.innerHTML = list.filter(m => !window.MsgDelete?.isAdminHidden('inbox', m.id)).map(m=>{
     const isNew = _isAdminInboxMsgNew(m);
     return `
     <div class="admin-complaint-card admin-inbox-msg${isNew?' pending admin-inbox-unread':''}" style="border-right-color:${m.fromRole==='teacher'?'var(--teal-soft)':'#1565c0'}">
@@ -2612,7 +2613,7 @@ function renderAdminInbox(){
       ${_attRender(m)}
       <div class="admin-complaint-actions">
         <button type="button" class="btn-icon admin-complaint-btn reply" onclick="adminReplyToInbox('${m.id}')">💬 ${isEn?'Reply':'رد'}</button>
-        <button type="button" class="btn-icon admin-complaint-btn danger" style="background:var(--red-pale);color:var(--red-soft)" onclick="adminDeleteInboxMsg('${m.id}')">🗑️ ${isEn?'Delete':'حذف'}</button>
+        ${window.MsgDelete?.adminBtn('inbox', m.id) || ''}
       </div>
     </div>`;
   }).join('');
@@ -2627,7 +2628,7 @@ function renderAdminOutbox(){
     wrap.innerHTML = `<div class="empty-state" style="padding:32px"><div class="ico">📭</div><p>${isEn?'No sent messages yet':'لا توجد رسائل صادرة بعد'}</p></div>`;
     return;
   }
-  wrap.innerHTML = list.map(m=>`
+  wrap.innerHTML = list.filter(m => !window.MsgDelete?.isAdminHidden('outbox', m.id)).map(m=>`
     <div class="admin-complaint-card" style="border-right-color:var(--green-soft)">
       <div class="admin-complaint-head">
         <span class="admin-complaint-status replied">${m.toRole==='broadcast'?(isEn?'Broadcast':'تعميم'):(isEn?'Sent':'مُرسلة')}</span>
@@ -2637,7 +2638,7 @@ function renderAdminOutbox(){
       <p class="admin-complaint-body">${escapeHtml(m.body||'')}</p>
       ${_attRender(m)}
       <div class="admin-complaint-actions">
-        <button type="button" class="btn-icon admin-complaint-btn danger" style="background:var(--red-pale);color:var(--red-soft)" onclick="adminDeleteOutboxMsg('${m.id}')">🗑️ ${isEn?'Delete':'حذف'}</button>
+        ${window.MsgDelete?.adminBtn('outbox', m.id) || ''}
       </div>
     </div>`).join('');
 }
@@ -2699,26 +2700,97 @@ function adminReplyToInbox(msgId){
   }
 }
 
-async function adminDeleteInboxMsg(id){
+async function adminDeleteInboxMsg(id){ return adminDeleteInboxMsgAll(id); }
+async function adminDeleteOutboxMsg(id){ return adminDeleteOutboxMsgAll(id); }
+
+function adminHideMsg(id, scope){
+  const L = window.MsgDelete?.labels() || {};
+  if(!confirm(L.confirmHideMe || 'حذف من جهازك فقط؟')) return;
+  window.MsgDelete?.hideAdmin(scope, id);
+  if(scope === 'inbox') renderAdminInbox();
+  else if(scope === 'outbox') renderAdminOutbox();
+  else if(scope === 'complaint') renderAdminComplaints();
+}
+
+async function adminDeleteMsgAll(id, scope){
+  const L = window.MsgDelete?.labels() || {};
+  if(!confirm(L.confirmHideAll || 'حذف نهائي من عند الجميع؟')) return;
+  if(scope === 'inbox') await adminDeleteInboxMsgAll(id);
+  else if(scope === 'outbox') await adminDeleteOutboxMsgAll(id);
+  else if(scope === 'complaint') await adminDeleteComplaintAll(id);
+}
+
+async function adminDeleteInboxMsgAll(id){
   const isEn = currentLang==='en';
-  if(!confirm(isEn?'Delete this message?':'حذف هذه الرسالة؟')) return;
   if(typeof db==='undefined') return;
   try{
     await db.ref('adminInbox/'+id).remove();
-    showToast(isEn?'✅ Deleted':'✅ تم الحذف');
+    showToast(isEn?'✅ Deleted for everyone':'✅ تم الحذف من عند الجميع');
   }catch(e){
     console.error(e);
     showToast(isEn?'❌ Delete failed':'❌ فشل الحذف');
   }
 }
 
-async function adminDeleteOutboxMsg(id){
+async function _purgeAdminOutboxDeliveries(outboxId, msg){
+  if(typeof db==='undefined' || !outboxId) return;
+  const updates = {};
+  if(msg?.toRole === 'teacher' && msg?.teacherKey){
+    const snap = await db.ref('teacherData/'+msg.teacherKey+'/adminMessages').once('value');
+    if(snap.exists()) snap.forEach(ch=>{
+      if((ch.val()||{}).outboxId === outboxId) updates['teacherData/'+msg.teacherKey+'/adminMessages/'+ch.key] = null;
+    });
+  }else if(msg?.toRole === 'parent' && msg?.mid){
+    const snap = await db.ref('parentAdminInbox/'+msg.mid).once('value');
+    if(snap.exists()) snap.forEach(ch=>{
+      if((ch.val()||{}).outboxId === outboxId) updates['parentAdminInbox/'+msg.mid+'/'+ch.key] = null;
+    });
+  }else if(msg?.toRole === 'broadcast'){
+    const ps = await db.ref('registeredParents').once('value');
+    const mids = [];
+    if(ps.exists()) ps.forEach(c=>{ if(c.val()?.mid) mids.push(String(c.val().mid)); });
+    for(const mid of mids){
+      const snap = await db.ref('parentAdminInbox/'+mid).once('value');
+      if(!snap.exists()) continue;
+      snap.forEach(ch=>{
+        if((ch.val()||{}).outboxId === outboxId) updates['parentAdminInbox/'+mid+'/'+ch.key] = null;
+      });
+    }
+  }
+  if(Object.keys(updates).length) await db.ref().update(updates);
+}
+
+async function adminDeleteOutboxMsgAll(id){
   const isEn = currentLang==='en';
-  if(!confirm(isEn?'Delete from sent log?':'حذف من سجل الصادر؟')) return;
+  if(typeof db==='undefined') return;
+  const msg = adminOutboxCache.find(x=>x.id===id);
+  try{
+    await _purgeAdminOutboxDeliveries(id, msg);
+    await db.ref('adminOutbox/'+id).remove();
+    showToast(isEn?'✅ Deleted for everyone':'✅ تم الحذف من عند الجميع');
+  }catch(e){
+    console.error(e);
+    showToast(isEn?'❌ Delete failed':'❌ fشل الحذف');
+  }
+}
+
+async function adminDeleteComplaintAll(complaintId){
+  const isEn = currentLang==='en';
+  const c = adminComplaintsCache.find(x=>x.id===complaintId);
   if(typeof db==='undefined') return;
   try{
-    await db.ref('adminOutbox/'+id).remove();
-    showToast(isEn?'✅ Deleted':'✅ تم الحذف');
+    await db.ref('complaints/'+complaintId).remove();
+    if(c?.mid) await db.ref('parentComplaintLog/'+c.mid+'/'+complaintId).remove();
+    if(c?.teacherKey){
+      const snap = await db.ref('teacherData/'+c.teacherKey+'/complaintInbox').once('value');
+      const updates = {};
+      if(snap.exists()) snap.forEach(ch=>{
+        if((ch.val()||{}).complaintId === complaintId) updates['teacherData/'+c.teacherKey+'/complaintInbox/'+ch.key] = null;
+      });
+      if(Object.keys(updates).length) await db.ref().update(updates);
+    }
+    showToast(isEn?'✅ Deleted for everyone':'✅ تم الحذف من عند الجميع');
+    renderAdminComplaints();
   }catch(e){
     console.error(e);
     showToast(isEn?'❌ Delete failed':'❌ فشل الحذف');
@@ -3738,31 +3810,54 @@ function saveMessage(){
 
 
 
-function deleteSingleTeacherMsg(id){
+function deleteSingleTeacherMsg(id){ teacherMsgDelete(id, 'teacher_msg', 'both'); }
+
+function teacherMsgDelete(id, scope, mode){
+  const L = window.MsgDelete?.labels() || {};
+  if(mode === 'me'){
+    if(!confirm(L.confirmHideMe || 'حذف من جهازك فقط؟')) return;
+    window.MsgDelete?.hideTeacher(scope, id);
+    refreshTeacherDeleteScope(scope);
+    return;
+  }
+  if(!confirm(L.confirmHideParent || 'حذف من عندك ومن عند ولي الأمر؟')) return;
+  if(scope === 'teacher_msg') deleteSingleTeacherMsgForAll(id);
+  else if(scope === 'parent_inbox') deleteSingleParentMsgForAll(id);
+}
+
+function refreshTeacherDeleteScope(scope){
+  if(scope === 'teacher_msg') renderSavedMessages();
+  else if(scope === 'parent_inbox'){ renderParentInbox(); updateInboxBadge(); }
+  else if(scope === 'tadmin') renderTeacherAdminMessages();
+  else if(scope === 'tsent') renderTeacherSentToAdmin();
+  else if(scope === 'complaint') renderTeacherComplaints();
+}
+
+function deleteSingleTeacherMsgForAll(id){
   APP.messages = APP.messages.filter(m=>m.id!==id);
   saveState(); renderSavedMessages();
   const key = getTeacherKey();
   if(typeof db!=='undefined' && key){
     window.fbDeleteMsg(key, id)
-      .then(()=>showToast('✅ تم حذف الرسالة'))
-      .catch(()=>showToast('⚠️ حُذف محلياً'));
-  } else showToast('✅ تم الحذف');
+      .then(()=>showToast(currentLang==='en'?'✅ Deleted for everyone':'✅ تم الحذف من عند الجميع'))
+      .catch(()=>showToast(currentLang==='en'?'⚠️ Deleted locally':'⚠️ حُذف محلياً'));
+  } else showToast(currentLang==='en'?'✅ Deleted':'✅ تم الحذف');
 }
-
 
 function renderSavedMessages(){
   const wrap=document.getElementById('saved-messages');
   if(!wrap) return;
-  if(!APP.messages.length){ wrap.innerHTML='<div class="empty-state"><div class="ico">📭</div><p>'+t('noMessages')+'</p></div>'; return; }
+  const visible = APP.messages.filter(m => !window.MsgDelete?.isTeacherHidden('teacher_msg', m.id));
+  if(!visible.length){ wrap.innerHTML='<div class="empty-state"><div class="ico">📭</div><p>'+t('noMessages')+'</p></div>'; return; }
   const icons={praise:'🌟',warning:'⚠️',info:'📘'};
   const labels={praise:t('praiseMsg'),warning:t('warningMsg'),info:t('infoMsg')};
-  wrap.innerHTML=[...APP.messages].reverse().map(m=>`
+  wrap.innerHTML=[...visible].reverse().map(m=>`
     <div class="msg-card">
       <div class="msg-header">
         <span class="msg-type ${m.type}">${icons[m.type]} ${labels[m.type]} · ${m.name} (ش${m.cls})</span>
         <span style="display:flex;align-items:center;gap:8px">
           <span class="msg-date">${m.date||m.ts||''}</span>
-          ${m.id ? `<button class="action-btn danger" style="padding:2px 8px;font-size:11px" onclick="deleteSingleTeacherMsg('${m.id}')">🗑️</button>` : ''}
+          ${m.id ? (window.MsgDelete?.teacherDualBtn('teacher_msg', m.id) || '') : ''}
         </span>
       </div><p>${escapeHtml(m.body||'')}</p>${_attRender(m)}
     </div>`).join('');
@@ -6126,15 +6221,16 @@ function isParentAdminMsgHidden(msg){
 }
 
 function parentAdminMsgDeleteBtn(msg, idx){
-  const isEn = currentLang === 'en';
   const enc = encodeURIComponent(parentAdminMsgHideKey(msg));
   const idxArg = idx == null ? 'null' : (typeof idx === 'number' ? String(idx) : `'${idx}'`);
-  return `<button type="button" class="parent-msg-del" onclick="hideParentAdminMsg('${enc}',${idxArg})" title="${isEn ? 'Hide on my device' : 'إخفاء من جهازي'}">🗑️</button>`;
+  return window.MsgDelete?.parentBtn(`hideParentAdminMsg('${enc}',${idxArg})`) || '';
 }
 
 function hideParentAdminMsg(encodedHideId, idx){
+  const L = window.MsgDelete?.labels() || {};
+  if(!confirm(L.confirmHideMe || 'حذف من جهازك فقط؟')) return;
   addParentHiddenMsgId('admin_msg', decodeURIComponent(encodedHideId));
-  showToast(currentLang === 'en' ? '✅ Message hidden' : '✅ تم إخفاء الرسالة');
+  showToast(L.doneHide || (currentLang === 'en' ? '✅ Deleted on your device' : '✅ تم الحذف من جهازك'));
   const ctx = window._parentSubjectContext;
   if(!ctx) return;
   if(idx === 'school' || idx == null){
@@ -6261,12 +6357,24 @@ function renderParentSchoolSentToAdmin(mid){
         <div class="parent-school-sent-card">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px">
             <span style="font-size:11px;font-weight:700;color:var(--teal-mid)">📤 ${isEn ? 'Sent' : 'أُرسلت'}</span>
-            <span style="font-size:11px;color:var(--grey-3)">${m.date || ''}</span>
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="font-size:11px;color:var(--grey-3)">${m.date || ''}</span>
+              ${window.MsgDelete?.parentBtn(`hideParentSentToAdminMsg('${encodeURIComponent(m.id || m.ts || '')}')`) || ''}
+            </div>
           </div>
           <p style="margin:0;font-size:13px;color:var(--grey-2);white-space:pre-line;line-height:1.7">${escapeHtml(m.body || '')}</p>
           ${_attRender(m)}
         </div>`).join('')}
     </div>`;
+}
+
+function hideParentSentToAdminMsg(encodedId){
+  const L = window.MsgDelete?.labels() || {};
+  if(!confirm(L.confirmHideMe || 'حذف من جهازك فقط؟')) return;
+  addParentHiddenMsgId('parent_to_admin', decodeURIComponent(encodedId));
+  showToast(L.doneHide || (currentLang === 'en' ? '✅ Deleted on your device' : '✅ تم الحذف من جهازك'));
+  const mid = window._currentParent?.mid || pendingLogin?.mid;
+  if(mid) renderParentSchoolSentToAdmin(mid);
 }
 
 function renderParentSchoolComplaintsLog(cls, sName, teachersList){
@@ -7185,15 +7293,16 @@ function isParentComplaintHidden(complaint){
 }
 
 function parentComplaintDeleteBtn(complaint, idx){
-  const isEn = currentLang === 'en';
   const enc = encodeURIComponent(complaint.id || parentComplaintHideKey(complaint));
   const idxArg = idx == null ? 'null' : (typeof idx === 'number' ? String(idx) : `'${idx}'`);
-  return `<button type="button" class="parent-msg-del" onclick="hideParentSentComplaint('${enc}',${idxArg})" title="${isEn ? 'Hide on my device' : 'إخفاء من جهازي'}">🗑️</button>`;
+  return window.MsgDelete?.parentBtn(`hideParentSentComplaint('${enc}',${idxArg})`) || '';
 }
 
 function hideParentSentComplaint(encodedHideId, idx){
+  const L = window.MsgDelete?.labels() || {};
+  if(!confirm(L.confirmHideMe || 'حذف من جهازك فقط؟')) return;
   addParentHiddenMsgId('complaint', decodeURIComponent(encodedHideId));
-  showToast(currentLang === 'en' ? '✅ Complaint hidden' : '✅ تم إخفاء الشكوى');
+  showToast(L.doneHide || (currentLang === 'en' ? '✅ Deleted on your device' : '✅ تم الحذف من جهازك'));
   const ctx = window._parentSubjectContext;
   if(ctx){
     renderParentSchoolComplaintsLog(ctx.cls, ctx.name.trim(), ctx.teachers);
@@ -8265,18 +8374,19 @@ function isParentMsgHidden(type, teacherKey, msg){
 }
 
 function parentMsgDeleteBtn(type, teacherKey, msg, idx){
-  const isEn = currentLang === 'en';
   const hideId = parentMsgHideKey(teacherKey, msg);
   const enc = encodeURIComponent(hideId);
   const fn = type === 'sent'
     ? `hideParentSentMsg('${teacherKey}','${enc}',${idx == null ? 'null' : idx})`
     : `hideParentReceivedMsg('${teacherKey}','${enc}',${idx == null ? 'null' : idx})`;
-  return `<button type="button" class="parent-msg-del" onclick="${fn}" title="${isEn ? 'Hide on my device' : 'إخفاء من جهازي'}">🗑️</button>`;
+  return window.MsgDelete?.parentBtn(fn) || '';
 }
 
 function hideParentSentMsg(teacherKey, encodedHideId, idx){
+  const L = window.MsgDelete?.labels() || {};
+  if(!confirm(L.confirmHideMe || 'حذف من جهازك فقط؟')) return;
   addParentHiddenMsgId('sent', decodeURIComponent(encodedHideId));
-  showToast(currentLang === 'en' ? '✅ Message hidden' : '✅ تم إخفاء الرسالة');
+  showToast(L.doneHide || (currentLang === 'en' ? '✅ Deleted on your device' : '✅ تم الحذف من جهازك'));
   const ctx = window._parentSubjectContext;
   if(ctx && idx != null && idx !== 'null'){
     renderSubjectSentLog(idx, teacherKey, ctx.cls, ctx.name);
@@ -8285,8 +8395,10 @@ function hideParentSentMsg(teacherKey, encodedHideId, idx){
 }
 
 function hideParentReceivedMsg(teacherKey, encodedHideId, idx){
+  const L = window.MsgDelete?.labels() || {};
+  if(!confirm(L.confirmHideMe || 'حذف من جهازك فقط؟')) return;
   addParentHiddenMsgId('received', decodeURIComponent(encodedHideId));
-  showToast(currentLang === 'en' ? '✅ Message hidden' : '✅ تم إخفاء الرسالة');
+  showToast(L.doneHide || (currentLang === 'en' ? '✅ Deleted on your device' : '✅ تم الحذف من جهازك'));
   const ctx = window._parentSubjectContext;
   if(ctx){
     if(idx != null && idx !== 'null'){
@@ -8554,37 +8666,33 @@ async function sendParentMessage(cls, name){
   renderParentSentLog(cls, name);
 }
 
-function deleteSingleParentMsg(id){
+function deleteSingleParentMsg(id){ teacherMsgDelete(id, 'parent_inbox', 'both'); }
+
+function deleteSingleParentMsgForAll(id){
   const key = getTeacherKey();
   const delKey = 'del_pm_'+key;
-
-  // Step 1: Add to local deleted IDs set (permanent)
   let deletedIds = [];
   try{ deletedIds = JSON.parse(localStorage.getItem(delKey)||'[]'); }catch(e){}
   if(!deletedIds.includes(id)) deletedIds.push(id);
   try{ localStorage.setItem(delKey, JSON.stringify(deletedIds)); }catch(e){}
-
-  // Step 2: Remove from local list
   APP.parentMessages = APP.parentMessages.filter(m=>m.id!==id);
   saveState();
-
-  // Step 3: Refresh inbox and badge
   renderParentInbox();
   updateInboxBadge();
-
-  // Step 4: Delete from Firebase
   if(typeof db!=='undefined' && key){
     window.fbDeleteParentMsg(key, id)
-      .then(()=>showToast('✅ تم حذف الرسالة'))
-      .catch(()=>showToast('✅ تم الحذف محلياً'));
-  } else showToast('✅ تم الحذف');
+      .then(()=>showToast(currentLang==='en'?'✅ Deleted for everyone':'✅ تم الحذف من عند الجميع'))
+      .catch(()=>showToast(currentLang==='en'?'⚠️ Deleted locally':'⚠️ حُذف محلياً'));
+  } else showToast(currentLang==='en'?'✅ Deleted':'✅ تم الحذف');
 }
 
 
 function renderParentInbox(){
   const wrap = document.getElementById('parent-inbox');
   if(!wrap) return;
-  const msgs = [...APP.parentMessages].reverse();
+  const msgs = [...APP.parentMessages]
+    .filter(m => !window.MsgDelete?.isTeacherHidden('parent_inbox', m.id))
+    .reverse();
   if(!msgs.length){
     wrap.innerHTML='<div class="empty-state"><div class="ico">📭</div><p>'+t('noInbox')+'</p></div>';
     updateInboxBadge();
@@ -8601,9 +8709,9 @@ function renderParentInbox(){
           <div class="inbox-name">${displayStudentName(m.name, m.cls, m.section, m.mid)}${subj?' · '+escapeHtml(subj):''} — ${currentLang==="en"?"Class":"الشعبة"} ${m.cls}</div>
           <div class="inbox-date">${m.date||m.ts||''}</div>
         </div>
-        <div style="display:flex;align-items:center;gap:6px">
+        <div style="display:flex;align-items:center;gap:6px" onclick="event.stopPropagation()">
           ${unread?'<div class="unread-dot" title="'+(currentLang==="en"?"Unread":"غير مقروءة")+'"></div>':''}
-          ${m.id?`<button class="action-btn danger" style="padding:2px 8px;font-size:11px" onclick="event.stopPropagation();deleteSingleParentMsg('${safeId}')">🗑️</button>`:''}
+          ${m.id ? (window.MsgDelete?.teacherDualBtn('parent_inbox', m.id) || '') : ''}
         </div>
       </div>
       <p>${escapeHtml(m.body)}</p>
@@ -8870,7 +8978,9 @@ function renderTeacherAdminMessages(){
   const wrap = document.getElementById('teacher-admin-msgs-list');
   if(!wrap) return;
   const isEn = currentLang==='en';
-  const list = (APP.teacherAdminMessages||[]).slice().sort((a,b)=>(b.ts||'').localeCompare(a.ts||''));
+  const list = (APP.teacherAdminMessages||[])
+    .filter(m => !window.MsgDelete?.isTeacherHidden('tadmin', m.id))
+    .slice().sort((a,b)=>(b.ts||'').localeCompare(a.ts||''));
   if(!list.length){
     wrap.innerHTML = `<div class="empty-state" style="padding:24px"><div class="ico">📭</div><p>${isEn?'No admin messages yet':'لا توجد رسائل من المسؤول بعد'}</p></div>`;
     return;
@@ -8884,7 +8994,10 @@ function renderTeacherAdminMessages(){
         <div class="parent-admin-msg-card direct${unread?' unread':''}" onclick="markTeacherAdminMsgReadById('${m.id}')">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px;flex-wrap:wrap">
             <span class="parent-admin-kind-label">🏫 ${isEn?'School Admin':'إدارة المدرسة'}${unread?` · <span class="parent-admin-new-pill inline">${isEn?'New':'جديد'}</span>`:''}</span>
-            <span style="font-size:11px;color:var(--grey-3)">${m.date||formatAdminDate(m.ts, isEn)}</span>
+            <div style="display:flex;align-items:center;gap:6px" onclick="event.stopPropagation()">
+              <span style="font-size:11px;color:var(--grey-3)">${m.date||formatAdminDate(m.ts, isEn)}</span>
+              ${m.id ? (window.MsgDelete?.teacherOnlyBtn('tadmin', m.id) || '') : ''}
+            </div>
           </div>
           <p style="margin:0;font-size:13px;color:var(--grey-2);white-space:pre-line;line-height:1.7">${escapeHtml(m.body||'')}</p>
           ${_attRender(m)}
@@ -8903,7 +9016,8 @@ function renderTeacherSentToAdmin(){
   const wrap = document.getElementById('teacher-admin-sent-list');
   if(!wrap) return;
   const isEn = currentLang==='en';
-  const list = APP.teacherMessagesToAdmin || [];
+  const list = (APP.teacherMessagesToAdmin || [])
+    .filter(m => !window.MsgDelete?.isTeacherHidden('tsent', m.id));
   if(!list.length){ wrap.innerHTML=''; return; }
   wrap.innerHTML = `
     <div style="margin-top:14px">
@@ -8912,7 +9026,10 @@ function renderTeacherSentToAdmin(){
         <div class="parent-school-sent-card">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px">
             <span style="font-size:11px;font-weight:700;color:var(--teal-mid)">📤 ${isEn?'Sent':'أُرسلت'}</span>
-            <span style="font-size:11px;color:var(--grey-3)">${m.date||formatAdminDate(m.ts, isEn)}</span>
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="font-size:11px;color:var(--grey-3)">${m.date||formatAdminDate(m.ts, isEn)}</span>
+              ${m.id ? (window.MsgDelete?.teacherOnlyBtn('tsent', m.id) || '') : ''}
+            </div>
           </div>
           <p style="margin:0;font-size:13px;color:var(--grey-2);white-space:pre-line;line-height:1.7">${escapeHtml(m.body||'')}</p>
           ${_attRender(m)}
@@ -8998,7 +9115,8 @@ function renderTeacherComplaints(){
   const wrap = document.getElementById('teacher-complaints-inbox');
   if(!wrap) return;
   const isEn = currentLang==='en';
-  const list = APP.complaintInbox || [];
+  const list = (APP.complaintInbox || [])
+    .filter(c => !window.MsgDelete?.isTeacherHidden('complaint', c.id));
   if(!list.length){
     wrap.innerHTML = `<div class="empty-state"><div class="ico">📭</div><p>${isEn?'No forwarded complaints yet':'لا توجد شكاوى موجّهة بعد'}</p></div>`;
     return;
@@ -9012,7 +9130,10 @@ function renderTeacherComplaints(){
       <div class="teacher-complaint-card${c.read?' read':''}" onclick="markTeacherComplaintRead('${c.id}')">
         <div class="teacher-complaint-head">
           <span style="font-weight:700;color:var(--teal-dark)">📖 ${escapeHtml(c.subjLabel||formatAdminSubject(c.subject, isEn))}</span>
-          <span style="font-size:11px;color:var(--grey-3)">${formatAdminDate(c.forwardedAt||c.ts, isEn)}</span>
+          <div style="display:flex;align-items:center;gap:6px" onclick="event.stopPropagation()">
+            <span style="font-size:11px;color:var(--grey-3)">${formatAdminDate(c.forwardedAt||c.ts, isEn)}</span>
+            ${c.id ? (window.MsgDelete?.teacherOnlyBtn('complaint', c.id) || '') : ''}
+          </div>
         </div>
         <div class="teacher-complaint-meta">
           ${studentLine}

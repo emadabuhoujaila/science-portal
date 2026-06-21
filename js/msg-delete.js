@@ -127,6 +127,23 @@
       document.querySelectorAll('.msg-del-menu.open').forEach(m=>m.classList.remove('open'));
     },
 
+    parentBtn(onclickFn){
+      const L = labels();
+      return `<button type="button" class="parent-msg-del" onclick="event.stopPropagation();${onclickFn}" title="${L.delete}">🗑️</button>`;
+    },
+
+    adminBtn(scope, itemId){
+      return this.menuHtml('admin', itemId, scope);
+    },
+
+    teacherDualBtn(scope, itemId){
+      return this.menuHtml('teacherDual', itemId, scope);
+    },
+
+    teacherOnlyBtn(scope, itemId){
+      return this.menuHtml('teacherOnly', itemId, scope);
+    },
+
     menuHtml(mode, itemId, extra){
       extra = extra || '';
       const L = labels();
@@ -149,7 +166,10 @@
     },
   };
 
-  document.addEventListener('click', ()=> window.MsgDelete.closeMenus());
+  document.addEventListener('click', (e)=>{
+    if(e.target.closest('.msg-del-wrap')) return;
+    window.MsgDelete.closeMenus();
+  });
   document.addEventListener('touchstart', ()=> window.MsgDelete.unlockAudio(), { once: true, passive: true });
   document.addEventListener('click', ()=> window.MsgDelete.unlockAudio(), { once: true });
 })();
