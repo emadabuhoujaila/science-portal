@@ -5895,6 +5895,76 @@ function syncParentTeacherParentMsgs(tc, cls, sName, snap){
   saveState();
 }
 
+function syncParentTeacherMessagesFromList(tc, cls, sName, list){
+  const tag = tc.key + '|msg';
+  APP.messages = (APP.messages || []).filter(m => m._src !== tag);
+  (list || []).forEach(m => APP.messages.push({ ...m, _src: tag, _teacherKey: tc.key }));
+  saveState();
+}
+
+function syncParentTeacherBehaviorFromList(tc, cls, sName, list){
+  const tag = tc.key + '|bv';
+  APP.behaviorLog = (APP.behaviorLog || []).filter(e => e._src !== tag);
+  (list || []).forEach(e => APP.behaviorLog.push({ ...e, _src: tag, _teacherKey: tc.key }));
+  saveState();
+}
+
+function syncParentTeacherParentMsgsFromList(tc, cls, sName, list){
+  const tag = tc.key + '|pm';
+  APP.parentMessages = (APP.parentMessages || []).filter(m => m._src !== tag);
+  (list || []).forEach(m => APP.parentMessages.push({
+    ...m,
+    teacherKey: tc.key,
+    _teacherKey: tc.key,
+    _src: tag,
+  }));
+  saveState();
+}
+
+async function refreshParentTeacherDataFromServer(cls, sName, teachersList){
+  const sessionToken = getParentSessionToken();
+  if(!sessionToken || !teachersList?.length) return false;
+  const data = await callParentPublicFn('getParentTeacherDataBatch', {
+    sessionToken,
+    teacherKeys: teachersList.map(t => t.key).filter(Boolean),
+  });
+  if(!data?.byTeacher) return false;
+
+  teachersList.forEach(tc=>{
+    const bucket = data.byTeacher[tc.key] || {};
+    syncParentTeacherMessagesFromList(tc, cls, sName, bucket.messages || []);
+    syncParentTeacherBehaviorFromList(tc, cls, sName, bucket.behaviorLog || []);
+    syncParentTeacherParentMsgsFromList(tc, cls, sName, bucket.parentMessages || []);
+  });
+
+  (teachersList || []).forEach((tc, i)=>{
+    _refreshSubjectTabBadge(i, cls, sName, tc.key);
+  });
+  if(document.getElementById('parent-inbox-all')){
+    renderParentInboxAll(cls, sName, teachersList);
+  }
+  if(document.getElementById('parent-behavior-content')){
+    renderParentBehaviorTab(cls, sName, window._currentParent?.mid, teachersList);
+  }
+  if(document.getElementById('parent-sent-all')){
+    renderParentSentAll(cls, sName, teachersList);
+  }
+  (teachersList || []).forEach((tc, i)=>{
+    if(_isParentTabVisible('tab-subj-'+i)){
+      loadSubjectTabContent(i, cls, sName, window._currentParent?.mid, teachersList);
+    }
+  });
+  return true;
+}
+
+function _refreshParentLiveData(cls, studentName, mid, teachersList){
+  const sName = (studentName || '').trim();
+  _refreshParentGradeViews(cls, studentName, mid, teachersList);
+  refreshParentTeacherDataFromServer(cls, sName, teachersList).catch(e=>{
+    console.warn('refreshParentTeacherDataFromServer', e);
+  });
+}
+
 function syncParentAdminInbox(mid, cls, sName, snap){
   const all = snap.exists()
     ? Object.entries(snap.val() || {}).map(([id, m]) => ({ id, ...m }))
@@ -6394,51 +6464,9 @@ function _startParentListeners(cls, studentName, mid, teachersList, section){
 
   clearParentGradesPoll();
   window._parentGradesPollTimer = setInterval(()=>{
-    _refreshParentGradeViews(cls, studentName, mid, teachersList);
+    _refreshParentLiveData(cls, studentName, mid, teachersList);
   }, 45000);
-
-  teachersList.forEach((tc,i)=>{
-    if(typeof db==='undefined'||!tc.key) return;
-
-    // Messages → badge on subject tab
-    const msgRef = db.ref('teacherData/'+tc.key+'/messages');
-    msgRef.on('value', snap=>{
-      syncParentTeacherMessages(tc, cls, sName, snap);
-      _refreshSubjectTabBadge(i, cls, studentName, tc.key);
-      if(document.getElementById('parent-inbox-all')){
-        renderParentInboxAll(cls, studentName, teachersList);
-      }
-      const tabDiv = document.querySelector('#parent-body #tab-subj-'+i);
-      if(_isParentTabVisible('tab-subj-'+i)){
-        loadSubjectTabContent(i, cls, studentName, mid, teachersList);
-      }
-    });
-    window._parentListeners.push(msgRef);
-
-    // BehaviorLog → badge on subject tab
-    const bvRef = db.ref('teacherData/'+tc.key+'/behaviorLog');
-    bvRef.on('value', snap=>{
-      syncParentTeacherBehavior(tc, cls, sName, snap);
-      _refreshSubjectTabBadge(i, cls, studentName, tc.key);
-      if(document.getElementById('parent-behavior-content')){
-        renderParentBehaviorTab(cls, studentName, mid, teachersList);
-      }
-      if(_isParentTabVisible('tab-subj-'+i)){
-        loadSubjectTabContent(i, cls, studentName, mid, teachersList);
-      }
-    });
-    window._parentListeners.push(bvRef);
-
-    // ParentMessages
-    const pmRef = db.ref('teacherData/'+tc.key+'/parentMessages');
-    pmRef.on('value', snap=>{
-      syncParentTeacherParentMsgs(tc, cls, sName, snap);
-      if(_isParentTabVisible('tab-subj-'+i)){
-        renderSubjectSentLog(i, tc.key, cls, studentName);
-      }
-    });
-    window._parentListeners.push(pmRef);
-  });
+  _refreshParentLiveData(cls, studentName, mid, teachersList);
 
   if(mid && typeof db!=='undefined'){
     (APP.parentComplaints || []).forEach(c => {
@@ -6774,22 +6802,13 @@ async function renderParentBehaviorTab(cls, studentName, mid, teachersList){
 
   let allLogs = [];
 
-  // Read from every teacher's behaviorLog
-  const promises = (teachersList||[]).map(tc=>
-    db.ref('teacherData/'+tc.key+'/behaviorLog').once('value')
-      .then(snap=>{
-        if(!snap.exists()) return;
-        const vals = Object.values(snap.val()||{});
-        vals.forEach(e=>{
-          if(!e||e.cls!==cls) return;
-          if((e.name||'').trim()===sName)
-            allLogs.push({...e,_teacher:tc.name,_subj:tc.subjLabel||''});
-        });
-      }).catch(()=>{})
-  );
+  (teachersList||[]).forEach(tc=>{
+    const tag = tc.key + '|bv';
+    (APP.behaviorLog || []).filter(e => e._src === tag).forEach(e=>{
+      allLogs.push({...e,_teacher:tc.name,_subj:tc.subjLabel||''});
+    });
+  });
 
-
-  await Promise.all(promises);
   allLogs.sort((a,b)=>(b.ts||b.date||'').localeCompare(a.ts||a.date||''));
 
   const violations = allLogs.filter(e=>e.violationId&&e.violationId!=='v0').length;
@@ -6885,30 +6904,21 @@ async function renderParentSentAll(cls, studentName, teachersList){
 
   let allSent = [];
 
-  const promises = (teachersList||[]).map(tc=>
-    db.ref('teacherData/'+tc.key+'/parentMessages').once('value')
-      .then(snap=>{
-        if(!snap.exists()) return;
-        Object.entries(snap.val()||{}).forEach(([id,m])=>{
-          if(!m||m.cls!==cls) return;
-          if((m.name||'').trim()===sName){
-            const item = {
-              ...m,
-              id,
-              _teacher: tc.name,
-              _teacherKey: tc.key,
-              _subj: m.subjLabel || tc.subjLabel || ''
-            };
-            if(!isParentMsgHidden('sent', tc.key, item)){
-              allSent.push(item);
-            }
-          }
-        });
-      }).catch(()=>{})
-  );
+  (teachersList||[]).forEach(tc=>{
+    const tag = tc.key + '|pm';
+    (APP.parentMessages || []).filter(m => m._src === tag).forEach(m=>{
+      const item = {
+        ...m,
+        _teacher: tc.name,
+        _teacherKey: tc.key,
+        _subj: m.subjLabel || tc.subjLabel || '',
+      };
+      if(!isParentMsgHidden('sent', tc.key, item)){
+        allSent.push(item);
+      }
+    });
+  });
 
-
-  await Promise.all(promises);
   allSent.sort((a,b)=>(b.ts||b.date||'').localeCompare(a.ts||a.date||''));
 
   div.innerHTML = allSent.length
@@ -6945,24 +6955,16 @@ async function loadSubjectTabContent(idx, cls, studentName, mid, teachersList){
 
   let gradeData=null, messages=[], behaviorLog=[];
 
+  const msgTag = tc.key + '|msg';
+  const bvTag = tc.key + '|bv';
+
   if(typeof db!=='undefined'){
     try{
-      const [gData, mSnap, bSnap] = await Promise.all([
-        fetchTeacherGradeRecord(tc.key, cls, section, mid, sName),
-        db.ref('teacherData/'+tc.key+'/messages').once('value'),
-        db.ref('teacherData/'+tc.key+'/behaviorLog').once('value'),
-      ]);
-      gradeData = gData;
-      if(mSnap.exists()){
-        messages = Object.entries(mSnap.val()||{})
-          .map(([id,m])=>({id,...m}))
-          .filter(m=>m&&m.cls===cls&&(m.name||'').trim()===sName)
-          .filter(m=>!isParentMsgHidden('received', tc.key, m));
-      }
-      if(bSnap.exists()){
-        behaviorLog = Object.values(bSnap.val()||{})
-          .filter(e=>e&&e.cls===cls&&(e.name||'').trim()===sName);
-      }
+      gradeData = await fetchTeacherGradeRecord(tc.key, cls, section, mid, sName);
+      messages = (APP.messages || [])
+        .filter(m => m._src === msgTag)
+        .filter(m => !isParentMsgHidden('received', tc.key, m));
+      behaviorLog = (APP.behaviorLog || []).filter(e => e._src === bvTag);
       if(mid){
         const aSnap = await db.ref('parentAdminInbox/'+mid).once('value');
         syncParentAdminInbox(mid, cls, sName, aSnap);
@@ -6970,9 +6972,6 @@ async function loadSubjectTabContent(idx, cls, studentName, mid, teachersList){
     }catch(e){ console.warn('loadSubjectTabContent:',e); }
   }
 
-  // Merge into APP for behavior/messages tabs (replace this teacher's slice for this student)
-  const msgTag = tc.key + '|msg';
-  const bvTag = tc.key + '|bv';
   APP.messages = (APP.messages || []).filter(m => m._src !== msgTag);
   messages.forEach(m => APP.messages.push({ ...m, _src: msgTag }));
   APP.behaviorLog = (APP.behaviorLog || []).filter(e => e._src !== bvTag);
