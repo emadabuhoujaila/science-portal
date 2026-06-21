@@ -73,7 +73,7 @@
         },
 
         "messages": {
-          ".read": true,
+          ".read": "auth != null && (root.child('teacherLookup').child(auth.uid).child('key').val() === $key || root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin')",
           ".write": "auth != null && (root.child('teacherLookup').child(auth.uid).child('key').val() === $key || root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin')",
           "$msgId": {
             ".write": "auth != null && (root.child('teacherLookup').child(auth.uid).child('key').val() === $key || root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin')"
@@ -81,7 +81,7 @@
         },
 
         "behaviorLog": {
-          ".read": true,
+          ".read": "auth != null && (root.child('teacherLookup').child(auth.uid).child('key').val() === $key || root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin')",
           ".write": "auth != null && (root.child('teacherLookup').child(auth.uid).child('key').val() === $key || root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin')",
           "$entryId": {
             ".write": "auth != null && (root.child('teacherLookup').child(auth.uid).child('key').val() === $key || root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin')"
@@ -89,7 +89,7 @@
         },
 
         "parentMessages": {
-          ".read": true,
+          ".read": "auth != null && (root.child('teacherLookup').child(auth.uid).child('key').val() === $key || root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin')",
           "$msgId": {
             ".write": "(!data.exists() && newData.hasChildren(['cls','name','ts']) && newData.child('cls').isString() && newData.child('name').isString() && newData.child('ts').isString() && ((newData.child('body').isString() && newData.child('body').val().length > 0 && newData.child('body').val().length <= 5000) || newData.child('attachment').exists()) && (!newData.child('attachment').exists() || (newData.child('attachment').hasChildren(['url','name','type','size']) && newData.child('attachment').child('url').isString() && newData.child('attachment').child('size').val() <= 10485760))) || (auth != null && (root.child('teacherLookup').child(auth.uid).child('key').val() === $key || root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin'))"
           }

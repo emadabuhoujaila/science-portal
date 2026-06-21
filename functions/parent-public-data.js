@@ -166,3 +166,54 @@ exports.getParentGradesBatch = region.https.onCall(async (data) => {
   );
   return { grades };
 });
+
+function studentNameMatches(recordName, wantName) {
+  return String(recordName || '').trim() === String(wantName || '').trim();
+}
+
+async function loadTeacherMessagesForStudent(teacherKey, cls, sName) {
+  const snap = await admin.database().ref(`teacherData/${teacherKey}/messages`).once('value');
+  if (!snap.exists()) return [];
+  return Object.entries(snap.val() || {})
+    .filter(([, m]) => m && m.cls === cls && studentNameMatches(m.name, sName))
+    .map(([id, m]) => ({ id, ...m }));
+}
+
+async function loadTeacherBehaviorForStudent(teacherKey, cls, sName) {
+  const snap = await admin.database().ref(`teacherData/${teacherKey}/behaviorLog`).once('value');
+  if (!snap.exists()) return [];
+  return Object.entries(snap.val() || {})
+    .filter(([, e]) => e && e.cls === cls && studentNameMatches(e.name, sName))
+    .map(([id, e]) => ({ id, ...e }));
+}
+
+async function loadTeacherParentMessagesForStudent(teacherKey, cls, sName) {
+  const snap = await admin.database().ref(`teacherData/${teacherKey}/parentMessages`).once('value');
+  if (!snap.exists()) return [];
+  return Object.entries(snap.val() || {})
+    .filter(([, m]) => m && m.cls === cls && studentNameMatches(m.name, sName))
+    .map(([id, m]) => ({ id, ...m }));
+}
+
+exports.getParentTeacherDataBatch = region.https.onCall(async (data) => {
+  const session = await assertParentSession(data?.sessionToken);
+  const cls = String(session.cls || '').trim();
+  const sName = String(session.name || '').trim();
+  const teacherKeys = Array.isArray(data?.teacherKeys)
+    ? [...new Set(data.teacherKeys.map((k) => String(k || '').trim()).filter(Boolean))]
+    : [];
+  if (!teacherKeys.length) return { byTeacher: {} };
+
+  const byTeacher = {};
+  await Promise.all(
+    teacherKeys.map(async (teacherKey) => {
+      const [messages, behaviorLog, parentMessages] = await Promise.all([
+        loadTeacherMessagesForStudent(teacherKey, cls, sName),
+        loadTeacherBehaviorForStudent(teacherKey, cls, sName),
+        loadTeacherParentMessagesForStudent(teacherKey, cls, sName),
+      ]);
+      byTeacher[teacherKey] = { messages, behaviorLog, parentMessages };
+    })
+  );
+  return { byTeacher };
+});
