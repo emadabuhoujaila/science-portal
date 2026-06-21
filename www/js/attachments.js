@@ -108,40 +108,58 @@
       </div>`;
   }
 
+  function fileToBase64(file){
+    return new Promise((resolve, reject)=>{
+      const reader = new FileReader();
+      reader.onload = ()=>{
+        const dataUrl = String(reader.result || '');
+        const b64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+        resolve(b64);
+      };
+      reader.onerror = ()=> reject(new Error(t('تعذّر قراءة الملف','Could not read file')));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function callableErrorMessage(err){
+    const code = err?.code || '';
+    const msg = err?.message || '';
+    if(code === 'functions/unauthenticated') return t('يجب تسجيل الدخول أولاً','Please sign in first');
+    if(code === 'functions/permission-denied') return t('لا تملك صلاحية رفع هذا الملف','No permission to upload');
+    if(code === 'functions/invalid-argument') return msg || t('ملف غير صالح','Invalid file');
+    if(code === 'functions/internal' || /internal/i.test(msg)) {
+      return t('فشل رفع الملف — أعد المحاولة','File upload failed — try again');
+    }
+    return msg || t('فشل رفع الملف','File upload failed');
+  }
+
   async function uploadFile(file, channel, meta){
     const v = validateFile(file);
     if(!v.ok) throw new Error(v.reason);
     const fns = getFns();
     if(!fns) throw new Error(t('الخدمة غير متاحة','Service unavailable'));
 
-    const prepare = fns.httpsCallable('prepareAttachmentUpload');
-    const complete = fns.httpsCallable('completeAttachmentUpload');
-    const prep = await prepare({
-      channel,
-      fileName: file.name,
-      contentType: file.type,
-      size: file.size,
-      meta: meta || {},
-    });
-    const { uploadUrl, path } = prep.data || {};
-    if(!uploadUrl || !path) throw new Error(t('تعذّر تجهيز الرفع','Upload prepare failed'));
+    const upload = fns.httpsCallable('uploadAttachment');
+    let fileBase64;
+    try{
+      fileBase64 = await fileToBase64(file);
+    }catch(e){
+      throw new Error(e.message || t('تعذّر قراءة الملف','Could not read file'));
+    }
 
-    const res = await fetch(uploadUrl, {
-      method: 'PUT',
-      headers: { 'Content-Type': file.type },
-      body: file,
-    });
-    if(!res.ok) throw new Error(t('فشل رفع الملف','File upload failed'));
-
-    const done = await complete({
-      path,
-      fileName: file.name,
-      contentType: file.type,
-      size: file.size,
-      channel,
-      meta: meta || {},
-    });
-    return done.data;
+    try{
+      const result = await upload({
+        channel,
+        fileName: file.name,
+        contentType: file.type,
+        size: file.size,
+        fileBase64,
+        meta: meta || {},
+      });
+      return result.data;
+    }catch(e){
+      throw new Error(callableErrorMessage(e));
+    }
   }
 
   async function uploadPending(inputId, channel, meta){
