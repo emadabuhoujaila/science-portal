@@ -5963,6 +5963,51 @@ function _refreshParentLiveData(cls, studentName, mid, teachersList){
   refreshParentTeacherDataFromServer(cls, sName, teachersList).catch(e=>{
     console.warn('refreshParentTeacherDataFromServer', e);
   });
+  refreshParentSchoolDataFromServer(cls, sName, mid, teachersList).catch(e=>{
+    console.warn('refreshParentSchoolDataFromServer', e);
+  });
+}
+
+async function refreshParentSchoolDataFromServer(cls, sName, mid, teachersList){
+  const sessionToken = getParentSessionToken();
+  if(!sessionToken || !mid) return false;
+  const data = await callParentPublicFn('getParentSchoolData', { sessionToken });
+  if(!data) return false;
+
+  const prevAdmin = (APP.parentAdminMessages || []).slice();
+  const prevComplaints = (APP.parentComplaintLog || []).slice();
+
+  APP.parentAdminMessages = data.adminInbox || [];
+  APP.parentComplaintLog = data.complaintLog || [];
+  APP.parentMessagesToAdmin = data.messagesToAdmin || [];
+  (APP.parentComplaintLog || []).forEach(pc=>{
+    const match = (APP.parentAdminMessages || []).find(m => m.complaintId === pc.id);
+    if(match && pc.status === 'pending') pc.status = 'replied';
+  });
+  saveState();
+
+  if(!window._parentAdminInboxReady){
+    window._parentAdminInboxReady = true;
+    window._parentSchoolReady = true;
+  }else{
+    _notifyParentSchoolUpdates(prevAdmin, prevComplaints);
+  }
+  if(!window._parentSeenBootstrapped){
+    window._parentSeenBootstrapped = true;
+    _bootstrapParentSeenBaselines(cls, sName);
+  }else{
+    _ensureComplaintSeenBaselines(cls, sName);
+  }
+  _setBadge('btn-tab-parent-school', _getSchoolTabUnseenCount(cls, sName));
+  if(_isParentTabVisible('tab-parent-school')){
+    renderParentSchoolAdminMessages(cls, sName);
+    renderParentSchoolComplaintsLog(cls, sName, teachersList || []);
+    renderParentSchoolSentToAdmin(mid);
+  }
+  (teachersList || []).forEach((tc, i)=>{
+    _refreshSubjectTabBadge(i, cls, sName, tc.key);
+  });
+  return true;
 }
 
 function syncParentAdminInbox(mid, cls, sName, snap){
@@ -6398,6 +6443,9 @@ async function submitParentMessageToAdmin(){
     const outId = inboxRef.key;
     await inboxRef.set({ ...payload, id: outId });
     await sentRef.set({ ...payload, id: sentRef.key, outboxId: outId });
+    APP.parentMessagesToAdmin = APP.parentMessagesToAdmin || [];
+    APP.parentMessagesToAdmin.unshift({ ...payload, id: sentRef.key, outboxId: outId });
+    saveState();
     document.getElementById('parent-school-admin-input').value = '';
     _attClear(attInput, 'parent-admin-att-preview');
     renderParentSchoolSentToAdmin(mid);
@@ -6469,65 +6517,7 @@ function _startParentListeners(cls, studentName, mid, teachersList, section){
   _refreshParentLiveData(cls, studentName, mid, teachersList);
 
   if(mid && typeof db!=='undefined'){
-    (APP.parentComplaints || []).forEach(c => {
-      if(!c?.id || !c?.mid || String(c.mid) !== String(mid)) return;
-      db.ref('parentComplaintLog/'+mid+'/'+c.id).once('value').then(snap=>{
-        if(!snap.exists()) db.ref('parentComplaintLog/'+mid+'/'+c.id).set(c).catch(()=>{});
-      }).catch(()=>{});
-    });
-
-    const adminInboxRef = db.ref('parentAdminInbox/'+mid);
-    adminInboxRef.on('value', snap=>{
-      const prevList = (APP.parentAdminMessages || []).slice();
-      syncParentAdminInbox(mid, cls, sName, snap);
-      if(!window._parentAdminInboxReady){
-        window._parentAdminInboxReady = true;
-        window._parentSchoolReady = true;
-      } else {
-        _notifyParentSchoolUpdates(prevList, APP.parentComplaintLog);
-      }
-      if(!window._parentSeenBootstrapped){
-        window._parentSeenBootstrapped = true;
-        _bootstrapParentSeenBaselines(cls, studentName);
-      }
-      _setBadge('btn-tab-parent-school', _getSchoolTabUnseenCount(cls, studentName));
-      if(_isParentTabVisible('tab-parent-school')){
-        renderParentSchoolAdminMessages(cls, sName);
-      }
-      teachersList.forEach((tc, i)=> _refreshSubjectTabBadge(i, cls, studentName, tc.key));
-    });
-    window._parentListeners.push(adminInboxRef);
-
-    const complaintLogRef = db.ref('parentComplaintLog/'+mid);
-    complaintLogRef.on('value', snap=>{
-      const prev = (APP.parentComplaintLog || []).slice();
-      syncParentComplaintLog(mid, snap);
-      if(window._parentSchoolReady){
-        _notifyParentSchoolUpdates([], prev);
-      } else {
-        window._parentSchoolReady = true;
-      }
-      if(!window._parentSeenBootstrapped){
-        window._parentSeenBootstrapped = true;
-        _bootstrapParentSeenBaselines(cls, studentName);
-      } else {
-        _ensureComplaintSeenBaselines(cls, studentName);
-      }
-      _setBadge('btn-tab-parent-school', _getSchoolTabUnseenCount(cls, studentName));
-      if(_isParentTabVisible('tab-parent-school')){
-        renderParentSchoolComplaintsLog(cls, sName, teachersList);
-      }
-    });
-    window._parentListeners.push(complaintLogRef);
-
-    const sentAdminRef = db.ref('parentMessagesToAdmin/'+mid);
-    sentAdminRef.on('value', snap=>{
-      syncParentMessagesToAdmin(mid, snap);
-      if(_isParentTabVisible('tab-parent-school')){
-        renderParentSchoolSentToAdmin(mid);
-      }
-    });
-    window._parentListeners.push(sentAdminRef);
+    // School inbox / complaints / admin messages loaded via getParentSchoolData (poll)
   }
 }
 
@@ -6965,10 +6955,6 @@ async function loadSubjectTabContent(idx, cls, studentName, mid, teachersList){
         .filter(m => m._src === msgTag)
         .filter(m => !isParentMsgHidden('received', tc.key, m));
       behaviorLog = (APP.behaviorLog || []).filter(e => e._src === bvTag);
-      if(mid){
-        const aSnap = await db.ref('parentAdminInbox/'+mid).once('value');
-        syncParentAdminInbox(mid, cls, sName, aSnap);
-      }
     }catch(e){ console.warn('loadSubjectTabContent:',e); }
   }
 
