@@ -171,11 +171,23 @@ function studentNameMatches(recordName, wantName) {
   return String(recordName || '').trim() === String(wantName || '').trim();
 }
 
+async function loadTeacherParentMessagesForStudent(teacherKey, cls, sName) {
+  const snap = await admin.database().ref(`teacherData/${teacherKey}/parentMessages`).once('value');
+  if (!snap.exists()) return [];
+  const deleted = await loadDeletedSet();
+  return Object.entries(snap.val() || {})
+    .filter(([, m]) => m && m.cls === cls && studentNameMatches(m.name, sName))
+    .filter(([id]) => !isDeleted(deleted, `teacherParentMsg/${teacherKey}/${id}`))
+    .map(([id, m]) => ({ id, ...m }));
+}
+
 async function loadTeacherMessagesForStudent(teacherKey, cls, sName) {
   const snap = await admin.database().ref(`teacherData/${teacherKey}/messages`).once('value');
   if (!snap.exists()) return [];
+  const deleted = await loadDeletedSet();
   return Object.entries(snap.val() || {})
     .filter(([, m]) => m && m.cls === cls && studentNameMatches(m.name, sName))
+    .filter(([id]) => !isDeleted(deleted, `teacherMsg/${teacherKey}/${id}`))
     .map(([id, m]) => ({ id, ...m }));
 }
 
@@ -185,14 +197,6 @@ async function loadTeacherBehaviorForStudent(teacherKey, cls, sName) {
   return Object.entries(snap.val() || {})
     .filter(([, e]) => e && e.cls === cls && studentNameMatches(e.name, sName))
     .map(([id, e]) => ({ id, ...e }));
-}
-
-async function loadTeacherParentMessagesForStudent(teacherKey, cls, sName) {
-  const snap = await admin.database().ref(`teacherData/${teacherKey}/parentMessages`).once('value');
-  if (!snap.exists()) return [];
-  return Object.entries(snap.val() || {})
-    .filter(([, m]) => m && m.cls === cls && studentNameMatches(m.name, sName))
-    .map(([id, m]) => ({ id, ...m }));
 }
 
 exports.getParentTeacherDataBatch = region.https.onCall(async (data) => {
@@ -231,11 +235,21 @@ function parseComplaintLog(raw) {
     .sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
 }
 
+async function loadDeletedSet() {
+  const snap = await admin.database().ref('portalDeleted').once('value');
+  return new Set(Object.keys(snap.val() || {}));
+}
+
+function isDeleted(deletedSet, key) {
+  return !!key && deletedSet.has(String(key));
+}
+
 exports.getParentSchoolData = region.https.onCall(async (data) => {
   const session = await assertParentSession(data?.sessionToken);
   const mid = String(session.mid || '');
   const cls = String(session.cls || '').trim();
   const sName = String(session.name || '').trim();
+  const deleted = await loadDeletedSet();
 
   const [inboxSnap, complaintSnap, sentSnap] = await Promise.all([
     admin.database().ref(`parentAdminInbox/${mid}`).once('value'),
@@ -248,15 +262,20 @@ exports.getParentSchoolData = region.https.onCall(async (data) => {
     : [];
   const adminInbox = allInbox.filter(
     (m) => m && m.cls === cls && String(m.studentName || '').trim() === sName
+      && !isDeleted(deleted, `parentAdminInbox/${mid}/${m.id}`)
+      && !(m.outboxId && isDeleted(deleted, `adminOutbox/${m.outboxId}`))
   );
 
   const complaintLog = complaintSnap.exists()
-    ? parseComplaintLog(complaintSnap.val())
+    ? parseComplaintLog(complaintSnap.val()).filter(
+        (c) => !isDeleted(deleted, `parentComplaint/${mid}/${c.id}`) && !isDeleted(deleted, `complaint/${c.id}`)
+      )
     : [];
 
   const messagesToAdmin = sentSnap.exists()
     ? Object.entries(sentSnap.val())
         .map(([id, m]) => ({ id, ...m }))
+        .filter((m) => !isDeleted(deleted, `parentToAdmin/${mid}/${m.id}`))
         .sort((a, b) => (b.ts || '').localeCompare(a.ts || ''))
     : [];
 
