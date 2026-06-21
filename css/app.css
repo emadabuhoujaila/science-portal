@@ -572,3 +572,31 @@ tbody td{padding:10px 12px;text-align:center;color:var(--grey-2)}
 #screen-admin .admin-reply-textarea{width:100%;padding:11px 14px;border:1.5px solid #90caf9;border-radius:10px;font-family:inherit;font-size:14px;outline:none;resize:vertical;margin-bottom:10px}
 #screen-admin .admin-reply-send{font-size:13px;padding:9px 16px}
 #screen-admin .admin-complaint-status.replied{background:#e3f2fd;color:#1565c0}
+
+.parent-school-section{background:var(--white);border:1px solid var(--grey-5);border-radius:14px;padding:16px 18px;margin-bottom:16px}
+.parent-school-section-head{margin-bottom:12px}
+.parent-school-section-head h4{margin:0 0 4px;font-size:15px;font-weight:700;color:var(--teal-dark)}
+.parent-school-hint{font-size:11px;color:var(--grey-3);line-height:1.6}
+.parent-school-subtitle{font-size:13px;font-weight:700;color:var(--teal-dark);margin:0 0 10px;border-bottom:2px solid var(--teal-light);padding-bottom:6px}
+.parent-school-sent-card{background:var(--white);border:1px solid var(--grey-5);border-right:3px solid var(--teal-soft);border-radius:10px;padding:10px 14px;margin-bottom:8px}
+.parent-admin-msg-card.direct{border-color:#1565c0;border-right-color:#1565c0}
+.parent-admin-msg-card.broadcast{
+  border-color:#f9a825;border-right-color:#f57f17;background:#fffde7;
+  box-shadow:0 0 0 1px rgba(245,127,23,.12)
+}
+.parent-admin-msg-card.broadcast.unread{animation:admin-msg-blink 1.15s ease-in-out infinite}
+.parent-admin-kind-label{font-size:11px;font-weight:700;color:inherit}
+.parent-admin-msg-card.broadcast .parent-admin-kind-label{color:#e65100}
+.parent-admin-msg-card.direct .parent-admin-kind-label{color:#1565c0}
+.parent-complaint-thread-card{margin-bottom:12px}
+.parent-complaint-thread-item{border-radius:8px;padding:10px 12px;margin-top:8px;font-size:13px;line-height:1.7}
+.parent-complaint-thread-item.parent{background:#fff3e0;border-right:3px solid #e65100}
+.parent-complaint-thread-item.admin{background:#e3f2fd;border-right:3px solid #1565c0}
+.parent-complaint-thread-item.admin.unread{animation:admin-msg-blink 1.15s ease-in-out infinite}
+.parent-complaint-thread-role{display:block;font-size:10px;font-weight:800;margin-bottom:4px;text-transform:uppercase;letter-spacing:.03em}
+.parent-complaint-thread-item.parent .parent-complaint-thread-role{color:#e65100}
+.parent-complaint-thread-item.admin .parent-complaint-thread-role{color:#1565c0}
+.parent-complaint-thread-item p{margin:0;color:var(--grey-2);white-space:pre-line}
+.parent-complaint-thread-date{display:block;font-size:10px;color:var(--grey-3);margin-top:6px}
+.parent-complaint-reply-box{margin-top:12px;padding-top:12px;border-top:1px dashed var(--grey-5)}
+.parent-school-complaint-compose{margin-top:8px}

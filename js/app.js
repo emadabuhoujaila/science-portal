@@ -280,8 +280,10 @@ let APP = {
   behavior:{},   // {cls|name: {level, academic, conduct}}
   behaviorLog:[], // سجل تاريخي كامل
   parentMessages:[], // [{cls,name,type,body,date,read}]
-  parentComplaints:[], // شكاوى مرسلة من ولي الأمر (محفوظة محلياً)
-  parentAdminMessages:[], // ردود المسؤول لولي الأمر
+  parentComplaints:[], // legacy — تُدمَج مع parentComplaintLog
+  parentComplaintLog:[], // سجل الشكاوى من Firebase
+  parentMessagesToAdmin:[], // رسائل ولي الأمر للمسؤول
+  parentAdminMessages:[], // رسائل المسؤول لولي الأمر
   complaintInbox:[], // شكاوى موجّهة من المسؤول
   savedParent: null  // {cls, name} — تذكر ولي الأمر بعد تسجيل الدخول
 };
@@ -1982,14 +1984,22 @@ async function adminSendComplaintReply(complaintId){
     ts: now.toISOString(),
   };
   try{
+    let replyKey;
     if(typeof window.fbPushParentAdminReply === 'function'){
-      await window.fbPushParentAdminReply(c.mid, payload);
+      replyKey = await window.fbPushParentAdminReply(c.mid, payload);
     } else {
-      await db.ref('parentAdminInbox/'+c.mid).push(payload);
+      const pushRef = db.ref('parentAdminInbox/'+c.mid).push();
+      replyKey = pushRef.key;
+      await pushRef.set(payload);
     }
-    const updates = { lastReplyAt: now.toISOString() };
-    if(c.status==='pending') updates.status = 'replied';
-    await db.ref('complaints/'+complaintId).update(updates);
+    const threadItem = { role:'admin', body, date: payload.date, ts: payload.ts, id: replyKey };
+    await db.ref('parentComplaintLog/'+c.mid+'/'+complaintId+'/thread').push(threadItem);
+    const newStatus = c.status==='pending' ? 'replied' : c.status;
+    await db.ref('parentComplaintLog/'+c.mid+'/'+complaintId).update({
+      lastReplyAt: now.toISOString(),
+      status: newStatus,
+    });
+    await db.ref('complaints/'+complaintId).update({ lastReplyAt: now.toISOString(), status: newStatus });
     window._adminOpenReply = null;
     if(window._adminReplyDrafts) delete window._adminReplyDrafts[complaintId];
     showToast('✅ '+(isEn?'Reply sent to parent':'تم إرسال الرد لولي الأمر'));
@@ -2033,10 +2043,17 @@ async function adminForwardComplaint(complaintId, anonymous){
       inboxItem.mid = c.mid;
     }
     await db.ref('teacherData/'+c.teacherKey+'/complaintInbox').push(inboxItem);
+    const fwdStatus = anonymous ? 'forwarded_anonymous' : 'forwarded';
     await db.ref('complaints/'+complaintId).update({
-      status: anonymous ? 'forwarded_anonymous' : 'forwarded',
+      status: fwdStatus,
       forwardedAt: new Date().toISOString(),
     });
+    if(c.mid){
+      await db.ref('parentComplaintLog/'+c.mid+'/'+complaintId).update({
+        status: fwdStatus,
+        forwardedAt: new Date().toISOString(),
+      }).catch(()=>{});
+    }
     showToast('✅ '+(isEn?'Complaint forwarded':'تم توجيه الشكوى'));
     renderAdminComplaints();
   }catch(e){
@@ -3323,6 +3340,14 @@ const TRANSLATIONS = {
     allSections: 'كل الشعب',
     teacherComplaintsEmpty: 'لا توجد شكاوى موجّهة بعد',
     parentAcademicTab: 'الأكاديمي',
+    parentSchoolTab: '🏫 المدرسة',
+    parentSchoolAdminTitle: 'رسائل المسؤول',
+    parentSchoolSendTitle: 'رسالة للمسؤول',
+    parentSchoolComplaintsTitle: 'الشكاوى',
+    parentSchoolComplaintsLog: 'سجل الشكاوى',
+    parentSchoolSentAdmin: 'رسائلي للمسؤول',
+    parentSchoolBroadcast: 'تعميم المدرسة',
+    parentSchoolDirect: 'رسالة مباشرة',
     settingsPwLabel: '🔑 كلمة مرور المعلم الجديدة',
     settingsPwPH: 'اتركه فارغاً للإبقاء',
     settingsPwConfirmLabel: '🔑 تأكيد كلمة المرور',
@@ -3638,6 +3663,14 @@ const TRANSLATIONS = {
     allSections: 'All Sections',
     teacherComplaintsEmpty: 'No forwarded complaints yet',
     parentAcademicTab: 'Academic',
+    parentSchoolTab: '🏫 School',
+    parentSchoolAdminTitle: 'Admin Messages',
+    parentSchoolSendTitle: 'Message the Admin',
+    parentSchoolComplaintsTitle: 'Complaints',
+    parentSchoolComplaintsLog: 'Complaints Log',
+    parentSchoolSentAdmin: 'Sent to Admin',
+    parentSchoolBroadcast: 'School Broadcast',
+    parentSchoolDirect: 'Direct Message',
     settingsPwLabel: '🔑 New Teacher Password',
     settingsPwPH: 'Leave blank to keep current',
     settingsPwConfirmLabel: '🔑 Confirm Password',
@@ -4623,18 +4656,10 @@ function _isAdminMsgUnseen(msg, cls, name){
 }
 
 function _getSubjectTabUnseenCount(i, cls, name, teacherKey){
-  const sName = (name || '').trim();
   const myMsgs = (APP.messages || []).filter(m => m._src === teacherKey + '|msg');
   const myLogs = (APP.behaviorLog || []).filter(e => e._src === teacherKey + '|bv');
-  const myAdmin = (APP.parentAdminMessages || []).filter(m =>
-    m && m.cls === cls &&
-    (m.studentName || '').trim() === sName &&
-    (m.teacherKey || '') === teacherKey &&
-    !isParentAdminMsgHidden(m)
-  );
   return _countUnseen(myMsgs, 'msgs', cls, name) +
-         _countUnseen(myLogs, 'bv', cls, name) +
-         _countUnseen(myAdmin, 'admin_'+teacherKey, cls, name);
+         _countUnseen(myLogs, 'bv', cls, name);
 }
 
 function _refreshSubjectTabBadge(i, cls, name, teacherKey){
@@ -4844,12 +4869,103 @@ function syncParentAdminInbox(mid, cls, sName, snap){
   APP.parentAdminMessages = all.filter(m =>
     m && m.cls === cls && (m.studentName || '').trim() === sName.trim()
   );
-  (APP.parentComplaints || []).forEach(pc => {
-    if(all.some(m => m.complaintId === pc.id) && pc.status === 'pending'){
-      pc.status = 'replied';
-    }
+  (APP.parentComplaintLog || []).forEach(pc => {
+    const match = all.find(m => m.complaintId === pc.id);
+    if(match && pc.status === 'pending') pc.status = 'replied';
   });
   saveState();
+}
+
+function syncParentComplaintLog(mid, snap){
+  const raw = snap.val() || {};
+  APP.parentComplaintLog = Object.entries(raw)
+    .filter(([, v]) => v && typeof v === 'object' && v.body)
+    .map(([id, v]) => {
+      const threadRaw = v.thread && typeof v.thread === 'object' ? v.thread : {};
+      const thread = Object.entries(threadRaw)
+        .map(([tid, t]) => ({ id: tid, ...t }))
+        .sort((a, b) => (a.ts || '').localeCompare(b.ts || ''));
+      return { id, ...v, thread };
+    })
+    .sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
+  saveState();
+}
+
+function syncParentMessagesToAdmin(mid, snap){
+  APP.parentMessagesToAdmin = snap.exists()
+    ? Object.entries(snap.val()).map(([id, m]) => ({ id, ...m }))
+        .sort((a, b) => (b.ts || '').localeCompare(a.ts || ''))
+    : [];
+  saveState();
+}
+
+function _parentAdminMsgKind(m){
+  if(m?.complaintId) return 'complaint_reply';
+  if(m?.type === 'admin_broadcast') return 'broadcast';
+  if(m?.type === 'admin_direct' || m?.fromAdmin) return 'direct';
+  return 'direct';
+}
+
+function _getSchoolAdminMessages(cls, sName){
+  return (APP.parentAdminMessages || [])
+    .filter(m => m && m.cls === cls && (m.studentName || '').trim() === sName.trim())
+    .filter(m => _parentAdminMsgKind(m) !== 'complaint_reply')
+    .filter(m => !isParentAdminMsgHidden(m));
+}
+
+function _getSchoolTabUnseenCount(cls, name){
+  const sName = (name || '').trim();
+  const adminMsgs = _getSchoolAdminMessages(cls, sName);
+  let complaintUnseen = 0;
+  (APP.parentComplaintLog || []).forEach(c => {
+    if(c.cls !== cls || (c.studentName || '').trim() !== sName) return;
+    const seen = _getSeenTime('school_complaint_' + c.id, cls, name) || _getSeenTime('school_complaint', cls, name);
+    complaintUnseen += (c.thread || []).filter(t =>
+      t.role === 'admin' && (!seen || (t.ts || '') > seen)
+    ).length;
+  });
+  return _countUnseen(adminMsgs, 'school_admin', cls, name) + complaintUnseen;
+}
+
+function _notifyParentSchoolUpdates(prevAdmin, prevComplaints){
+  if(!window._parentSchoolReady) return;
+  const isEn = currentLang === 'en';
+  const ctx = window._parentSubjectContext;
+  if(!ctx) return;
+  const sName = (ctx.name || '').trim();
+  const prevAdminIds = new Set((prevAdmin || []).map(m => m.id));
+  const freshAdmin = (APP.parentAdminMessages || []).filter(m =>
+    !prevAdminIds.has(m.id) &&
+    m.cls === ctx.cls &&
+    (m.studentName || '').trim() === sName &&
+    _parentAdminMsgKind(m) !== 'complaint_reply'
+  );
+  freshAdmin.forEach(m => {
+    const kind = _parentAdminMsgKind(m);
+    const label = kind === 'broadcast'
+      ? (isEn ? '📢 Broadcast from admin' : '📢 تعميم من المسؤول')
+      : (isEn ? '🏫 Message from admin' : '🏫 رسالة من المسؤول');
+    showToast(label);
+    if(typeof sendLocalNotif === 'function') sendLocalNotif(label, (m.body || '').slice(0, 120));
+    else if(window.PortalPush?.playSound) PortalPush.playSound();
+  });
+
+  const prevMap = new Map((prevComplaints || []).map(c => [c.id, c]));
+  (APP.parentComplaintLog || []).forEach(c => {
+    if(c.cls !== ctx.cls || (c.studentName || '').trim() !== sName) return;
+    const prev = prevMap.get(c.id);
+    const prevThreadLen = (prev?.thread || []).length;
+    const newAdminReplies = (c.thread || []).slice(prevThreadLen).filter(t => t.role === 'admin');
+    newAdminReplies.forEach(() => {
+      const msg = isEn ? '💬 Admin replied to your complaint' : '💬 رد المسؤول على شكواك';
+      showToast(msg);
+      if(typeof sendLocalNotif === 'function') sendLocalNotif(msg, (c.subjLabel || '').slice(0, 80));
+      else if(window.PortalPush?.playSound) PortalPush.playSound();
+    });
+    if(prev && prev.status !== c.status && c.status !== 'pending'){
+      showToast(isEn ? 'ℹ️ Complaint status updated' : 'ℹ️ تم تحديث حالة الشكوى');
+    }
+  });
 }
 
 function parentAdminMsgHideKey(msg){
@@ -4863,60 +4979,370 @@ function isParentAdminMsgHidden(msg){
 function parentAdminMsgDeleteBtn(msg, idx){
   const isEn = currentLang === 'en';
   const enc = encodeURIComponent(parentAdminMsgHideKey(msg));
-  return `<button type="button" class="parent-msg-del" onclick="hideParentAdminMsg('${enc}',${idx == null ? 'null' : idx})" title="${isEn ? 'Hide on my device' : 'إخفاء من جهازي'}">🗑️</button>`;
+  const idxArg = idx == null ? 'null' : (typeof idx === 'number' ? String(idx) : `'${idx}'`);
+  return `<button type="button" class="parent-msg-del" onclick="hideParentAdminMsg('${enc}',${idxArg})" title="${isEn ? 'Hide on my device' : 'إخفاء من جهازي'}">🗑️</button>`;
 }
 
 function hideParentAdminMsg(encodedHideId, idx){
   addParentHiddenMsgId('admin_msg', decodeURIComponent(encodedHideId));
   showToast(currentLang === 'en' ? '✅ Message hidden' : '✅ تم إخفاء الرسالة');
   const ctx = window._parentSubjectContext;
-  if(ctx && idx != null){
-    const tc = (ctx.teachers || [])[Number(idx)];
-    renderParentAdminMessages(idx, tc?.key, ctx.cls, ctx.name);
+  if(!ctx) return;
+  if(idx === 'school' || idx == null){
+    renderParentSchoolAdminMessages(ctx.cls, ctx.name.trim());
+    return;
+  }
+  const tc = (ctx.teachers || [])[Number(idx)];
+  renderParentAdminMessages(idx, tc?.key, ctx.cls, ctx.name);
+}
+
+function renderParentSchoolTab(cls, studentName, mid, teachersList){
+  const wrap = document.getElementById('parent-school-content');
+  if(!wrap) return;
+  const isEn = currentLang === 'en';
+  const sName = studentName.trim();
+
+  const teacherOptions = (teachersList || []).map((tc, i) =>
+    `<option value="${i}">${escapeHtml(tc.subjLabel)} · ${escapeHtml(tc.name)}</option>`
+  ).join('');
+
+  wrap.innerHTML = `
+    <div class="parent-school-section">
+      <div class="parent-school-section-head">
+        <h4>🏫 ${isEn ? 'Messages from Admin' : 'رسائل المسؤول'}</h4>
+        <span class="parent-school-hint">${isEn ? 'Direct messages and school broadcasts' : 'رسائل مباشرة وتعميمات المدرسة'}</span>
+      </div>
+      <div id="parent-school-admin-msgs"></div>
+    </div>
+
+    <div class="parent-school-section">
+      <div class="parent-school-section-head">
+        <h4>✉️ ${isEn ? 'Message the Admin' : 'رسالة للمسؤول'}</h4>
+      </div>
+      <textarea id="parent-school-admin-input" class="parent-msg-textarea" rows="4"
+        placeholder="${isEn ? 'Write your message to the school admin...' : 'اكتب رسالتك لمسؤول المدرسة...'}"></textarea>
+      <button type="button" class="parent-msg-send" onclick="submitParentMessageToAdmin()">
+        ${isEn ? 'Send to Admin ←' : 'إرسال للمسؤول ←'}
+      </button>
+      <div id="parent-school-admin-sent"></div>
+    </div>
+
+    <div class="parent-school-section">
+      <div class="parent-school-section-head">
+        <h4>📢 ${isEn ? 'Complaints' : 'الشكاوى'}</h4>
+        <span class="parent-school-hint">${isEn ? 'Sent to admin only — teacher sees only if forwarded' : 'تُرسل للمسؤول فقط — يراها المعلم إذا وُجِّهت'}</span>
+      </div>
+      <div class="parent-school-complaint-compose">
+        <label style="font-size:12px;color:var(--grey-3);display:block;margin-bottom:6px">${isEn ? 'Related subject' : 'المادة المعنية'}</label>
+        <select id="parent-school-complaint-subject" style="width:100%;max-width:420px;padding:10px 12px;border:1.5px solid var(--grey-5);border-radius:10px;font-family:inherit;font-size:13px;margin-bottom:10px">
+          ${teacherOptions || `<option value="">${isEn ? 'No teachers available' : 'لا يوجد معلمون'}</option>`}
+        </select>
+        <button type="button" class="parent-complaint-toggle" id="parent-school-complaint-toggle" onclick="toggleParentSchoolComplaintForm()">
+          📢 ${isEn ? 'Submit Complaint' : 'تقديم شكوى'}
+        </button>
+        <div id="parent-school-complaint-form" class="parent-complaint-form" style="display:none;margin-top:12px">
+          <textarea id="parent-school-complaint-input" class="parent-msg-textarea" rows="4"
+            placeholder="${isEn ? 'Describe your complaint...' : 'اكتب نص الشكوى...'}"></textarea>
+          <button type="button" class="parent-msg-send" style="background:#e65100;margin-top:8px"
+            onclick="submitParentSchoolComplaint('${mid}')">
+            ${isEn ? 'Send Complaint ←' : 'إرسال الشكوى ←'}
+          </button>
+        </div>
+      </div>
+      <div id="parent-school-complaints-log" style="margin-top:16px"></div>
+    </div>`;
+
+  renderParentSchoolAdminMessages(cls, sName);
+  renderParentSchoolSentToAdmin(mid);
+  renderParentSchoolComplaintsLog(cls, sName, teachersList);
+}
+
+function renderParentSchoolAdminMessages(cls, sName){
+  const div = document.getElementById('parent-school-admin-msgs');
+  if(!div) return;
+  const isEn = currentLang === 'en';
+  const list = _getSchoolAdminMessages(cls, sName).sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
+  if(!list.length){
+    div.innerHTML = `<div class="empty-state" style="padding:20px"><div class="ico">📭</div><p>${isEn ? 'No admin messages yet' : 'لا توجد رسائل من المسؤول بعد'}</p></div>`;
+    return;
+  }
+  const hasUnread = list.some(m => _isSchoolAdminMsgUnseen(m, cls, sName));
+  div.innerHTML = `
+    <div class="parent-admin-msgs-wrap${hasUnread ? ' has-unread' : ''}">
+      ${list.map(m => {
+        const kind = _parentAdminMsgKind(m);
+        const unread = _isSchoolAdminMsgUnseen(m, cls, sName);
+        const cardClass = kind === 'broadcast' ? 'parent-admin-msg-card broadcast' : 'parent-admin-msg-card direct';
+        const kindLabel = kind === 'broadcast'
+          ? (isEn ? '📢 School Broadcast' : '📢 تعميم المدرسة')
+          : (isEn ? '🏫 Direct Message' : '🏫 رسالة مباشرة');
+        return `
+        <div class="${cardClass}${unread ? ' unread' : ''}">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px;flex-wrap:wrap">
+            <span class="parent-admin-kind-label">${kindLabel}${unread ? ` · <span class="parent-admin-new-pill inline">${isEn ? 'New' : 'جديد'}</span>` : ''}</span>
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="font-size:11px;color:var(--grey-3)">${m.date || ''}</span>
+              ${parentAdminMsgDeleteBtn(m, 'school')}
+            </div>
+          </div>
+          <p style="margin:0;font-size:13px;color:var(--grey-2);white-space:pre-line;line-height:1.7">${escapeHtml(m.body || '')}</p>
+        </div>`;
+      }).join('')}
+    </div>`;
+}
+
+function _isSchoolAdminMsgUnseen(m, cls, name){
+  return _countUnseen([m], 'school_admin', cls, name) > 0;
+}
+
+function renderParentSchoolSentToAdmin(mid){
+  const div = document.getElementById('parent-school-admin-sent');
+  if(!div) return;
+  const isEn = currentLang === 'en';
+  const list = (APP.parentMessagesToAdmin || [])
+    .filter(m => m && String(m.mid) === String(mid))
+    .filter(m => !getParentHiddenMsgIds('parent_to_admin').includes(m.id || m.ts || ''));
+  if(!list.length){ div.innerHTML = ''; return; }
+  div.innerHTML = `
+    <div style="margin-top:14px">
+      <h5 class="parent-school-subtitle">${isEn ? '📤 Sent to Admin' : '📤 رسائلي للمسؤول'}</h5>
+      ${list.map(m => `
+        <div class="parent-school-sent-card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px">
+            <span style="font-size:11px;font-weight:700;color:var(--teal-mid)">📤 ${isEn ? 'Sent' : 'أُرسلت'}</span>
+            <span style="font-size:11px;color:var(--grey-3)">${m.date || ''}</span>
+          </div>
+          <p style="margin:0;font-size:13px;color:var(--grey-2);white-space:pre-line;line-height:1.7">${escapeHtml(m.body || '')}</p>
+        </div>`).join('')}
+    </div>`;
+}
+
+function renderParentSchoolComplaintsLog(cls, sName, teachersList){
+  const div = document.getElementById('parent-school-complaints-log');
+  if(!div) return;
+  const isEn = currentLang === 'en';
+  const list = (APP.parentComplaintLog || []).filter(c =>
+    c && c.cls === cls && (c.studentName || '').trim() === sName && !isParentComplaintHidden(c)
+  );
+  if(!list.length){
+    div.innerHTML = `<div class="empty-state" style="padding:20px"><div class="ico">📭</div><p>${isEn ? 'No complaints yet' : 'لا توجد شكاوى بعد'}</p></div>`;
+    return;
+  }
+  div.innerHTML = `
+    <h5 class="parent-school-subtitle">${isEn ? '📋 Complaints Log' : '📋 سجل الشكاوى'}</h5>
+    ${list.map(c => parentComplaintThreadCard(c, isEn, teachersList)).join('')}`;
+}
+
+function _isComplaintAdminReplyUnseen(c, t){
+  if(t.role !== 'admin') return false;
+  const seen = _getSeenTime('school_complaint_' + c.id, c.cls, c.studentName) ||
+    _getSeenTime('school_complaint', c.cls, c.studentName);
+  return !seen || (t.ts || '') > seen;
+}
+
+function parentComplaintThreadCard(c, isEn, teachersList){
+  const thread = c.thread || [];
+  const canReply = ['replied', 'forwarded', 'forwarded_anonymous'].includes(c.status);
+  const replyBox = canReply ? `
+    <div class="parent-complaint-reply-box">
+      <textarea id="parent-complaint-followup-${c.id}" class="parent-msg-textarea" rows="2"
+        placeholder="${isEn ? 'Your reply on this complaint...' : 'ردك على هذه الشكوى...'}"></textarea>
+      <button type="button" class="parent-msg-send" style="background:var(--teal-mid);margin-top:8px;font-size:12px;padding:8px 14px"
+        onclick="submitParentComplaintFollowUp('${c.id}')">
+        ${isEn ? 'Send Reply ←' : 'إرسال الرد ←'}
+      </button>
+    </div>` : '';
+  return `
+    <div class="parent-sent-complaint-card parent-complaint-thread-card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;gap:8px;flex-wrap:wrap">
+        <span style="font-size:11px;font-weight:700;color:#e65100">📢 ${escapeHtml(c.subjLabel || c.subject || '—')}</span>
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <span class="parent-complaint-status-pill ${c.status || 'pending'}">${parentComplaintStatusLabel(c.status, isEn)}</span>
+          <span style="font-size:11px;color:var(--grey-3)">${c.date || ''}</span>
+          ${parentComplaintDeleteBtn(c, 'school')}
+        </div>
+      </div>
+      <div class="parent-sent-complaint-meta">
+        <span>👨‍🏫 ${escapeHtml(c.teacherName || '—')}</span>
+        <span>📚 ${isEn ? 'Grade' : 'صف'} ${escapeHtml(c.cls || '—')} · ${isEn ? 'Sec' : 'ش'} ${escapeHtml(c.section || '—')}</span>
+      </div>
+      <div class="parent-complaint-thread-item parent">
+        <span class="parent-complaint-thread-role">${isEn ? 'You' : 'أنت'}</span>
+        <p>${escapeHtml(c.body || '')}</p>
+      </div>
+      ${thread.map(t => `
+        <div class="parent-complaint-thread-item ${t.role === 'admin' ? 'admin' : 'parent'}${_isComplaintAdminReplyUnseen(c, t) ? ' unread' : ''}">
+          <span class="parent-complaint-thread-role">${t.role === 'admin' ? (isEn ? 'Admin' : 'المسؤول') : (isEn ? 'You' : 'أنت')}</span>
+          <p>${escapeHtml(t.body || '')}</p>
+          <span class="parent-complaint-thread-date">${t.date || ''}</span>
+        </div>`).join('')}
+      ${replyBox}
+    </div>`;
+}
+
+function toggleParentSchoolComplaintForm(){
+  const form = document.getElementById('parent-school-complaint-form');
+  if(!form) return;
+  form.style.display = form.style.display === 'none' ? 'block' : 'none';
+}
+
+async function submitParentSchoolComplaint(mid){
+  const isEn = currentLang === 'en';
+  const body = (document.getElementById('parent-school-complaint-input')?.value || '').trim();
+  if(!body){
+    showToast('⚠️ ' + (isEn ? 'Write your complaint first' : 'اكتب نص الشكوى أولاً'));
+    return;
+  }
+  const ctx = window._parentSubjectContext || {};
+  const idx = Number(document.getElementById('parent-school-complaint-subject')?.value || 0);
+  const tc = (ctx.teachers || [])[idx];
+  if(!tc){
+    showToast('⚠️ ' + (isEn ? 'Select a subject' : 'اختر المادة'));
+    return;
+  }
+  await submitParentComplaintCore(idx, tc.key, ctx.cls, ctx.name, mid, body);
+  const ta = document.getElementById('parent-school-complaint-input');
+  if(ta) ta.value = '';
+  const form = document.getElementById('parent-school-complaint-form');
+  if(form) form.style.display = 'none';
+  renderParentSchoolComplaintsLog(ctx.cls, ctx.name.trim(), ctx.teachers);
+}
+
+async function submitParentComplaintCore(idx, teacherKey, cls, studentName, mid, body){
+  const isEn = currentLang === 'en';
+  const ctx = window._parentSubjectContext || {};
+  const tc = (ctx.teachers || [])[Number(idx)] || {};
+  const section = ctx.section || window._currentParent?.section || '';
+  const now = new Date();
+  const payload = {
+    cls,
+    section,
+    studentName: studentName.trim(),
+    mid: String(mid || ''),
+    teacherKey,
+    teacherName: tc.name || '',
+    subject: tc.subject || '',
+    subjLabel: tc.subjLabel || '',
+    body,
+    date: now.toLocaleDateString(isEn ? 'en-AE' : 'ar-AE') + ' ' + now.toLocaleTimeString(isEn ? 'en-AE' : 'ar-AE', { hour: '2-digit', minute: '2-digit' }),
+    ts: now.toISOString(),
+    status: 'pending',
+  };
+  if(typeof db === 'undefined') throw new Error('no firebase');
+  let complaintId;
+  if(typeof window.fbPushComplaint === 'function'){
+    complaintId = await window.fbPushComplaint(payload);
+  } else {
+    const ref = db.ref('complaints').push();
+    await ref.set({ ...payload, status: 'pending' });
+    complaintId = ref.key;
+  }
+  const record = { ...payload, id: complaintId, _teacherKey: teacherKey, thread: [] };
+  await db.ref('parentComplaintLog/' + mid + '/' + complaintId).set(record);
+  APP.parentComplaints = APP.parentComplaints || [];
+  APP.parentComplaints.push(record);
+  APP.parentComplaintLog = APP.parentComplaintLog || [];
+  if(!APP.parentComplaintLog.some(x => x.id === complaintId)){
+    APP.parentComplaintLog.unshift(record);
+  }
+  saveState();
+  showToast('✅ ' + (isEn ? 'Complaint sent to admin' : 'تم إرسال الشكوى للمسؤول'));
+  return complaintId;
+}
+
+async function submitParentMessageToAdmin(){
+  const isEn = currentLang === 'en';
+  const ctx = window._parentSubjectContext || {};
+  const mid = ctx.mid || window._currentParent?.mid;
+  const body = (document.getElementById('parent-school-admin-input')?.value || '').trim();
+  if(!body){
+    showToast('⚠️ ' + (isEn ? 'Write your message first' : 'اكتب رسالتك أولاً'));
+    return;
+  }
+  if(!mid || typeof db === 'undefined'){
+    showToast('⚠️ ' + (isEn ? 'Cannot send — not connected' : 'تعذّر الإرسال — لا يوجد اتصال'));
+    return;
+  }
+  const now = new Date();
+  const dateStr = now.toLocaleDateString(isEn ? 'en-AE' : 'ar-AE') + ' ' + now.toLocaleTimeString(isEn ? 'en-AE' : 'ar-AE', { hour: '2-digit', minute: '2-digit' });
+  const ts = now.toISOString();
+  const section = ctx.section || window._currentParent?.section || '';
+  const payload = {
+    fromRole: 'parent',
+    mid: String(mid),
+    studentName: ctx.name,
+    cls: ctx.cls,
+    section,
+    body,
+    ts,
+    date: dateStr,
+    fromName: displayStudentName(ctx.name, ctx.cls, section, mid),
+  };
+  try{
+    const inboxRef = db.ref('adminInbox').push();
+    const sentRef = db.ref('parentMessagesToAdmin/' + mid).push();
+    const outId = inboxRef.key;
+    await inboxRef.set({ ...payload, id: outId });
+    await sentRef.set({ ...payload, id: sentRef.key, outboxId: outId });
+    document.getElementById('parent-school-admin-input').value = '';
+    renderParentSchoolSentToAdmin(mid);
+    showToast('✅ ' + (isEn ? 'Message sent to admin' : 'تم إرسال الرسالة للمسؤول'));
+  }catch(e){
+    console.error('submitParentMessageToAdmin', e);
+    showToast('⚠️ ' + (isEn ? 'Send failed' : 'فشل الإرسال'));
+  }
+}
+
+async function submitParentComplaintFollowUp(complaintId){
+  const isEn = currentLang === 'en';
+  const ctx = window._parentSubjectContext || {};
+  const mid = ctx.mid || window._currentParent?.mid;
+  const c = (APP.parentComplaintLog || []).find(x => x.id === complaintId);
+  const body = (document.getElementById('parent-complaint-followup-' + complaintId)?.value || '').trim();
+  if(!body || !c || !mid){
+    showToast('⚠️ ' + (isEn ? 'Write your reply first' : 'اكتب ردك أولاً'));
+    return;
+  }
+  if(typeof db === 'undefined') return;
+  const now = new Date();
+  const dateStr = now.toLocaleDateString(isEn ? 'en-AE' : 'ar-AE') + ' ' + now.toLocaleTimeString(isEn ? 'en-AE' : 'ar-AE', { hour: '2-digit', minute: '2-digit' });
+  const ts = now.toISOString();
+  const threadItem = { role: 'parent', body, date: dateStr, ts };
+  try{
+    await db.ref('parentComplaintLog/' + mid + '/' + complaintId + '/thread').push(threadItem);
+    await db.ref('adminInbox').push({
+      fromRole: 'parent',
+      mid: String(mid),
+      studentName: c.studentName,
+      cls: c.cls,
+      section: c.section || '',
+      complaintId,
+      teacherKey: c.teacherKey,
+      teacherName: c.teacherName,
+      subjLabel: c.subjLabel,
+      body,
+      ts,
+      date: dateStr,
+      type: 'complaint_followup',
+    });
+    document.getElementById('parent-complaint-followup-' + complaintId).value = '';
+    showToast('✅ ' + (isEn ? 'Reply sent' : 'تم إرسال الرد'));
+  }catch(e){
+    console.error('submitParentComplaintFollowUp', e);
+    showToast('⚠️ ' + (isEn ? 'Send failed' : 'فشل الإرسال'));
   }
 }
 
 function renderParentAdminMessages(idx, teacherKey, cls, studentName){
   const div = document.getElementById('parent-admin-msgs-'+idx);
-  if(!div) return;
-  const isEn = currentLang==='en';
-  const sName = studentName.trim();
-  const list = (APP.parentAdminMessages || [])
-    .filter(m => m && m.cls === cls && (m.studentName || '').trim() === sName && (m.teacherKey || '') === teacherKey)
-    .filter(m => !isParentAdminMsgHidden(m))
-    .sort((a,b)=>(b.ts||'').localeCompare(a.ts||''));
-
-  if(!list.length){ div.innerHTML=''; return; }
-  const hasUnread = list.some(m => _isAdminMsgUnseen(m, cls, sName));
-  div.innerHTML = `
-    <div class="parent-admin-msgs-wrap${hasUnread?' has-unread':''}">
-      <div class="section-title parent-admin-section-title${hasUnread?' unread':''}" style="margin-bottom:8px">
-        🏫 ${isEn?'Admin Messages':'رسائل المسؤول'}
-        ${hasUnread ? `<span class="parent-admin-new-pill">${isEn?'New reply':'رد جديد'}</span>` : ''}
-      </div>
-      ${list.map(m=>{
-        const unread = _isAdminMsgUnseen(m, cls, sName);
-        return `
-        <div class="parent-admin-msg-card${unread?' unread':''}">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px">
-            <span style="font-size:11px;font-weight:700;color:#1565c0">
-              🏫 ${isEn?'School Admin':'إدارة المدرسة'}${unread ? ` · <span class="parent-admin-new-pill inline">${isEn?'New':'جديد'}</span>` : ''}
-            </span>
-            <div style="display:flex;align-items:center;gap:6px">
-              <span style="font-size:11px;color:var(--grey-3)">${m.date||''}</span>
-              ${parentAdminMsgDeleteBtn(m, idx)}
-            </div>
-          </div>
-          <p style="margin:0;font-size:13px;color:var(--grey-2);white-space:pre-line;line-height:1.7">${escapeHtml(m.body||'')}</p>
-        </div>`;
-      }).join('')}
-    </div>`;
+  if(div) div.innerHTML = '';
 }
 
 function _startParentListeners(cls, studentName, mid, teachersList, section){
   window._parentListeners.forEach(ref=>ref.off());
   window._parentListeners = [];
   window._parentAdminInboxReady = false;
+  window._parentSchoolReady = false;
   const sName = studentName.trim();
   const sec = section || window._currentParent?.section || window._parentSubjectContext?.section || '';
 
@@ -4973,18 +5399,55 @@ function _startParentListeners(cls, studentName, mid, teachersList, section){
   });
 
   if(mid && typeof db!=='undefined'){
+    (APP.parentComplaints || []).forEach(c => {
+      if(!c?.id || !c?.mid || String(c.mid) !== String(mid)) return;
+      db.ref('parentComplaintLog/'+mid+'/'+c.id).once('value').then(snap=>{
+        if(!snap.exists()) db.ref('parentComplaintLog/'+mid+'/'+c.id).set(c).catch(()=>{});
+      }).catch(()=>{});
+    });
+
     const adminInboxRef = db.ref('parentAdminInbox/'+mid);
     adminInboxRef.on('value', snap=>{
       const prevList = (APP.parentAdminMessages || []).slice();
       syncParentAdminInbox(mid, cls, sName, snap);
-      _notifyNewAdminReplies(prevList, cls, studentName, teachersList);
-      teachersList.forEach((tc, i)=>{
-        _refreshSubjectTabBadge(i, cls, studentName, tc.key);
-        renderParentAdminMessages(i, tc.key, cls, studentName);
-        renderSubjectSentComplaintsLog(i, tc.key, cls, studentName);
-      });
+      if(!window._parentAdminInboxReady){
+        window._parentAdminInboxReady = true;
+        window._parentSchoolReady = true;
+      } else {
+        _notifyParentSchoolUpdates(prevList, APP.parentComplaintLog);
+      }
+      _setBadge('btn-tab-school', _getSchoolTabUnseenCount(cls, studentName));
+      if(document.getElementById('tab-school')?.style.display !== 'none'){
+        renderParentSchoolAdminMessages(cls, sName);
+      }
+      teachersList.forEach((tc, i)=> _refreshSubjectTabBadge(i, cls, studentName, tc.key));
     });
     window._parentListeners.push(adminInboxRef);
+
+    const complaintLogRef = db.ref('parentComplaintLog/'+mid);
+    complaintLogRef.on('value', snap=>{
+      const prev = (APP.parentComplaintLog || []).slice();
+      syncParentComplaintLog(mid, snap);
+      if(window._parentSchoolReady){
+        _notifyParentSchoolUpdates([], prev);
+      } else {
+        window._parentSchoolReady = true;
+      }
+      _setBadge('btn-tab-school', _getSchoolTabUnseenCount(cls, studentName));
+      if(document.getElementById('tab-school')?.style.display !== 'none'){
+        renderParentSchoolComplaintsLog(cls, sName, teachersList);
+      }
+    });
+    window._parentListeners.push(complaintLogRef);
+
+    const sentAdminRef = db.ref('parentMessagesToAdmin/'+mid);
+    sentAdminRef.on('value', snap=>{
+      syncParentMessagesToAdmin(mid, snap);
+      if(document.getElementById('tab-school')?.style.display !== 'none'){
+        renderParentSchoolSentToAdmin(mid);
+      }
+    });
+    window._parentListeners.push(sentAdminRef);
   }
 }
 
@@ -5001,7 +5464,8 @@ function renderParentSubjectTabs(cls, studentName, mid, teachersList, section){
 
   // Tabs: Academic + one per subject
   const fixedTabs = [
-    {id:'tab-academic', icon:'📊', label:t('parentAcademicTab')}
+    {id:'tab-academic', icon:'📊', label:t('parentAcademicTab')},
+    {id:'tab-school', icon:'🏫', label:t('parentSchoolTab')}
   ];
   const subjectTabs = teachersList.map((tc,i)=>({
     id:'tab-subj-'+i, icon:'📚', label:tc.subjLabel, teacher:tc, idx:i
@@ -5022,6 +5486,12 @@ function renderParentSubjectTabs(cls, studentName, mid, teachersList, section){
     </div>
   </div>`;
 
+  const schoolHtml = `<div id="tab-school" class="p-tab-content" style="display:none">
+    <div id="parent-school-content">
+      <div style="text-align:center;padding:30px;color:var(--grey-3)">⏳</div>
+    </div>
+  </div>`;
+
   const subjectHtml = subjectTabs.map(tab=>`
     <div id="${tab.id}" class="p-tab-content" style="display:none">
       <div id="subj-content-${tab.idx}">
@@ -5038,16 +5508,18 @@ function renderParentSubjectTabs(cls, studentName, mid, teachersList, section){
     <div class="parent-tabs-wrap" style="flex-wrap:wrap;gap:4px;margin-bottom:14px;overflow-x:auto;padding-bottom:4px">
       ${tabBtns}
     </div>
-    ${academicHtml}${subjectHtml}`;
+    ${academicHtml}${schoolHtml}${subjectHtml}`;
 
   window._parentSubjectContext = {cls, name:studentName, mid, teachers:teachersList, section};
 
   // Load academic tab immediately
   renderParentAcademic(cls, studentName, mid, teachersList);
+  renderParentSchoolTab(cls, studentName, mid, teachersList);
   // Load first subject tab
   if(teachersList.length) loadSubjectTabContent(0, cls, studentName, mid, teachersList);
   // Start listeners for badges + live grades
   setTimeout(()=>_startParentListeners(cls, studentName, mid, teachersList, section), 400);
+  setTimeout(()=>_setBadge('btn-tab-school', _getSchoolTabUnseenCount(cls, studentName)), 700);
   renderNotifButton();
   schedulePushRegistration('parent', { mid, cls, name: studentName, section: window._parentSubjectContext?.section || '' });
 }
@@ -5085,12 +5557,23 @@ function switchParentMainTab(tabId, el){
   if(tabId==='tab-academic'){
     renderParentAcademic(ctx.cls, ctx.name, ctx.mid, ctx.teachers);
   }
+  if(tabId==='tab-school'){
+    _markSeen('school_admin', ctx.cls, ctx.name);
+    _markSeen('school_complaint', ctx.cls, ctx.name);
+    _markSeen('school_sent', ctx.cls, ctx.name);
+    (APP.parentComplaintLog || []).forEach(c => {
+      if(c.cls === ctx.cls && (c.studentName || '').trim() === (ctx.name || '').trim()){
+        _markSeen('school_complaint_'+c.id, ctx.cls, ctx.name);
+      }
+    });
+    _setBadge('btn-tab-school', 0);
+    if(window.PortalPush?.clearDeliveredNotifications) PortalPush.clearDeliveredNotifications();
+    renderParentSchoolTab(ctx.cls, ctx.name, ctx.mid, ctx.teachers);
+  }
   if(tabId.startsWith('tab-subj-')){
     const i = parseInt(tabId.replace('tab-subj-',''));
-    const tc = ctx.teachers?.[i];
     _markSeen('msgs', ctx.cls, ctx.name);
     _markSeen('bv',   ctx.cls, ctx.name);
-    if(tc?.key) _markSeen('admin_'+tc.key, ctx.cls, ctx.name);
     (ctx.teachers || []).forEach((t, ti)=>{
       if(t?.key) _refreshSubjectTabBadge(ti, ctx.cls, ctx.name, t.key);
     });
@@ -5486,7 +5969,6 @@ async function loadSubjectTabContent(idx, cls, studentName, mid, teachersList){
   }).join('');
 
   container.innerHTML = gradeHtml + bvHtml + msgsHtml + `
-    <div id="parent-admin-msgs-${idx}" style="margin-top:14px"></div>
     <div class="parent-msg-box" style="margin-top:14px">
       <h4 style="font-size:14px;font-weight:700;color:var(--teal-dark);margin-bottom:10px">
         ✉️ ${isEn?'Send Message to':'أرسل رسالة إلى'} ${tc.name}
@@ -5502,32 +5984,9 @@ async function loadSubjectTabContent(idx, cls, studentName, mid, teachersList){
         ✅ ${isEn?'Message sent!':'تم الإرسال!'}
       </div>
       <div id="parent-sent-log-${idx}" style="margin-top:12px"></div>
-    </div>
-    <div class="parent-complaint-box" style="margin-top:14px">
-      <button type="button" class="parent-complaint-toggle" id="parent-complaint-toggle-${idx}"
-        onclick="toggleParentComplaintForm('${idx}')">
-        📢 ${isEn?'Submit Complaint':'تقديم شكوى'}
-      </button>
-      <p style="font-size:11px;color:var(--grey-3);margin:8px 0 0;line-height:1.6">
-        ${isEn?'Sent to school admin only — not visible to the teacher until forwarded.':'تُرسل للمسؤول فقط — لا يراها المعلم إلا بعد توجيهها من الإدارة.'}
-      </p>
-      <div id="parent-complaint-form-${idx}" class="parent-complaint-form" style="display:none;margin-top:12px">
-        <textarea id="parent-complaint-input-${idx}" class="parent-msg-textarea" rows="4"
-          placeholder="${isEn?'Describe your complaint...':'اكتب نص الشكوى...'}"></textarea>
-        <button type="button" class="parent-msg-send" style="background:#e65100;margin-top:8px"
-          onclick="submitParentComplaint('${idx}','${tc.key}','${cls}','${studentName.replace(/'/g,"\\'")}','${mid}')">
-          ${isEn?'Send Complaint ←':'إرسال الشكوى ←'}
-        </button>
-        <div id="parent-complaint-confirm-${idx}" class="parent-msg-confirm" style="display:none">
-          ✅ ${isEn?'Complaint sent to admin!':'تم إرسال الشكوى للمسؤول!'}
-        </div>
-      </div>
-      <div id="parent-sent-complaints-${idx}" style="margin-top:12px"></div>
     </div>`;
 
   renderSubjectSentLog(idx, tc.key, cls, studentName);
-  renderSubjectSentComplaintsLog(idx, tc.key, cls, studentName);
-  renderParentAdminMessages(idx, tc.key, cls, studentName);
   _refreshSubjectTabBadge(idx, cls, studentName, tc.key);
 }
 
@@ -5648,21 +6107,24 @@ function parentComplaintHideKey(complaint){
 }
 
 function isParentComplaintHidden(complaint){
-  return getParentHiddenMsgIds('complaint').includes(parentComplaintHideKey(complaint));
+  const key = complaint.id || parentComplaintHideKey(complaint);
+  return getParentHiddenMsgIds('complaint').includes(key) ||
+    getParentHiddenMsgIds('complaint').includes(parentComplaintHideKey(complaint));
 }
 
 function parentComplaintDeleteBtn(complaint, idx){
   const isEn = currentLang === 'en';
-  const enc = encodeURIComponent(parentComplaintHideKey(complaint));
-  return `<button type="button" class="parent-msg-del" onclick="hideParentSentComplaint('${enc}',${idx == null ? 'null' : idx})" title="${isEn ? 'Hide on my device' : 'إخفاء من جهازي'}">🗑️</button>`;
+  const enc = encodeURIComponent(complaint.id || parentComplaintHideKey(complaint));
+  const idxArg = idx == null ? 'null' : (typeof idx === 'number' ? String(idx) : `'${idx}'`);
+  return `<button type="button" class="parent-msg-del" onclick="hideParentSentComplaint('${enc}',${idxArg})" title="${isEn ? 'Hide on my device' : 'إخفاء من جهازي'}">🗑️</button>`;
 }
 
 function hideParentSentComplaint(encodedHideId, idx){
   addParentHiddenMsgId('complaint', decodeURIComponent(encodedHideId));
   showToast(currentLang === 'en' ? '✅ Complaint hidden' : '✅ تم إخفاء الشكوى');
   const ctx = window._parentSubjectContext;
-  if(ctx && idx != null){
-    renderSubjectSentComplaintsLog(idx, (ctx.teachers||[])[idx]?.key, ctx.cls, ctx.name);
+  if(ctx){
+    renderParentSchoolComplaintsLog(ctx.cls, ctx.name.trim(), ctx.teachers);
   }
 }
 
@@ -7237,47 +7699,13 @@ function toggleParentComplaintForm(idx){
 }
 
 async function submitParentComplaint(idx, teacherKey, cls, studentName, mid){
-  const isEn = currentLang==='en';
   const body = (document.getElementById('parent-complaint-input-'+idx)?.value||'').trim();
   if(!body){
-    showToast('⚠️ '+(isEn?'Write your complaint first':'اكتب نص الشكوى أولاً'));
+    showToast('⚠️ '+(currentLang==='en'?'Write your complaint first':'اكتب نص الشكوى أولاً'));
     return;
   }
-  const ctx = window._parentSubjectContext || {};
-  const tc = (ctx.teachers||[])[Number(idx)];
-  if(!tc) return;
-  const section = ctx.section || window._currentParent?.section || '';
-  const now = new Date();
-  const payload = {
-    cls,
-    section,
-    studentName: studentName.trim(),
-    mid: String(mid||''),
-    teacherKey,
-    teacherName: tc.name||'',
-    subject: tc.subject||'',
-    subjLabel: tc.subjLabel||'',
-    body,
-    date: now.toLocaleDateString(isEn?'en-AE':'ar-AE')+' '+now.toLocaleTimeString(isEn?'en-AE':'ar-AE',{hour:'2-digit',minute:'2-digit'}),
-    ts: now.toISOString(),
-    status: 'pending',
-  };
   try{
-    let complaintId;
-    if(typeof window.fbPushComplaint === 'function'){
-      complaintId = await window.fbPushComplaint(payload);
-    } else if(typeof db!=='undefined'){
-      const ref = db.ref('complaints').push();
-      await ref.set({...payload, status:'pending'});
-      complaintId = ref.key;
-    } else {
-      throw new Error('no firebase');
-    }
-    const record = {...payload, id: complaintId, _teacherKey: teacherKey};
-    APP.parentComplaints = APP.parentComplaints || [];
-    APP.parentComplaints.push(record);
-    saveState();
-
+    await submitParentComplaintCore(idx, teacherKey, cls, studentName, mid, body);
     const ta = document.getElementById('parent-complaint-input-'+idx);
     if(ta) ta.value = '';
     const conf = document.getElementById('parent-complaint-confirm-'+idx);
@@ -7285,11 +7713,11 @@ async function submitParentComplaint(idx, teacherKey, cls, studentName, mid){
       conf.style.display = 'block';
       setTimeout(()=>{ conf.style.display='none'; }, 4000);
     }
-    renderSubjectSentComplaintsLog(idx, teacherKey, cls, studentName);
-    showToast('✅ '+(isEn?'Complaint sent to admin':'تم إرسال الشكوى للمسؤول'));
+    const ctx = window._parentSubjectContext;
+    if(ctx) renderParentSchoolComplaintsLog(ctx.cls, ctx.name.trim(), ctx.teachers);
   }catch(e){
     console.error('submitParentComplaint', e);
-    showToast('⚠️ '+(isEn?'Failed to send complaint':'فشل إرسال الشكوى'));
+    showToast('⚠️ '+(currentLang==='en'?'Failed to send complaint':'فشل إرسال الشكوى'));
   }
 }
 
