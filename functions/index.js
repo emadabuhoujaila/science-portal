@@ -105,6 +105,46 @@ async function assertTeacher(context) {
   return lookup.key;
 }
 
+async function assertAdmin(context) {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Login required');
+  }
+  const [adminSnap, lookupSnap] = await Promise.all([
+    admin.database().ref('admins/' + context.auth.uid).once('value'),
+    admin.database().ref('teacherLookup/' + context.auth.uid).once('value'),
+  ]);
+  const isAdmin = adminSnap.val() === true || lookupSnap.val()?.role === 'admin';
+  if (!isAdmin) {
+    throw new functions.https.HttpsError('permission-denied', 'Admin only');
+  }
+  return true;
+}
+
+const FIREBASE_WEB_API_KEY = 'AIzaSyD9fIhL5ctwwIH3qyJnrvJ1OQyQQYhLiBg';
+
+async function sendPasswordResetEmailServer(email) {
+  const res = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${FIREBASE_WEB_API_KEY}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requestType: 'PASSWORD_RESET', email }),
+    }
+  );
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = String(body?.error?.message || '');
+    if (msg.includes('EMAIL_NOT_FOUND')) {
+      throw new functions.https.HttpsError('not-found', 'No Firebase account for this email');
+    }
+    if (msg.includes('INVALID_EMAIL')) {
+      throw new functions.https.HttpsError('invalid-argument', 'Invalid email');
+    }
+    throw new functions.https.HttpsError('internal', msg || 'Password reset send failed');
+  }
+  return body;
+}
+
 exports.checkTeacherAllowlist = region.https.onCall(async (data) => {
   const email = String(data?.email || '').trim().toLowerCase();
   if (!email || !email.includes('@')) {
@@ -148,17 +188,35 @@ exports.fetchOneDriveExcel = region.https.onCall(async (data, context) => {
   return { ok: true, base64, size: Buffer.from(base64, 'base64').length };
 });
 
-exports.adminDeleteTeacher = region.https.onCall(async (data, context) => {
-  if (!context.auth) {
-    throw new functions.https.HttpsError('unauthenticated', 'Login required');
+exports.adminResetTeacherPassword = region.https.onCall(async (data, context) => {
+  await assertAdmin(context);
+
+  const email = String(data?.email || '').trim().toLowerCase();
+  if (!email || !email.includes('@')) {
+    throw new functions.https.HttpsError('invalid-argument', 'Valid email required');
   }
 
-  const adminSnap = await admin.database().ref('admins/' + context.auth.uid).once('value');
-  const lookupSnap = await admin.database().ref('teacherLookup/' + context.auth.uid).once('value');
-  const isAdmin = adminSnap.val() === true || lookupSnap.val()?.role === 'admin';
-  if (!isAdmin) {
-    throw new functions.https.HttpsError('permission-denied', 'Admin only');
+  const key = emailKey(email);
+  const [allowSnap, teacherSnap] = await Promise.all([
+    admin.database().ref('teacherAllowlist/' + key).once('value'),
+    admin.database().ref('teachers/' + key).once('value'),
+  ]);
+  if (!allowSnap.exists() && !teacherSnap.exists()) {
+    throw new functions.https.HttpsError('not-found', 'Email not on approved teacher list');
   }
+  if (!teacherSnap.exists() || !teacherSnap.val()?.uid) {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      'Teacher has not registered yet — no password to reset'
+    );
+  }
+
+  await sendPasswordResetEmailServer(email);
+  return { ok: true, email };
+});
+
+exports.adminDeleteTeacher = region.https.onCall(async (data, context) => {
+  await assertAdmin(context);
 
   const key = data?.key;
   const uid = data?.uid;
@@ -204,3 +262,5 @@ exports.adminDeleteTeacher = region.https.onCall(async (data, context) => {
 
 Object.assign(exports, require('./push-notifications'));
 Object.assign(exports, require('./upload-attachment'));
+Object.assign(exports, require('./parent-auth'));
+Object.assign(exports, require('./parent-public-data'));

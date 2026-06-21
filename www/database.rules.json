@@ -9,14 +9,14 @@
     },
 
     "students": {
-      ".read": true,
+      ".read": "auth != null && (root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).exists())",
       ".write": "auth != null && (root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin')",
       "$grade": {
-        ".read": true,
+        ".read": "auth != null && (root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).exists())",
         "$section": {
-          ".read": true,
+          ".read": "auth != null && (root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).exists())",
           "$mid": {
-            ".read": true,
+            ".read": "auth != null && (root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).exists())",
             ".write": "auth != null && (root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin')"
           }
         }
@@ -140,15 +140,22 @@
     "registeredParents": {
       ".read": "auth != null && (root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin')",
       "$mid": {
-        ".read": true,
-        ".write": "(newData.child('mid').val() == $mid && newData.hasChildren(['cls','name','mid']) && root.child('students').child(newData.child('cls').val()).child(newData.child('section').val()).child($mid).exists()) || (auth != null && (root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin'))"
+        ".read": false,
+        ".write": "auth != null && (root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin')"
       }
     },
 
     "parentQuickLogin": {
       "$key": {
-        ".read": true,
-        ".write": "(auth != null && (root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin')) || (!data.exists() && newData.child('mid').val() != null && newData.child('cls').val() != null && newData.child('name').val() != null && root.child('students').child(newData.child('cls').val()).child(newData.child('section').val()).child(newData.child('mid').val()).exists()) || (data.exists() && newData.child('mid').val() === data.child('mid').val() && newData.child('cls').val() === data.child('cls').val() && newData.child('name').val() === data.child('name').val())"
+        ".read": false,
+        ".write": "auth != null && (root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin')"
+      }
+    },
+
+    "parentPinAttempts": {
+      "$key": {
+        ".read": false,
+        ".write": false
       }
     },
 
