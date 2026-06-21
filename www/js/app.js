@@ -1300,6 +1300,43 @@ async function teacherLogin(){
   }
 }
 
+async function sendAuthPasswordReset(emailInputId, errorMsgId){
+  const isEn = currentLang==='en';
+  const email = (document.getElementById(emailInputId)?.value||'').trim().toLowerCase();
+  const errEl = document.getElementById(errorMsgId);
+  if(errEl) errEl.style.display='none';
+  const showErr=msg=>{ if(errEl){errEl.textContent=msg;errEl.style.display='block';} };
+
+  if(!email) return showErr(isEn?'Enter your email first':'أدخل البريد الإلكتروني أولاً');
+  if(!email.includes('@')) return showErr(isEn?'Enter a valid email':'أدخل بريداً إلكترونياً صحيحاً');
+  if(typeof auth === 'undefined' || !auth) return showErr(isEn?'Authentication unavailable':'المصادقة غير متاحة');
+
+  try{
+    await auth.sendPasswordResetEmail(email);
+    showToast(t('authForgotPwOk'));
+  }catch(e){
+    console.error('sendAuthPasswordReset', e);
+    const code = e?.code || '';
+    if(code === 'auth/invalid-email'){
+      showErr(isEn?'Enter a valid email':'أدخل بريداً إلكترونياً صحيحاً');
+    }else if(code === 'auth/user-not-found'){
+      showErr(isEn?'No account found for this email':'لا يوجد حساب بهذا البريد');
+    }else if(code === 'auth/too-many-requests'){
+      showErr(isEn?'Too many attempts — try again later':'محاولات كثيرة — حاول لاحقاً');
+    }else{
+      showErr(isEn?'Could not send reset email — try again':'تعذّر إرسال رابط إعادة التعيين — حاول مجدداً');
+    }
+  }
+}
+
+function teacherForgotPassword(){
+  return sendAuthPasswordReset('teacher-email-input', 'pw-error-msg');
+}
+
+function adminForgotPassword(){
+  return sendAuthPasswordReset('admin-email-input', 'admin-error-msg');
+}
+
 function _enterDashboard(teacher){
   // Ensure teacher always has a _key
   if(!teacher._key){
@@ -2950,11 +2987,15 @@ function adminRenderAllowlistTable(allowlist, teachersByKey, isEn){
     const grades = teacher ? formatAdminGrades(teacher, isEn) : '—';
     const regDate = teacher ? formatAdminDate(teacher.createdAt, isEn) : '—';
     const actionBtn = registered
-      ? `<button type="button" class="action-btn danger admin-delete-teacher-btn" style="font-size:12px;padding:4px 10px;white-space:nowrap"
+      ? `<div style="display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-start">
+          <button type="button" class="action-btn admin-reset-pw-btn" style="font-size:12px;padding:4px 8px;white-space:nowrap"
+            data-teacher-email="${escapeHtml(entry.email||teacher.email||'')}">🔑 ${isEn?'Reset PW':'كلمة المرور'}</button>
+          <button type="button" class="action-btn danger admin-delete-teacher-btn" style="font-size:12px;padding:4px 10px;white-space:nowrap"
           data-teacher-key="${escapeHtml(entry.key||'')}"
           data-teacher-uid="${escapeHtml(teacher.uid||'')}"
           data-teacher-name="${escapeHtml(displayName)}"
-          data-teacher-email="${escapeHtml(entry.email||teacher.email||'')}">🗑️ ${isEn?'Delete':'حذف'}</button>`
+          data-teacher-email="${escapeHtml(entry.email||teacher.email||'')}">🗑️ ${isEn?'Delete':'حذف'}</button>
+        </div>`
       : `<button type="button" class="action-btn danger admin-remove-allowlist-btn" style="font-size:12px;padding:4px 10px;white-space:nowrap"
           data-allow-key="${escapeHtml(entry.key||'')}"
           data-allow-email="${escapeHtml(entry.email||'')}">🗑️ ${isEn?'Remove':'إزالة'}</button>`;
@@ -2992,6 +3033,11 @@ function bindAdminAllowlistButtons(){
         deleteBtn.dataset.teacherName || '',
         deleteBtn.dataset.teacherEmail || ''
       );
+      return;
+    }
+    const resetBtn = e.target.closest('.admin-reset-pw-btn');
+    if(resetBtn){
+      adminResetTeacherPassword(resetBtn.dataset.teacherEmail || '');
     }
   });
 }
@@ -3138,6 +3184,43 @@ async function adminDeleteParentRegistration(mid, studentName){
   }catch(err){
     console.error(err);
     showToast(isEn ? '❌ Delete failed' : '❌ فشل الحذف');
+  }
+}
+
+async function adminResetTeacherPassword(teacherEmail){
+  const isEn = currentLang==='en';
+  const email = String(teacherEmail||'').trim().toLowerCase();
+  if(!email){
+    showToast(isEn ? '❌ Email missing' : '❌ البريد غير موجود');
+    return;
+  }
+  const confirmMsg = t('adminResetTeacherPwConfirm').replace('{email}', email);
+  if(!confirm(confirmMsg)) return;
+
+  if(typeof auth === 'undefined' || !auth.currentUser){
+    showToast(isEn ? '❌ Admin login required' : '❌ يجب تسجيل دخول المسؤول');
+    return;
+  }
+
+  try{
+    const fn = getCloudFunctions();
+    if(!fn) throw new Error('Functions unavailable');
+    await fn.httpsCallable('adminResetTeacherPassword')({ email });
+    showToast(t('adminResetTeacherPwOk'));
+  }catch(e){
+    console.error('adminResetTeacherPassword', e);
+    const code = e?.code || '';
+    if(code === 'functions/permission-denied'){
+      showToast(isEn ? '❌ Admin permission required' : '❌ صلاحية المسؤول مطلوبة');
+    }else if(code === 'functions/unauthenticated'){
+      showToast(isEn ? '❌ Session expired — log in again' : '❌ انتهت الجلسة — سجّل الدخول مجدداً');
+    }else if(code === 'functions/failed-precondition'){
+      showToast(isEn ? '❌ Teacher has not registered yet' : '❌ المعلّم لم يسجّل حسابه بعد');
+    }else if(code === 'functions/not-found'){
+      showToast(isEn ? '❌ Email not on teacher list' : '❌ البريد غير موجود في قائمة المعلّمين');
+    }else{
+      showToast(isEn ? '❌ Reset failed — try again' : '❌ فشل إرسال رابط إعادة التعيين');
+    }
   }
 }
 
@@ -3770,6 +3853,8 @@ const TRANSLATIONS = {
     tabParent: '👨‍👦 ولي الأمر',
     teacherPwLabel: 'كلمة مرور المعلم',
     teacherLoginBtn: 'دخول لوحة المعلم',
+    authForgotPw: 'نسيت كلمة المرور؟',
+    authForgotPwOk: '✅ تم إرسال رابط إعادة التعيين — تحقق من بريدك (ومجلد الرسائل غير المرغوب)',
     selectClass: 'اختر الشعبة',
     selectStudent: 'اختر اسم الطالب',
     nextBtn: 'التالي ←',
@@ -4049,6 +4134,8 @@ const TRANSLATIONS = {
     adminDeleteTeacherBtn: 'حذف',
     adminDeleteTeacherConfirm: 'حذف المعلم "{name}" نهائياً؟\n\nسيُحذف:\n• حساب الدخول (البريد وكلمة المرور)\n• كل الدرجات والملفات المرفوعة\n• الرسائل وسجل السلوك وكل بياناته\n\nلا يمكن التراجع.',
     adminDeleteTeacherOk: '✅ تم حذف المعلم بالكامل',
+    adminResetTeacherPwConfirm: 'إرسال رابط إعادة تعيين كلمة المرور إلى "{email}"؟\n\nسيصل الرابط إلى بريد المعلّم.',
+    adminResetTeacherPwOk: '✅ تم إرسال رابط إعادة التعيين إلى بريد المعلّم',
     adminDeleteTeacherFail: '❌ فشل حذف المعلم',
     adminDeleteTeacherFunctions: '❌ يجب نشر Cloud Functions أولاً: npm run deploy:functions',
     adminThPStudent: 'اسم الطالب',
@@ -4138,6 +4225,8 @@ const TRANSLATIONS = {
     tabParent: '👨‍👦 Parent',
     teacherPwLabel: 'Teacher Password',
     teacherLoginBtn: 'Teacher Dashboard',
+    authForgotPw: 'Forgot password?',
+    authForgotPwOk: '✅ Password reset link sent — check your email (and spam folder)',
     selectClass: 'Select Class',
     selectStudent: 'Select Student Name',
     nextBtn: 'Next →',
@@ -4416,6 +4505,8 @@ const TRANSLATIONS = {
     adminDeleteTeacherBtn: 'Delete',
     adminDeleteTeacherConfirm: 'Delete teacher "{name}" permanently?\n\nThis removes:\n• Login account (email & password)\n• All uploaded grades and files\n• Messages, behavior logs, and all their data\n\nThis cannot be undone.',
     adminDeleteTeacherOk: '✅ Teacher deleted completely',
+    adminResetTeacherPwConfirm: 'Send a password reset link to "{email}"?\n\nThe teacher will receive it by email.',
+    adminResetTeacherPwOk: '✅ Password reset link sent to the teacher\'s email',
     adminDeleteTeacherFail: '❌ Failed to delete teacher',
     adminDeleteTeacherFunctions: '❌ Deploy Cloud Functions first: npm run deploy:functions',
     adminThPStudent: 'Student Name',
@@ -4628,6 +4719,8 @@ function applyGlobalLang(){
   setText('admin-email-label', 'adminEmailLabel');
   setText('admin-pw-label',    'adminPwLabel');
   setText('admin-login-btn',   'adminLoginBtn');
+  setText('teacher-forgot-pw-btn', 'authForgotPw');
+  setText('admin-forgot-pw-btn', 'authForgotPw');
   setPH('admin-email-input', t('adminEmailPH'));
 
   // ── شاشة الرمز ──

@@ -37,7 +37,7 @@ window.__splashDeadline = Date.now() + 5000;
 </script>
 <script>
 (function(){
-  var key='portal-cache-reset-v47';
+  var key='portal-cache-reset-v48';
   if(localStorage.getItem(key)) return;
   localStorage.setItem(key,'1');
   var done=function(){ location.reload(); };
@@ -108,7 +108,9 @@ window.__splashDeadline = Date.now() + 5000;
           <input type="password" id="teacher-pw-input" placeholder="••••••••" onkeydown="if(event.key==='Enter')teacherLogin()">
         </div>
         <button class="btn-primary" id="teacher-login-btn" onclick="teacherLogin()">🔓 دخول لوحة المعلم</button>
-        <button id="teacher-reg-link" onclick="showTeacherReg()" style="width:100%;margin-top:10px;background:transparent;border:2px solid var(--teal-soft);color:var(--teal-dark);padding:11px;border-radius:10px;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer">➕ تسجيل معلم جديد</button>
+        <button type="button" id="teacher-forgot-pw-btn" onclick="teacherForgotPassword()"
+          style="width:100%;margin-top:10px;background:transparent;border:none;color:var(--teal-dark);padding:6px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;text-decoration:underline">نسيت كلمة المرور؟</button>
+        <button id="teacher-reg-link" onclick="showTeacherReg()" style="width:100%;margin-top:6px;background:transparent;border:2px solid var(--teal-soft);color:var(--teal-dark);padding:11px;border-radius:10px;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer">➕ تسجيل معلم جديد</button>
       </div>
 
       <!-- ── TEACHER REGISTER ── -->
@@ -216,6 +218,8 @@ window.__splashDeadline = Date.now() + 5000;
       <button class="btn-primary" id="admin-login-btn" onclick="adminLogin()">
         🔐 دخول لوحة المسؤول
       </button>
+      <button type="button" id="admin-forgot-pw-btn" onclick="adminForgotPassword()"
+        style="width:100%;margin-top:10px;background:transparent;border:none;color:var(--teal-dark);padding:6px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;text-decoration:underline">نسيت كلمة المرور؟</button>
     </div>
   </div>
 </div>
@@ -1219,6 +1223,6 @@ window.__splashDeadline = Date.now() + 5000;
 <script src="js/push-notifications.js?v=4"></script>
 <script src="js/attachments.js?v=7"></script>
 <script src="js/firebase-init.js?v=37"></script>
-<script src="js/app.js?v=45"></script>
+<script src="js/app.js?v=46"></script>
 </body>
 </html>
