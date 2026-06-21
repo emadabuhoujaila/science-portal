@@ -7926,6 +7926,18 @@ function getCloudFunctions(){
   catch(e){ return typeof firebase.functions === 'function' ? firebase.functions() : null; }
 }
 
+async function callParentPublicFn(fnName, data){
+  const fns = getCloudFunctions();
+  if(!fns) return null;
+  try{
+    const res = await fns.httpsCallable(fnName)(data || {});
+    return res?.data || null;
+  }catch(e){
+    console.warn(fnName, e);
+    return null;
+  }
+}
+
 function populateSettingsAccount(){
   const wrap = document.getElementById('settings-account-section');
   const box = document.getElementById('settings-account-info');
@@ -10068,9 +10080,14 @@ async function loadParentGrades(){
 
   if(typeof db !== 'undefined'){
     try{
-      const snap = await db.ref('students').once('value');
-      if(snap.exists()){
-        uploadedGrades = Object.keys(snap.val()).filter(g=>allGrades.includes(g)).sort();
+      const data = await callParentPublicFn('listParentGrades');
+      if(data?.grades?.length){
+        uploadedGrades = data.grades.filter(g=>allGrades.includes(g)).sort();
+      }else{
+        const snap = await db.ref('students').once('value');
+        if(snap.exists()){
+          uploadedGrades = Object.keys(snap.val()).filter(g=>allGrades.includes(g)).sort();
+        }
       }
     }catch(e){}
   }
@@ -10103,12 +10120,26 @@ function populateParentSections(){
   };
 
   if(typeof db !== 'undefined'){
-    db.ref(`students/${grade}`).once('value').then(snap=>{
-      if(!snap.exists()){
+    const renderFromSections = (sections)=>{
+      if(!sections.length){
         secSel.innerHTML = `<option value="">${isEn?'No sections available':'لا توجد شعب'}</option>`;
         return;
       }
-      renderSectionOptions(Object.keys(snap.val()));
+      renderSectionOptions(sections);
+    };
+
+    callParentPublicFn('listParentSections', { grade }).then(data=>{
+      if(data?.sections?.length){
+        renderFromSections(data.sections);
+        return;
+      }
+      return db.ref(`students/${grade}`).once('value').then(snap=>{
+        if(!snap.exists()){
+          renderFromSections([]);
+          return;
+        }
+        renderFromSections(Object.keys(snap.val()));
+      });
     }).catch(()=>{
       renderSectionOptions(SECTIONS_LIST);
     });
@@ -10135,31 +10166,45 @@ function populateParentNames(){
 
   if(!grade || !section){ sel.innerHTML=`<option value="">${isEn?'— Select Grade & Section —':'— اختر الصف والشعبة —'}</option>`; return; }
 
-  // Load from Firebase /students/{grade}/{section}/
+  const renderStudentOptions = (students)=>{
+    if(!students.length){
+      sel.innerHTML = `<option value="">${isEn?'— No students found —':'— لا يوجد طلاب —'}</option>`;
+      if(errEl){
+        errEl.textContent = isEn
+          ? '⚠️ Student lists not uploaded yet for this class. Please contact the administration.'
+          : '⚠️ لم يتم رفع قوائم الطلاب لهذا الصف والشعبة بعد — تواصل مع الإدارة.';
+        errEl.style.display = 'block';
+      }
+      return;
+    }
+    sel.innerHTML = `<option value="">${isEn?'— Select Student —':'— اختر الاسم —'}</option>`
+      + students.map(s=>{
+          const display = displayStudentName(s, grade, section);
+          return `<option value="${escapeHtml(s.name)}">${escapeHtml(display)}</option>`;
+        }).join('');
+    sel.onchange = ()=>{
+      document.getElementById('parent-next-btn').style.display = sel.value ? '' : 'none';
+    };
+  };
+
+  // Load student names via Cloud Function (no ministry IDs exposed)
   if(typeof db !== 'undefined'){
-    db.ref(`students/${grade}/${section}`).once('value').then(snap=>{
-      if(!snap.exists() || !snap.val()){
-        sel.innerHTML = `<option value="">${isEn?'— No students found —':'— لا يوجد طلاب —'}</option>`;
-        if(errEl){
-          errEl.textContent = isEn
-            ? '⚠️ Student lists not uploaded yet for this class. Please contact the administration.'
-            : '⚠️ لم يتم رفع قوائم الطلاب لهذا الصف والشعبة بعد — تواصل مع الإدارة.';
-          errEl.style.display = 'block';
-        }
+    callParentPublicFn('listParentStudentNames', { grade, section }).then(data=>{
+      if(data?.students?.length){
+        renderStudentOptions(data.students);
         return;
       }
-      const data = snap.val();
-      const students = Object.values(data).filter(s=>s&&s.name).sort((a,b)=>a.name.localeCompare(b.name,'ar'));
-
-      sel.innerHTML = `<option value="">${isEn?'— Select Student —':'— اختر الاسم —'}</option>`
-        + students.map(s=>{
-            const display = displayStudentName(s, grade, section, s.mid);
-            return `<option value="${s.name}" data-mid="${s.mid||''}">${display}</option>`;
-          }).join('');
-
-      sel.onchange = ()=>{
-        document.getElementById('parent-next-btn').style.display = sel.value ? '' : 'none';
-      };
+      return db.ref(`students/${grade}/${section}`).once('value').then(snap=>{
+        if(!snap.exists() || !snap.val()){
+          renderStudentOptions([]);
+          return;
+        }
+        const students = Object.values(snap.val())
+          .filter(s=>s&&s.name)
+          .map(s=>({ name: s.name, nameEn: s.nameEn || '' }))
+          .sort((a,b)=>a.name.localeCompare(b.name,'ar'));
+        renderStudentOptions(students);
+      });
     }).catch(()=>{
       _loadParentNamesLocal(grade, section, sel, errEl, isEn);
     });
@@ -10227,15 +10272,3 @@ function _loadParentNamesLocal(grade, section, sel, errEl, isEn){
 
 loadState();
 if(typeof applyGlobalLang==='function') applyGlobalLang();
-
-document.addEventListener('DOMContentLoaded', async ()=>{
-  if(typeof db === 'undefined') return;
-  try{
-    const snap = await db.ref('students').once('value');
-    if(snap.exists()){
-      window.ADMIN_STUDENTS = snap.val();
-      syncPinsFromAdminStudents();
-      saveState();
-    }
-  }catch(e){ console.warn('students preload', e); }
-});
