@@ -9,9 +9,11 @@
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 const auth = firebase.auth();
+const storage = firebase.storage();
 const functions = firebase.app().functions('us-central1');
 window.db = db;
 window.auth = auth;
+window.storage = storage;
 window.functions = functions;
 window._fbReady = false;
 

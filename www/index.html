@@ -37,7 +37,7 @@ window.__splashDeadline = Date.now() + 5000;
 </script>
 <script>
 (function(){
-  var key='portal-cache-reset-v38';
+  var key='portal-cache-reset-v40';
   if(localStorage.getItem(key)) return;
   localStorage.setItem(key,'1');
   var done=function(){ location.reload(); };
@@ -649,6 +649,7 @@ window.__splashDeadline = Date.now() + 5000;
             </div>
 
             <textarea id="admin-compose-body" rows="5" placeholder="اكتب رسالتك هنا..." style="width:100%;padding:12px 14px;border:1.5px solid var(--grey-5);border-radius:10px;font-family:inherit;font-size:14px;outline:none;resize:vertical;margin-bottom:12px"></textarea>
+            <div id="admin-compose-att-wrap"></div>
             <button type="button" class="btn-primary" id="admin-compose-send-btn" onclick="adminSendMessage()">📤 إرسال الرسالة</button>
           </div>
         </div>
@@ -946,6 +947,7 @@ window.__splashDeadline = Date.now() + 5000;
                 <label id="msg-lbl-body">نص الرسالة</label>
                 <textarea id="msg-body" rows="5" style="width:100%;padding:11px 14px;border:1.5px solid var(--grey-5);border-radius:10px;font-family:inherit;font-size:14px;outline:none;resize:vertical" placeholder="اكتب الرسالة..."></textarea>
               </div>
+              <div id="teacher-msg-att-wrap"></div>
               <button class="btn-primary" id="msg-save-btn" onclick="saveMessage()">💾 حفظ الرسالة</button>
             </div>
           </div>
@@ -991,6 +993,7 @@ window.__splashDeadline = Date.now() + 5000;
           <p id="teacher-school-send-desc" class="admin-help-text" style="margin-bottom:12px">أرسل رسالة مباشرة لمسؤول المدرسة.</p>
           <textarea id="teacher-school-admin-input" class="parent-msg-textarea" rows="4"
             placeholder="اكتب رسالتك لمسؤول المدرسة..."></textarea>
+          <div id="teacher-admin-att-wrap"></div>
           <button type="button" class="btn-primary" id="teacher-school-send-btn" onclick="submitTeacherMessageToAdmin()" style="margin-top:10px">
             📤 إرسال للمسؤول
           </button>
@@ -1170,8 +1173,10 @@ window.__splashDeadline = Date.now() + 5000;
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
 <script src="js/push-notifications.js?v=4"></script>
-<script src="js/firebase-init.js?v=36"></script>
-<script src="js/app.js?v=38"></script>
+<script src="js/attachments.js?v=2"></script>
+<script src="js/firebase-init.js?v=37"></script>
+<script src="js/app.js?v=40"></script>
 </body>
 </html>

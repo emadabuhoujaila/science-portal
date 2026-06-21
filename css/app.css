@@ -591,6 +591,22 @@ tbody td{padding:10px 12px;text-align:center;color:var(--grey-2)}
 .parent-admin-msg-card.direct .parent-admin-kind-label{color:#1565c0}
 .msg-card.unread{border-color:var(--teal-soft);background:var(--teal-pale);border-right:3px solid var(--teal-mid)}
 .unread-scroll-target{outline:2px solid #e53935;outline-offset:2px;border-radius:10px}
+.msg-att-field{margin:10px 0 12px}
+.msg-att-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border:1.5px dashed var(--teal-soft);background:var(--teal-pale);color:var(--teal-dark);border-radius:10px;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer}
+.msg-att-btn:hover{background:#d4f0f0}
+.msg-att-preview-wrap{margin-top:8px}
+.msg-att-preview{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--white);border:1px solid var(--grey-5);border-radius:10px}
+.msg-att-thumb{width:48px;height:48px;object-fit:cover;border-radius:8px;border:1px solid var(--grey-5)}
+.msg-att-icon{font-size:32px;line-height:1}
+.msg-att-preview-meta{flex:1;min-width:0}
+.msg-att-name{display:block;font-size:12px;font-weight:600;color:var(--grey-1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.msg-att-size{font-size:11px;color:var(--grey-3)}
+.msg-att-clear{border:none;background:var(--red-pale);color:var(--red-soft);width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:14px;line-height:1}
+.msg-att-display{margin-top:10px}
+.msg-att-display.image .msg-att-image{max-width:100%;max-height:220px;border-radius:10px;border:1px solid var(--grey-5);display:block}
+.msg-att-caption{display:block;font-size:11px;color:var(--grey-3);margin-top:6px}
+.msg-att-link{display:inline-flex;align-items:center;gap:6px;padding:10px 14px;background:var(--teal-pale);border:1px solid var(--teal-soft);border-radius:10px;color:var(--teal-dark);font-size:13px;font-weight:600;text-decoration:none}
+.msg-att-link:hover{background:#d4f0f0}
 .parent-complaint-thread-card{margin-bottom:12px}
 .parent-complaint-thread-item{border-radius:8px;padding:10px 12px;margin-top:8px;font-size:13px;line-height:1.7}
 .parent-complaint-thread-item.parent{background:#fff3e0;border-right:3px solid #e65100}

@@ -1403,6 +1403,7 @@ function applyTeacherProfile(){
     scopeEl.textContent = scopeLabel || (isEn ? 'No grades/sections registered' : 'لم تُسجَّل صفوف أو شعب');
   }
   try{ refreshGradeDropdowns(); }catch(e){}
+  initAttachmentFields();
 }
 
 async function logout(){
@@ -1788,6 +1789,7 @@ function _enterAdminDashboard(){
   startAdminComplaintsListener();
   startAdminMessagesListener();
   schedulePushRegistration('admin');
+  initAttachmentFields();
 }
 
 
@@ -1833,6 +1835,7 @@ function showAdminTab(tab, el){
   if(tab==='messages'){
     adminLoadMessagesTeachers();
     renderAdminMessages();
+    initAttachmentFields();
     showAdminMsgSubTab('inbox', document.getElementById('admin-msg-tab-inbox'));
     updateAdminMessagesBadge();
     updateAdminInboxSubBadge();
@@ -2310,6 +2313,7 @@ function renderAdminInbox(){
         ${m.cls?`<span>📚 ${isEn?'Grade':'صف'} ${escapeHtml(m.cls)}${m.section?' · '+(isEn?'Sec':'ش')+' '+escapeHtml(m.section):''}</span>`:''}
       </div>
       <p class="admin-complaint-body">${escapeHtml(m.body||'')}</p>
+      ${_attRender(m)}
       <div class="admin-complaint-actions">
         <button type="button" class="btn-icon admin-complaint-btn reply" onclick="adminReplyToInbox('${m.id}')">💬 ${isEn?'Reply':'رد'}</button>
         <button type="button" class="btn-icon admin-complaint-btn danger" style="background:var(--red-pale);color:var(--red-soft)" onclick="adminDeleteInboxMsg('${m.id}')">🗑️ ${isEn?'Delete':'حذف'}</button>
@@ -2335,6 +2339,7 @@ function renderAdminOutbox(){
       </div>
       <div class="admin-complaint-meta"><span>📤 ${adminOutboxToLabel(m, isEn)}</span>${m.broadcastCount?`<span>👥 ${m.broadcastCount}</span>`:''}</div>
       <p class="admin-complaint-body">${escapeHtml(m.body||'')}</p>
+      ${_attRender(m)}
       <div class="admin-complaint-actions">
         <button type="button" class="btn-icon admin-complaint-btn danger" style="background:var(--red-pale);color:var(--red-soft)" onclick="adminDeleteOutboxMsg('${m.id}')">🗑️ ${isEn?'Delete':'حذف'}</button>
       </div>
@@ -2427,8 +2432,9 @@ async function adminDeleteOutboxMsg(id){
 async function adminSendMessage(){
   const isEn = currentLang==='en';
   const body = (document.getElementById('admin-compose-body')?.value||'').trim();
-  if(!body){
-    showToast(isEn?'Write a message first':'اكتب نص الرسالة أولاً');
+  const attInput = 'admin-compose-att';
+  if(!_hasMsgContent(body, attInput)){
+    showToast(isEn?'Write a message or attach a file':'اكتب نصاً أو أرفق ملفاً');
     return;
   }
   if(typeof db==='undefined') return showToast(isEn?'❌ Not connected':'❌ غير متصل');
@@ -2441,15 +2447,23 @@ async function adminSendMessage(){
   if(btn){ btn.disabled=true; btn.textContent=isEn?'Sending…':'جارٍ الإرسال…'; }
 
   try{
+    let attachment = null;
+    const msgBody = body || (isEn ? '📎 Attachment' : '📎 مرفق');
+
     if(target==='teacher'){
       const teacherKey = document.getElementById('admin-compose-teacher')?.value;
       if(!teacherKey) throw new Error(isEn?'Select a teacher':'اختر المعلم');
+      if(PortalAttachments?.getPending(attInput)){
+        attachment = await _uploadAtt(attInput, 'at', { teacherKey });
+      }
       const teacher = (window.adminTeachersForMsg||[]).find(t=>t.key===teacherKey);
       const toLabel = teacher?.name || teacherKey;
       const outRef = db.ref('adminOutbox').push();
       const outId = outRef.key;
-      await outRef.set({ toRole:'teacher', teacherKey, toLabel, teacherName:toLabel, body, ts, date:dateStr, fromAdmin:true });
-      await db.ref('teacherData/'+teacherKey+'/adminMessages').push({ body, ts, date:dateStr, fromAdmin:true, outboxId:outId, read:false });
+      const payload = { toRole:'teacher', teacherKey, toLabel, teacherName:toLabel, body:msgBody, ts, date:dateStr, fromAdmin:true };
+      if(attachment) payload.attachment = attachment;
+      await outRef.set(payload);
+      await db.ref('teacherData/'+teacherKey+'/adminMessages').push({ body:msgBody, ts, date:dateStr, fromAdmin:true, outboxId:outId, read:false, ...(attachment?{attachment}: {}) });
       showToast(isEn?'✅ Message sent to teacher':'✅ تم إرسال الرسالة للمعلم');
     } else if(target==='parent'){
       const grade = document.getElementById('admin-compose-grade')?.value;
@@ -2459,11 +2473,16 @@ async function adminSendMessage(){
       const opt = sel?.selectedOptions?.[0];
       const studentName = opt?.dataset?.name || opt?.textContent?.split('·')[0]?.trim() || '';
       if(!mid) throw new Error(isEn?'Select a student':'اختر الطالب');
+      if(PortalAttachments?.getPending(attInput)){
+        attachment = await _uploadAtt(attInput, 'ap', { mid: String(mid) });
+      }
       const toLabel = studentName || mid;
       const outRef = db.ref('adminOutbox').push();
       const outId = outRef.key;
-      await outRef.set({ toRole:'parent', mid:String(mid), cls:grade, section, studentName, toLabel, body, ts, date:dateStr, fromAdmin:true });
-      await db.ref('parentAdminInbox/'+mid).push({ mid:String(mid), studentName, cls:grade, section, body, ts, date:dateStr, type:'admin_direct', outboxId:outId, fromAdmin:true });
+      const payload = { toRole:'parent', mid:String(mid), cls:grade, section, studentName, toLabel, body:msgBody, ts, date:dateStr, fromAdmin:true };
+      if(attachment) payload.attachment = attachment;
+      await outRef.set(payload);
+      await db.ref('parentAdminInbox/'+mid).push({ mid:String(mid), studentName, cls:grade, section, body:msgBody, ts, date:dateStr, type:'admin_direct', outboxId:outId, fromAdmin:true, ...(attachment?{attachment}: {}) });
       showToast(isEn?'✅ Message sent to parent':'✅ تم إرسال الرسالة لولي الأمر');
     } else if(target==='broadcast'){
       if(!confirm(isEn?'Send to ALL registered parents?':'إرسال لجميع أولياء الأمور المسجّلين؟')) throw new Error('cancelled');
@@ -2471,15 +2490,21 @@ async function adminSendMessage(){
       const parents = [];
       if(snap.exists()) snap.forEach(c=>{ const p=c.val(); if(p?.mid) parents.push({ mid:String(p.mid), ...p }); });
       if(!parents.length) throw new Error(isEn?'No registered parents':'لا يوجد أولياء أمور مسجّلون');
+      if(PortalAttachments?.getPending(attInput) && parents[0]){
+        attachment = await _uploadAtt(attInput, 'ap', { mid: parents[0].mid });
+      }
       const outRef = db.ref('adminOutbox').push();
       const outId = outRef.key;
-      await outRef.set({ toRole:'broadcast', toLabel:isEn?'All parents':'جميع أولياء الأمور', body, ts, date:dateStr, fromAdmin:true, broadcastCount:parents.length });
+      const outPayload = { toRole:'broadcast', toLabel:isEn?'All parents':'جميع أولياء الأمور', body:msgBody, ts, date:dateStr, fromAdmin:true, broadcastCount:parents.length };
+      if(attachment) outPayload.attachment = attachment;
+      await outRef.set(outPayload);
       for(const p of parents){
-        await db.ref('parentAdminInbox/'+p.mid).push({ mid:p.mid, studentName:p.name, cls:p.cls, section:p.section||'', body, ts, date:dateStr, type:'admin_broadcast', outboxId:outId, fromAdmin:true });
+        await db.ref('parentAdminInbox/'+p.mid).push({ mid:p.mid, studentName:p.name, cls:p.cls, section:p.section||'', body:msgBody, ts, date:dateStr, type:'admin_broadcast', outboxId:outId, fromAdmin:true, ...(attachment?{attachment}: {}) });
       }
       showToast(isEn?`✅ Broadcast sent to ${parents.length} parents`:`✅ تم التعميم على ${parents.length} ولي أمر`);
     }
     document.getElementById('admin-compose-body').value = '';
+    _attClear(attInput, 'admin-compose-att-preview');
     showAdminMsgSubTab('outbox', document.getElementById('admin-msg-tab-outbox'));
   }catch(e){
     if(e.message==='cancelled') return;
@@ -3323,31 +3348,76 @@ function getTeacherKey(){
   if(CURRENT_TEACHER.isAdmin) return 'emad_school_ae';
   return '';
 }
+
+function _attField(inputId, previewId){
+  return window.PortalAttachments?.fieldHtml(inputId, previewId) || '';
+}
+function _attRender(msg){
+  return window.PortalAttachments?.render(msg?.attachment) || '';
+}
+async function _uploadAtt(inputId, channel, meta){
+  if(!window.PortalAttachments) return null;
+  return PortalAttachments.uploadPending(inputId, channel, meta);
+}
+function _attClear(inputId, previewId){
+  if(window.PortalAttachments) PortalAttachments.clear(inputId, previewId);
+}
+function _hasMsgContent(body, inputId){
+  if(window.PortalAttachments?.hasContent) return PortalAttachments.hasContent(body, inputId);
+  return !!(body || '').trim();
+}
+function initAttachmentFields(){
+  const tw = document.getElementById('teacher-msg-att-wrap');
+  if(tw && !tw.dataset.init){ tw.innerHTML = _attField('teacher-msg-att','teacher-msg-att-preview'); tw.dataset.init='1'; }
+  const aw = document.getElementById('admin-compose-att-wrap');
+  if(aw && !aw.dataset.init){ aw.innerHTML = _attField('admin-compose-att','admin-compose-att-preview'); aw.dataset.init='1'; }
+  const taw = document.getElementById('teacher-admin-att-wrap');
+  if(taw && !taw.dataset.init){ taw.innerHTML = _attField('teacher-admin-att','teacher-admin-att-preview'); taw.dataset.init='1'; }
+}
 function saveMessage(){
   const cls  = document.getElementById('msg-class')?.value||'';
   const sec  = document.getElementById('msg-sec')?.value||'';
   const name = document.getElementById('msg-student')?.value||'';
   const body = document.getElementById('msg-body')?.value?.trim()||'';
   const type = document.getElementById('msg-type')?.value||'info';
-  if(!cls||!name||!body){
-    showToast(currentLang==='en'?'⚠️ Fill all fields':'⚠️ اختر الشعبة والطالب وأدخل نص الرسالة');
+  const attInput = 'teacher-msg-att';
+  if(!cls||!name||!_hasMsgContent(body, attInput)){
+    showToast(currentLang==='en'?'⚠️ Fill all fields or attach a file':'⚠️ اختر الطالب وأدخل نصاً أو أرفق ملفاً');
     return;
   }
-  const d = new Date();
-  const msg = {
-    cls, name, type, body,
-    date: d.toLocaleDateString('ar-AE')+' '+d.toLocaleTimeString('ar-AE',{hour:'2-digit',minute:'2-digit'}),
-    ts: d.toISOString()
-  };
   const key = getTeacherKey();
-  if(typeof db!=='undefined' && key){
-    window.fbPushMsg(key, msg).catch(()=>{});
-    // listener will update APP.messages automatically
-  } else {
-    APP.messages.push(msg); saveState(); renderSavedMessages();
+  if(typeof db==='undefined' || !key){
+    showToast(currentLang==='en'?'⚠️ Not connected':'⚠️ غير متصل');
+    return;
   }
-  document.getElementById('msg-body').value='';
-  showToast(currentLang==='en'?'✅ Message sent':'✅ تم إرسال الرسالة لولي الأمر');
+  const btn = document.getElementById('msg-save-btn');
+  const btnLabel = btn ? btn.textContent : '';
+  if(btn){ btn.disabled=true; btn.textContent=currentLang==='en'?'Sending…':'جارٍ الإرسال…'; }
+
+  (async ()=>{
+    try{
+      let attachment = null;
+      if(PortalAttachments?.getPending(attInput)){
+        attachment = await _uploadAtt(attInput, 'tm', { teacherKey: key });
+      }
+      const d = new Date();
+      const msg = {
+        cls, name, type, body: body || (currentLang==='en' ? '📎 Attachment' : '📎 مرفق'),
+        date: d.toLocaleDateString('ar-AE')+' '+d.toLocaleTimeString('ar-AE',{hour:'2-digit',minute:'2-digit'}),
+        ts: d.toISOString()
+      };
+      if(attachment) msg.attachment = attachment;
+      await window.fbPushMsg(key, msg);
+      document.getElementById('msg-body').value='';
+      _attClear(attInput, 'teacher-msg-att-preview');
+      showToast(currentLang==='en'?'✅ Message sent':'✅ تم إرسال الرسالة لولي الأمر');
+    }catch(e){
+      console.error('saveMessage', e);
+      showToast('⚠️ '+(e.message||(currentLang==='en'?'Send failed':'فشل الإرسال')));
+    }finally{
+      if(btn){ btn.disabled=false; btn.textContent=btnLabel||'💾 حفظ الرسالة'; }
+    }
+  })();
 }
 
 
@@ -3378,7 +3448,7 @@ function renderSavedMessages(){
           <span class="msg-date">${m.date||m.ts||''}</span>
           ${m.id ? `<button class="action-btn danger" style="padding:2px 8px;font-size:11px" onclick="deleteSingleTeacherMsg('${m.id}')">🗑️</button>` : ''}
         </span>
-      </div><p>${m.body}</p>
+      </div><p>${escapeHtml(m.body||'')}</p>${_attRender(m)}
     </div>`).join('');
 }
 
@@ -5622,6 +5692,7 @@ function renderParentSchoolTab(cls, studentName, mid, teachersList){
       </div>
       <textarea id="parent-school-admin-input" class="parent-msg-textarea" rows="4"
         placeholder="${isEn ? 'Write your message to the school admin...' : 'اكتب رسالتك لمسؤول المدرسة...'}"></textarea>
+      ${_attField('parent-admin-att', 'parent-admin-att-preview')}
       <button type="button" class="parent-msg-send" onclick="submitParentMessageToAdmin()">
         ${isEn ? 'Send to Admin ←' : 'إرسال للمسؤول ←'}
       </button>
@@ -5687,6 +5758,7 @@ function renderParentSchoolAdminMessages(cls, sName){
             </div>
           </div>
           <p style="margin:0;font-size:13px;color:var(--grey-2);white-space:pre-line;line-height:1.7">${escapeHtml(m.body || '')}</p>
+          ${_attRender(m)}
         </div>`;
       }).join('')}
     </div>`;
@@ -5714,6 +5786,7 @@ function renderParentSchoolSentToAdmin(mid){
             <span style="font-size:11px;color:var(--grey-3)">${m.date || ''}</span>
           </div>
           <p style="margin:0;font-size:13px;color:var(--grey-2);white-space:pre-line;line-height:1.7">${escapeHtml(m.body || '')}</p>
+          ${_attRender(m)}
         </div>`).join('')}
     </div>`;
 }
@@ -5856,8 +5929,9 @@ async function submitParentMessageToAdmin(){
   const ctx = window._parentSubjectContext || {};
   const mid = ctx.mid || window._currentParent?.mid;
   const body = (document.getElementById('parent-school-admin-input')?.value || '').trim();
-  if(!body){
-    showToast('⚠️ ' + (isEn ? 'Write your message first' : 'اكتب رسالتك أولاً'));
+  const attInput = 'parent-admin-att';
+  if(!_hasMsgContent(body, attInput)){
+    showToast('⚠️ ' + (isEn ? 'Write your message or attach a file' : 'اكتب رسالتك أو أرفق ملفاً'));
     return;
   }
   if(!mid || typeof db === 'undefined'){
@@ -5868,24 +5942,31 @@ async function submitParentMessageToAdmin(){
   const dateStr = now.toLocaleDateString(isEn ? 'en-AE' : 'ar-AE') + ' ' + now.toLocaleTimeString(isEn ? 'en-AE' : 'ar-AE', { hour: '2-digit', minute: '2-digit' });
   const ts = now.toISOString();
   const section = ctx.section || window._currentParent?.section || '';
+  const msgBody = body || (isEn ? '📎 Attachment' : '📎 مرفق');
   const payload = {
     fromRole: 'parent',
     mid: String(mid),
     studentName: ctx.name,
     cls: ctx.cls,
     section,
-    body,
+    body: msgBody,
     ts,
     date: dateStr,
     fromName: displayStudentName(ctx.name, ctx.cls, section, mid),
   };
   try{
+    let attachment = null;
+    if(PortalAttachments?.getPending(attInput)){
+      attachment = await _uploadAtt(attInput, 'pa', { mid: String(mid), cls: ctx.cls, name: ctx.name, section });
+    }
+    if(attachment) payload.attachment = attachment;
     const inboxRef = db.ref('adminInbox').push();
     const sentRef = db.ref('parentMessagesToAdmin/' + mid).push();
     const outId = inboxRef.key;
     await inboxRef.set({ ...payload, id: outId });
     await sentRef.set({ ...payload, id: sentRef.key, outboxId: outId });
     document.getElementById('parent-school-admin-input').value = '';
+    _attClear(attInput, 'parent-admin-att-preview');
     renderParentSchoolSentToAdmin(mid);
     showToast('✅ ' + (isEn ? 'Message sent to admin' : 'تم إرسال الرسالة للمسؤول'));
   }catch(e){
@@ -6405,6 +6486,7 @@ async function renderParentInboxAll(cls, studentName, teachersList){
             </div>
           </div>
           <p style="margin:4px 0 0;font-size:13px">${escapeHtml(m.body||'')}</p>
+          ${_attRender(m)}
         </div>`;
       }).join('')
     : `<div class="empty-state" style="padding:24px"><div class="ico">📭</div>
@@ -6561,7 +6643,7 @@ async function loadSubjectTabContent(idx, cls, studentName, mid, teachersList){
               <span class="msg-date">${m.date||''}</span>
               ${parentMsgDeleteBtn('received', tc.key, m, idx)}
             </div>
-          </div><p style="margin:4px 0 0">${escapeHtml(m.body||'')}</p>
+          </div><p style="margin:4px 0 0">${escapeHtml(m.body||'')}</p>${_attRender(m)}
         </div>`;
       }).join('')
     : `<div class="empty-state" style="padding:16px"><div class="ico" style="font-size:24px">📭</div>
@@ -6592,6 +6674,7 @@ async function loadSubjectTabContent(idx, cls, studentName, mid, teachersList){
       <div style="margin-bottom:10px;flex-wrap:wrap">${quickBtns}</div>
       <textarea id="subj-msg-input-${idx}" class="parent-msg-textarea"
         placeholder="${isEn?'Write your message...':'اكتب رسالتك...'}" rows="4"></textarea>
+      ${_attField('parent-subj-att-'+idx, 'parent-subj-att-'+idx+'-preview')}
       <button class="parent-msg-send" id="parent-msg-send-${idx}"
         onclick="sendParentMsgToTeacher('${idx}','${tc.key}','${cls}','${studentName.replace(/'/g,"\\'")}')">
         ${isEn?'Send Message ←':'إرسال الرسالة ←'}
@@ -6628,10 +6711,11 @@ async function sendParentMsgToTeacher(idx, teacherKey, cls, studentName){
     document.getElementById('subj-msg-input-'+idx)?.value ||
     document.getElementById('parent-msg-input-'+idx)?.value || ''
   ).trim();
-  if(!body){
+  const attInput = 'parent-subj-att-'+idx;
+  if(!_hasMsgContent(body, attInput)){
     const ta = document.getElementById('subj-msg-input-'+idx)||document.getElementById('parent-msg-input-'+idx);
     if(ta){ ta.style.borderColor='var(--red-soft)'; setTimeout(()=>{ ta.style.borderColor=''; },1500); }
-    showToast(currentLang==='en' ? 'Please write a message' : 'يرجى كتابة الرسالة');
+    showToast(currentLang==='en' ? 'Please write a message or attach a file' : 'يرجى كتابة رسالة أو إرفاق ملف');
     return;
   }
   if(!teacherKey || typeof db==='undefined'){
@@ -6642,10 +6726,12 @@ async function sendParentMsgToTeacher(idx, teacherKey, cls, studentName){
   const isEn = currentLang==='en';
   const { subjLabel, subject } = getSubjectTeacherContext(idx);
   const d = new Date();
+  const section = window._parentSubjectContext?.section || window._currentParent?.section || '';
+  const msgBody = body || (isEn ? '📎 Attachment' : '📎 مرفق');
   const msg = {
     cls,
     name: studentName,
-    body,
+    body: msgBody,
     subject,
     subjLabel,
     teacherKey,
@@ -6658,6 +6744,12 @@ async function sendParentMsgToTeacher(idx, teacherKey, cls, studentName){
   if(sendBtn){ sendBtn.disabled = true; sendBtn.textContent = isEn ? 'Sending…' : 'جارٍ الإرسال…'; }
 
   try{
+    if(PortalAttachments?.getPending(attInput)){
+      msg.attachment = await _uploadAtt(attInput, 'pm', {
+        mid: window._parentSubjectContext?.mid || window._currentParent?.mid,
+        cls, name: studentName, section, teacherKey
+      });
+    }
     const fbId = await window.fbPushParentMsg(teacherKey, msg);
     if(fbId) msg.id = fbId;
     APP.parentMessages = APP.parentMessages || [];
@@ -6666,6 +6758,7 @@ async function sendParentMsgToTeacher(idx, teacherKey, cls, studentName){
 
     const ta = document.getElementById('subj-msg-input-'+idx)||document.getElementById('parent-msg-input-'+idx);
     if(ta) ta.value='';
+    _attClear(attInput, attInput+'-preview');
     const conf = document.getElementById('parent-msg-confirm-'+idx);
     if(conf){ conf.style.display='block'; setTimeout(()=>conf.style.display='none',3000); }
     renderSubjectSentLog(idx, teacherKey, cls, studentName);
@@ -6707,6 +6800,7 @@ function renderSubjectSentLog(idx, teacherKey, cls, studentName){
           </div>
         </div>
         <p style="margin:0;font-size:13px;color:var(--grey-2);white-space:pre-line">${escapeHtml(m.body||'')}</p>
+        ${_attRender(m)}
       </div>`).join('')
     +'</div>';
 }
@@ -8136,6 +8230,7 @@ function renderParentInbox(){
         </div>
       </div>
       <p>${escapeHtml(m.body)}</p>
+      ${_attRender(m)}
     </div>`;
   }).join('');
   updateInboxBadge();
@@ -8415,6 +8510,7 @@ function renderTeacherAdminMessages(){
             <span style="font-size:11px;color:var(--grey-3)">${m.date||formatAdminDate(m.ts, isEn)}</span>
           </div>
           <p style="margin:0;font-size:13px;color:var(--grey-2);white-space:pre-line;line-height:1.7">${escapeHtml(m.body||'')}</p>
+          ${_attRender(m)}
         </div>`;
       }).join('')}
     </div>`;
@@ -8442,6 +8538,7 @@ function renderTeacherSentToAdmin(){
             <span style="font-size:11px;color:var(--grey-3)">${m.date||formatAdminDate(m.ts, isEn)}</span>
           </div>
           <p style="margin:0;font-size:13px;color:var(--grey-2);white-space:pre-line;line-height:1.7">${escapeHtml(m.body||'')}</p>
+          ${_attRender(m)}
         </div>`).join('')}
     </div>`;
 }
@@ -8450,8 +8547,9 @@ async function submitTeacherMessageToAdmin(){
   const isEn = currentLang==='en';
   const key = getTeacherKey();
   const body = (document.getElementById('teacher-school-admin-input')?.value||'').trim();
-  if(!body){
-    showToast('⚠️ '+(isEn?'Write your message first':'اكتب رسالتك أولاً'));
+  const attInput = 'teacher-admin-att';
+  if(!_hasMsgContent(body, attInput)){
+    showToast('⚠️ '+(isEn?'Write your message or attach a file':'اكتب رسالتك أو أرفق ملفاً'));
     return;
   }
   if(!key || typeof db==='undefined'){
@@ -8463,9 +8561,14 @@ async function submitTeacherMessageToAdmin(){
   const ts = now.toISOString();
   const subj = SUBJECTS[CURRENT_TEACHER?.subject];
   const subjLabel = subj ? (isEn?subj.en:subj.ar) : (CURRENT_TEACHER?.subject||'');
+  const msgBody = body || (isEn ? '📎 Attachment' : '📎 مرفق');
   const btn = document.getElementById('teacher-school-send-btn');
   if(btn){ btn.disabled=true; btn.textContent=isEn?'Sending…':'جارٍ الإرسال…'; }
   try{
+    let attachment = null;
+    if(PortalAttachments?.getPending(attInput)){
+      attachment = await _uploadAtt(attInput, 'ta', { teacherKey: key });
+    }
     const payload = {
       fromRole:'teacher',
       teacherKey:key,
@@ -8473,13 +8576,15 @@ async function submitTeacherMessageToAdmin(){
       subject: CURRENT_TEACHER?.subject||'',
       subjLabel,
       email: CURRENT_TEACHER?.email||'',
-      body, ts, date:dateStr,
+      body: msgBody, ts, date:dateStr,
     };
+    if(attachment) payload.attachment = attachment;
     const inboxRef = db.ref('adminInbox').push();
     const sentRef = db.ref('teacherMessagesToAdmin/'+key).push();
     await inboxRef.set({ ...payload, id: inboxRef.key });
     await sentRef.set({ ...payload, id: sentRef.key, outboxId: inboxRef.key });
     document.getElementById('teacher-school-admin-input').value = '';
+    _attClear(attInput, 'teacher-admin-att-preview');
     renderTeacherSentToAdmin();
     showToast('✅ '+(isEn?'Message sent to admin':'تم إرسال الرسالة للمسؤول'));
   }catch(e){
