@@ -217,3 +217,48 @@ exports.getParentTeacherDataBatch = region.https.onCall(async (data) => {
   );
   return { byTeacher };
 });
+
+function parseComplaintLog(raw) {
+  return Object.entries(raw || {})
+    .filter(([, v]) => v && typeof v === 'object' && v.body)
+    .map(([id, v]) => {
+      const threadRaw = v.thread && typeof v.thread === 'object' ? v.thread : {};
+      const thread = Object.entries(threadRaw)
+        .map(([tid, t]) => ({ id: tid, ...t }))
+        .sort((a, b) => (a.ts || '').localeCompare(b.ts || ''));
+      return { id, ...v, thread };
+    })
+    .sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
+}
+
+exports.getParentSchoolData = region.https.onCall(async (data) => {
+  const session = await assertParentSession(data?.sessionToken);
+  const mid = String(session.mid || '');
+  const cls = String(session.cls || '').trim();
+  const sName = String(session.name || '').trim();
+
+  const [inboxSnap, complaintSnap, sentSnap] = await Promise.all([
+    admin.database().ref(`parentAdminInbox/${mid}`).once('value'),
+    admin.database().ref(`parentComplaintLog/${mid}`).once('value'),
+    admin.database().ref(`parentMessagesToAdmin/${mid}`).once('value'),
+  ]);
+
+  const allInbox = inboxSnap.exists()
+    ? Object.entries(inboxSnap.val()).map(([id, m]) => ({ id, ...m }))
+    : [];
+  const adminInbox = allInbox.filter(
+    (m) => m && m.cls === cls && String(m.studentName || '').trim() === sName
+  );
+
+  const complaintLog = complaintSnap.exists()
+    ? parseComplaintLog(complaintSnap.val())
+    : [];
+
+  const messagesToAdmin = sentSnap.exists()
+    ? Object.entries(sentSnap.val())
+        .map(([id, m]) => ({ id, ...m }))
+        .sort((a, b) => (b.ts || '').localeCompare(a.ts || ''))
+    : [];
+
+  return { adminInbox, complaintLog, messagesToAdmin };
+});
