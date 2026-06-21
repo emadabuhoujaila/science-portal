@@ -3357,7 +3357,8 @@ function _attRender(msg){
 }
 async function _uploadAtt(inputId, channel, meta){
   if(!window.PortalAttachments) return null;
-  return PortalAttachments.uploadPending(inputId, channel, meta);
+  const att = await PortalAttachments.uploadPending(inputId, channel, meta);
+  return att ? PortalAttachments.pickPayload(att) : null;
 }
 function _attClear(inputId, previewId){
   if(window.PortalAttachments) PortalAttachments.clear(inputId, previewId);
