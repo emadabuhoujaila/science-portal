@@ -600,3 +600,14 @@ tbody td{padding:10px 12px;text-align:center;color:var(--grey-2)}
 .parent-complaint-thread-date{display:block;font-size:10px;color:var(--grey-3);margin-top:6px}
 .parent-complaint-reply-box{margin-top:12px;padding-top:12px;border-top:1px dashed var(--grey-5)}
 .parent-school-complaint-compose{margin-top:8px}
+
+.admin-compose-radio{
+  display:inline-flex;align-items:center;gap:8px;padding:10px 14px;
+  background:var(--white);border:1.5px solid var(--grey-5);border-radius:10px;
+  font-size:13px;cursor:pointer;user-select:none
+}
+.admin-compose-radio:has(input:checked){
+  border-color:var(--teal-soft);background:var(--teal-pale);color:var(--teal-dark)
+}
+.admin-compose-radio input{margin:0}
+.admin-msg-subtab.active{background:var(--teal-pale);color:var(--teal-dark);border-color:var(--teal-soft)}

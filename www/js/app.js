@@ -784,6 +784,38 @@ function adminClearGrade(){
   }
 }
 
+async function adminClearSection(){
+  const isEn = currentLang==='en';
+  const grade = (prompt(isEn?'Enter grade (5, 6, 7, or 8):':'أدخل الصف (5 أو 6 أو 7 أو 8):')||'').trim();
+  if(!grade || !['5','6','7','8'].includes(grade)) return;
+  const section = normalizeSectionCell(prompt(isEn?'Enter section (1–6):':'أدخل الشعبة (1–6):'));
+  if(!section) return;
+  const students = adminGetStudentsInSection(grade, section);
+  if(!students.length){
+    showToast(isEn?'No students in this section':'لا يوجد طلاب في هذه الشعبة');
+    return;
+  }
+  if(!confirm(isEn
+    ? `Delete all ${students.length} students in Grade ${grade}, Section ${section}?`
+    : `حذف كل ${students.length} طالب في الصف ${grade} شعبة ${section}؟`)) return;
+  if(typeof db==='undefined') return showToast(isEn?'❌ Not connected':'❌ غير متصل');
+  try{
+    for(const st of students){
+      await adminSyncParentRecordsAfterStudentDelete(grade, section, st);
+    }
+    await db.ref(`students/${grade}/${section}`).remove();
+    if(adminStudentsCache?.[grade]?.[section]) delete adminStudentsCache[grade][section];
+    if(adminStudentsCache?.[grade] && !Object.keys(adminStudentsCache[grade]).length) delete adminStudentsCache[grade];
+    refreshAdminSecFilter();
+    adminRenderStudents();
+    adminRefreshTransferStudentList();
+    showToast(isEn?`Section ${section} of Grade ${grade} cleared`:`تم مسح شعبة ${section} من الصف ${grade}`);
+  }catch(e){
+    console.error('adminClearSection', e);
+    showToast(isEn?'❌ Clear failed':'❌ فشل المسح');
+  }
+}
+
 function adminImportStudents(input){
   const file = input.files[0];
   if(!file) return;
@@ -1749,6 +1781,7 @@ function _enterAdminDashboard(){
   if(as){ as.classList.add('active'); as.style.display='block'; as.style.minHeight='100vh'; }
   adminLoadStudents();
   startAdminComplaintsListener();
+  startAdminMessagesListener();
   schedulePushRegistration('admin');
 }
 
@@ -1788,6 +1821,11 @@ function showAdminTab(tab, el){
   if(el) el.classList.add('active');
   if(tab==='monitor') adminLoadMonitoring();
   if(tab==='complaints') renderAdminComplaints();
+  if(tab==='messages'){
+    adminLoadMessagesTeachers();
+    renderAdminMessages();
+    showAdminMsgSubTab('inbox', document.getElementById('admin-msg-tab-inbox'));
+  }
 }
 
 let adminComplaintsCache = [];
@@ -2059,6 +2097,314 @@ async function adminForwardComplaint(complaintId, anonymous){
   }catch(e){
     console.error('adminForwardComplaint', e);
     showToast('⚠️ '+(isEn?'Failed to forward':'فشل التوجيه'));
+  }
+}
+
+// ══════════════════════════════════════════════════
+//  ADMIN — MESSAGE INBOX (صندوق الرسائل)
+// ══════════════════════════════════════════════════
+
+let adminInboxCache = [];
+let adminOutboxCache = [];
+window.adminTeachersForMsg = window.adminTeachersForMsg || [];
+
+function showAdminMsgSubTab(tab, el){
+  document.querySelectorAll('.admin-msg-panel').forEach(p=>p.style.display='none');
+  document.querySelectorAll('.admin-msg-subtab').forEach(b=>b.classList.remove('active'));
+  const panel = document.getElementById('admin-msg-panel-'+tab);
+  if(panel) panel.style.display='block';
+  if(el) el.classList.add('active');
+  if(tab==='inbox') renderAdminInbox();
+  if(tab==='outbox') renderAdminOutbox();
+  if(tab==='compose'){ adminLoadMessagesTeachers(); adminUpdateComposeTarget(); }
+}
+
+function startAdminMessagesListener(){
+  if(typeof db==='undefined' || !IS_ADMIN) return;
+  const inboxRef = db.ref('adminInbox');
+  inboxRef.on('value', snap=>{
+    adminInboxCache = snap.exists()
+      ? Object.entries(snap.val()).map(([id,v])=>({id,...v})).sort((a,b)=>(b.ts||'').localeCompare(a.ts||''))
+      : [];
+    updateAdminMessagesBadge();
+    if(document.getElementById('admin-tab-messages')?.style.display !== 'none'){
+      renderAdminInbox();
+    }
+  });
+  const outboxRef = db.ref('adminOutbox');
+  outboxRef.on('value', snap=>{
+    adminOutboxCache = snap.exists()
+      ? Object.entries(snap.val()).map(([id,v])=>({id,...v})).sort((a,b)=>(b.ts||'').localeCompare(a.ts||''))
+      : [];
+    if(document.getElementById('admin-msg-panel-outbox')?.style.display !== 'none'){
+      renderAdminOutbox();
+    }
+  });
+  window._adminListeners = window._adminListeners || [];
+  window._adminListeners.push(inboxRef, outboxRef);
+}
+
+function updateAdminMessagesBadge(){
+  const unread = adminInboxCache.filter(m=>!m.read).length;
+  const tab = document.getElementById('admin-tab-btn-messages');
+  if(!tab) return;
+  let badge = tab.querySelector('.inbox-badge');
+  if(unread>0){
+    if(!badge){
+      badge=document.createElement('span');
+      badge.className='inbox-badge';
+      badge.style.cssText='background:var(--red-soft);color:#fff;border-radius:20px;font-size:11px;font-weight:700;padding:1px 7px;margin-right:6px;display:inline-block';
+      tab.prepend(badge);
+    }
+    badge.textContent=unread;
+  } else if(badge){ badge.remove(); }
+}
+
+function renderAdminMessages(){
+  renderAdminInbox();
+  renderAdminOutbox();
+}
+
+async function adminLoadMessagesTeachers(){
+  const sel = document.getElementById('admin-compose-teacher');
+  if(!sel || typeof db==='undefined') return;
+  const isEn = currentLang==='en';
+  if(window.adminTeachersForMsg?.length){
+    adminFillTeacherSelect(sel, window.adminTeachersForMsg, isEn);
+    return;
+  }
+  try{
+    const snap = await db.ref('teachers').once('value');
+    const list = [];
+    if(snap.exists()){
+      snap.forEach(child=>{
+        const v = child.val();
+        if(v && v.role !== 'admin') list.push({ key: child.key, ...v });
+      });
+    }
+    list.sort((a,b)=>(a.name||'').localeCompare(b.name||'', isEn?'en':'ar'));
+    window.adminTeachersForMsg = list;
+    adminFillTeacherSelect(sel, list, isEn);
+  }catch(e){ console.warn('adminLoadMessagesTeachers', e); }
+}
+
+function adminFillTeacherSelect(sel, list, isEn){
+  sel.innerHTML = `<option value="">${isEn?'— Select teacher —':'— اختر المعلم —'}</option>`
+    + list.map(t=>{
+      const subj = formatAdminSubject(t.subject, isEn);
+      return `<option value="${escapeHtml(t.key)}">${escapeHtml(t.name||t.key)} · ${escapeHtml(subj)}</option>`;
+    }).join('');
+}
+
+function adminInboxFromLabel(m, isEn){
+  if(m.fromRole==='teacher') return (isEn?'Teacher: ':'معلم: ')+escapeHtml(m.fromName||m.teacherName||'—');
+  if(m.fromRole==='parent') return (isEn?'Parent — ':'ولي أمر — ')+escapeHtml(displayStudentName(m.studentName||m.name, m.cls, m.section, m.mid));
+  return escapeHtml(m.fromName||'—');
+}
+
+function adminOutboxToLabel(m, isEn){
+  if(m.toRole==='broadcast') return isEn?'All parents (broadcast)':'جميع أولياء الأمور (تعميم)';
+  if(m.toRole==='teacher') return (isEn?'Teacher: ':'معلم: ')+escapeHtml(m.toLabel||m.teacherName||'—');
+  return (isEn?'Parent: ':'ولي أمر: ')+escapeHtml(m.toLabel||m.studentName||'—');
+}
+
+function renderAdminInbox(){
+  const wrap = document.getElementById('admin-inbox-list');
+  if(!wrap) return;
+  const isEn = currentLang==='en';
+  const list = adminInboxCache || [];
+  if(!list.length){
+    wrap.innerHTML = `<div class="empty-state" style="padding:32px"><div class="ico">📭</div><p>${isEn?'No incoming messages yet':'لا توجد رسائل واردة بعد'}</p></div>`;
+    return;
+  }
+  wrap.innerHTML = list.map(m=>`
+    <div class="admin-complaint-card${m.read?'':' pending'}" style="border-right-color:${m.fromRole==='teacher'?'var(--teal-soft)':'#1565c0'}">
+      <div class="admin-complaint-head">
+        <span class="admin-complaint-status ${m.fromRole==='teacher'?'forwarded':'replied'}">${m.fromRole==='teacher'?(isEn?'From teacher':'من معلم'):(isEn?'From parent':'من ولي أمر')}</span>
+        <span class="admin-complaint-date">${formatAdminDate(m.ts||m.date, isEn)}</span>
+      </div>
+      <div class="admin-complaint-meta">
+        <span>${adminInboxFromLabel(m, isEn)}</span>
+        ${m.mid?`<span>🆔 ${escapeHtml(m.mid)}</span>`:''}
+        ${m.cls?`<span>📚 ${isEn?'Grade':'صف'} ${escapeHtml(m.cls)}${m.section?' · '+(isEn?'Sec':'ش')+' '+escapeHtml(m.section):''}</span>`:''}
+      </div>
+      <p class="admin-complaint-body">${escapeHtml(m.body||'')}</p>
+      <div class="admin-complaint-actions">
+        <button type="button" class="btn-icon admin-complaint-btn reply" onclick="adminReplyToInbox('${m.id}')">💬 ${isEn?'Reply':'رد'}</button>
+        <button type="button" class="btn-icon admin-complaint-btn danger" style="background:var(--red-pale);color:var(--red-soft)" onclick="adminDeleteInboxMsg('${m.id}')">🗑️ ${isEn?'Delete':'حذف'}</button>
+      </div>
+    </div>`).join('');
+}
+
+function renderAdminOutbox(){
+  const wrap = document.getElementById('admin-outbox-list');
+  if(!wrap) return;
+  const isEn = currentLang==='en';
+  const list = adminOutboxCache || [];
+  if(!list.length){
+    wrap.innerHTML = `<div class="empty-state" style="padding:32px"><div class="ico">📭</div><p>${isEn?'No sent messages yet':'لا توجد رسائل صادرة بعد'}</p></div>`;
+    return;
+  }
+  wrap.innerHTML = list.map(m=>`
+    <div class="admin-complaint-card" style="border-right-color:var(--green-soft)">
+      <div class="admin-complaint-head">
+        <span class="admin-complaint-status replied">${m.toRole==='broadcast'?(isEn?'Broadcast':'تعميم'):(isEn?'Sent':'مُرسلة')}</span>
+        <span class="admin-complaint-date">${formatAdminDate(m.ts||m.date, isEn)}</span>
+      </div>
+      <div class="admin-complaint-meta"><span>📤 ${adminOutboxToLabel(m, isEn)}</span>${m.broadcastCount?`<span>👥 ${m.broadcastCount}</span>`:''}</div>
+      <p class="admin-complaint-body">${escapeHtml(m.body||'')}</p>
+      <div class="admin-complaint-actions">
+        <button type="button" class="btn-icon admin-complaint-btn danger" style="background:var(--red-pale);color:var(--red-soft)" onclick="adminDeleteOutboxMsg('${m.id}')">🗑️ ${isEn?'Delete':'حذف'}</button>
+      </div>
+    </div>`).join('');
+}
+
+function adminUpdateComposeTarget(){
+  const target = document.querySelector('input[name="admin-msg-target"]:checked')?.value || 'teacher';
+  const tw = document.getElementById('admin-compose-teacher-wrap');
+  const pw = document.getElementById('admin-compose-parent-wrap');
+  const bw = document.getElementById('admin-compose-broadcast-wrap');
+  if(tw) tw.style.display = target==='teacher' ? 'block' : 'none';
+  if(pw) pw.style.display = target==='parent' ? 'block' : 'none';
+  if(bw) bw.style.display = target==='broadcast' ? 'block' : 'none';
+  if(target==='parent') adminRefreshComposeStudentList();
+}
+
+function adminRefreshComposeStudentList(){
+  const grade = document.getElementById('admin-compose-grade')?.value || '5';
+  const section = normalizeSectionCell(document.getElementById('admin-compose-sec')?.value || '1');
+  const sel = document.getElementById('admin-compose-student');
+  if(!sel) return;
+  const isEn = currentLang==='en';
+  const students = adminGetStudentsInSection(grade, section);
+  sel.innerHTML = `<option value="">${isEn?'— Select student —':'— اختر الطالب —'}</option>`
+    + students.map(st=>{
+      const mid = String(st.mid||'');
+      return `<option value="${escapeHtml(mid)}" data-name="${escapeHtml(st.name||'')}">${escapeHtml(st.name||mid)} · ${escapeHtml(mid)}</option>`;
+    }).join('');
+}
+
+function adminReplyToInbox(msgId){
+  const m = adminInboxCache.find(x=>x.id===msgId);
+  if(!m) return;
+  if(typeof db!=='undefined' && !m.read){
+    db.ref('adminInbox/'+msgId).update({ read:true }).catch(()=>{});
+  }
+  showAdminMsgSubTab('compose', document.getElementById('admin-msg-tab-compose'));
+  const bodyEl = document.getElementById('admin-compose-body');
+  if(m.fromRole==='teacher' && m.teacherKey){
+    const r = document.querySelector('input[name="admin-msg-target"][value="teacher"]');
+    if(r){ r.checked=true; adminUpdateComposeTarget(); }
+    adminLoadMessagesTeachers().then(()=>{
+      const sel = document.getElementById('admin-compose-teacher');
+      if(sel) sel.value = m.teacherKey;
+    });
+  } else if(m.fromRole==='parent' && m.mid){
+    const r = document.querySelector('input[name="admin-msg-target"][value="parent"]');
+    if(r){ r.checked=true; adminUpdateComposeTarget(); }
+    const g = document.getElementById('admin-compose-grade');
+    const s = document.getElementById('admin-compose-sec');
+    if(g) g.value = String(m.cls||'5');
+    if(s) s.value = normalizeSectionCell(m.section||'1');
+    adminRefreshComposeStudentList();
+    const stSel = document.getElementById('admin-compose-student');
+    if(stSel) stSel.value = String(m.mid);
+  }
+  if(bodyEl){
+    bodyEl.value = (currentLang==='en' ? 'Re: ' : 'رد: ');
+    bodyEl.focus();
+  }
+}
+
+async function adminDeleteInboxMsg(id){
+  const isEn = currentLang==='en';
+  if(!confirm(isEn?'Delete this message?':'حذف هذه الرسالة؟')) return;
+  if(typeof db==='undefined') return;
+  try{
+    await db.ref('adminInbox/'+id).remove();
+    showToast(isEn?'✅ Deleted':'✅ تم الحذف');
+  }catch(e){
+    console.error(e);
+    showToast(isEn?'❌ Delete failed':'❌ فشل الحذف');
+  }
+}
+
+async function adminDeleteOutboxMsg(id){
+  const isEn = currentLang==='en';
+  if(!confirm(isEn?'Delete from sent log?':'حذف من سجل الصادر؟')) return;
+  if(typeof db==='undefined') return;
+  try{
+    await db.ref('adminOutbox/'+id).remove();
+    showToast(isEn?'✅ Deleted':'✅ تم الحذف');
+  }catch(e){
+    console.error(e);
+    showToast(isEn?'❌ Delete failed':'❌ فشل الحذف');
+  }
+}
+
+async function adminSendMessage(){
+  const isEn = currentLang==='en';
+  const body = (document.getElementById('admin-compose-body')?.value||'').trim();
+  if(!body){
+    showToast(isEn?'Write a message first':'اكتب نص الرسالة أولاً');
+    return;
+  }
+  if(typeof db==='undefined') return showToast(isEn?'❌ Not connected':'❌ غير متصل');
+
+  const target = document.querySelector('input[name="admin-msg-target"]:checked')?.value || 'teacher';
+  const now = new Date();
+  const dateStr = now.toLocaleDateString(isEn?'en-AE':'ar-AE')+' '+now.toLocaleTimeString(isEn?'en-AE':'ar-AE',{hour:'2-digit',minute:'2-digit'});
+  const ts = now.toISOString();
+  const btn = document.getElementById('admin-compose-send-btn');
+  if(btn){ btn.disabled=true; btn.textContent=isEn?'Sending…':'جارٍ الإرسال…'; }
+
+  try{
+    if(target==='teacher'){
+      const teacherKey = document.getElementById('admin-compose-teacher')?.value;
+      if(!teacherKey) throw new Error(isEn?'Select a teacher':'اختر المعلم');
+      const teacher = (window.adminTeachersForMsg||[]).find(t=>t.key===teacherKey);
+      const toLabel = teacher?.name || teacherKey;
+      const outRef = db.ref('adminOutbox').push();
+      const outId = outRef.key;
+      await outRef.set({ toRole:'teacher', teacherKey, toLabel, teacherName:toLabel, body, ts, date:dateStr, fromAdmin:true });
+      await db.ref('teacherData/'+teacherKey+'/adminMessages').push({ body, ts, date:dateStr, fromAdmin:true, outboxId:outId, read:false });
+      showToast(isEn?'✅ Message sent to teacher':'✅ تم إرسال الرسالة للمعلم');
+    } else if(target==='parent'){
+      const grade = document.getElementById('admin-compose-grade')?.value;
+      const section = normalizeSectionCell(document.getElementById('admin-compose-sec')?.value);
+      const sel = document.getElementById('admin-compose-student');
+      const mid = sel?.value;
+      const opt = sel?.selectedOptions?.[0];
+      const studentName = opt?.dataset?.name || opt?.textContent?.split('·')[0]?.trim() || '';
+      if(!mid) throw new Error(isEn?'Select a student':'اختر الطالب');
+      const toLabel = studentName || mid;
+      const outRef = db.ref('adminOutbox').push();
+      const outId = outRef.key;
+      await outRef.set({ toRole:'parent', mid:String(mid), cls:grade, section, studentName, toLabel, body, ts, date:dateStr, fromAdmin:true });
+      await db.ref('parentAdminInbox/'+mid).push({ mid:String(mid), studentName, cls:grade, section, body, ts, date:dateStr, type:'admin_direct', outboxId:outId, fromAdmin:true });
+      showToast(isEn?'✅ Message sent to parent':'✅ تم إرسال الرسالة لولي الأمر');
+    } else if(target==='broadcast'){
+      if(!confirm(isEn?'Send to ALL registered parents?':'إرسال لجميع أولياء الأمور المسجّلين؟')) throw new Error('cancelled');
+      const snap = await db.ref('registeredParents').once('value');
+      const parents = [];
+      if(snap.exists()) snap.forEach(c=>{ const p=c.val(); if(p?.mid) parents.push({ mid:String(p.mid), ...p }); });
+      if(!parents.length) throw new Error(isEn?'No registered parents':'لا يوجد أولياء أمور مسجّلون');
+      const outRef = db.ref('adminOutbox').push();
+      const outId = outRef.key;
+      await outRef.set({ toRole:'broadcast', toLabel:isEn?'All parents':'جميع أولياء الأمور', body, ts, date:dateStr, fromAdmin:true, broadcastCount:parents.length });
+      for(const p of parents){
+        await db.ref('parentAdminInbox/'+p.mid).push({ mid:p.mid, studentName:p.name, cls:p.cls, section:p.section||'', body, ts, date:dateStr, type:'admin_broadcast', outboxId:outId, fromAdmin:true });
+      }
+      showToast(isEn?`✅ Broadcast sent to ${parents.length} parents`:`✅ تم التعميم على ${parents.length} ولي أمر`);
+    }
+    document.getElementById('admin-compose-body').value = '';
+    showAdminMsgSubTab('outbox', document.getElementById('admin-msg-tab-outbox'));
+  }catch(e){
+    if(e.message==='cancelled') return;
+    console.error('adminSendMessage', e);
+    showToast('⚠️ '+(e.message||(isEn?'Send failed':'فشل الإرسال')));
+  }finally{
+    if(btn){ btn.disabled=false; btn.textContent=isEn?'📤 Send message':'📤 إرسال الرسالة'; }
   }
 }
 
@@ -3299,6 +3645,27 @@ const TRANSLATIONS = {
     adminUploadFull: '📥 رفع ملف شامل (كل الصفوف)',
     adminClearAll: '🗑️ مسح كل الطلاب',
     adminClearGrade: '🗑️ مسح صف محدد',
+    adminClearSection: '🗑️ مسح شعبة محددة',
+    adminTabMessages: '💬 صندوق الرسائل',
+    adminMsgTabInbox: '📥 الوارد',
+    adminMsgTabOutbox: '📤 الصادر',
+    adminMsgTabCompose: '✉️ إرسال رسالة',
+    adminInboxTitle: '📥 الرسائل الواردة',
+    adminInboxDesc: 'رسائل من المعلمين وأولياء الأمور — يمكن الرد عليها أو حذفها.',
+    adminOutboxTitle: '📤 الرسائل الصادرة',
+    adminOutboxDesc: 'سجل رسائل المسؤول المرسلة للمعلمين وأولياء الأمور.',
+    adminComposeTitle: '✉️ إرسال رسالة جديدة',
+    adminComposeDesc: 'اختر الجهة المستهدفة ثم اكتب الرسالة.',
+    adminComposeLblTeacher: 'معلم',
+    adminComposeLblParent: 'ولي أمر',
+    adminComposeLblBroadcast: 'تعميم لجميع أولياء الأمور',
+    adminComposePickTeacher: 'اختر المعلم',
+    adminComposePickGrade: 'الصف',
+    adminComposePickSec: 'الشعبة',
+    adminComposePickStudent: 'الطالب / ولي الأمر',
+    adminComposeBroadcastNote: '⚠️ سيتم إرسال الرسالة إلى جميع أولياء الأمور المسجّلين في النظام.',
+    adminComposeBodyPH: 'اكتب رسالتك هنا...',
+    adminComposeSendBtn: '📤 إرسال الرسالة',
     adminTeachersTitle: '👨‍🏫 المعلمون المسجلون',
     adminAllowlistTitle: '🔐 المعلّمون المعتمدون للتسجيل',
     adminAllowlistDesc: 'أضف هنا بريد كل معلّم في المدرسة قبل أن يسجّل حسابه. لا يستطيع أي شخص آخر (مثل ولي الأمر) التسجيل كمعلّم.',
@@ -3622,6 +3989,27 @@ const TRANSLATIONS = {
     adminUploadFull: '📥 Upload Full File (All Grades)',
     adminClearAll: '🗑️ Clear All Students',
     adminClearGrade: '🗑️ Clear Selected Grade',
+    adminClearSection: '🗑️ Clear Selected Section',
+    adminTabMessages: '💬 Message Inbox',
+    adminMsgTabInbox: '📥 Inbox',
+    adminMsgTabOutbox: '📤 Sent',
+    adminMsgTabCompose: '✉️ Compose',
+    adminInboxTitle: '📥 Incoming Messages',
+    adminInboxDesc: 'Messages from teachers and parents — reply or delete.',
+    adminOutboxTitle: '📤 Sent Messages',
+    adminOutboxDesc: 'Log of messages sent by the admin to teachers and parents.',
+    adminComposeTitle: '✉️ New Message',
+    adminComposeDesc: 'Choose the recipient, then write your message.',
+    adminComposeLblTeacher: 'Teacher',
+    adminComposeLblParent: 'Parent',
+    adminComposeLblBroadcast: 'Broadcast to all parents',
+    adminComposePickTeacher: 'Select teacher',
+    adminComposePickGrade: 'Grade',
+    adminComposePickSec: 'Section',
+    adminComposePickStudent: 'Student / parent',
+    adminComposeBroadcastNote: '⚠️ The message will be sent to all registered parents in the system.',
+    adminComposeBodyPH: 'Write your message here...',
+    adminComposeSendBtn: '📤 Send message',
     adminTeachersTitle: '👨‍🏫 Registered Teachers',
     adminAllowlistTitle: '🔐 Approved Teachers for Registration',
     adminAllowlistDesc: 'Add each school teacher\'s email here before they register. Others (e.g. parents) cannot register as teachers.',
@@ -4195,6 +4583,29 @@ function applyAdminLang(){
   setText('admin-tab-btn-upload', 'adminTabUpload');
   setText('admin-tab-btn-monitor', 'adminTabMonitor');
   setText('admin-tab-btn-complaints', 'tabComplaints');
+  setText('admin-tab-btn-messages', 'adminTabMessages');
+  setText('admin-msg-tab-inbox', 'adminMsgTabInbox');
+  setText('admin-msg-tab-outbox', 'adminMsgTabOutbox');
+  setText('admin-msg-tab-compose', 'adminMsgTabCompose');
+  setText('admin-inbox-title', 'adminInboxTitle');
+  setText('admin-inbox-desc', 'adminInboxDesc');
+  setText('admin-inbox-refresh', 'adminRefresh');
+  setText('admin-outbox-title', 'adminOutboxTitle');
+  setText('admin-outbox-desc', 'adminOutboxDesc');
+  setText('admin-outbox-refresh', 'adminRefresh');
+  setText('admin-compose-title', 'adminComposeTitle');
+  setText('admin-compose-desc', 'adminComposeDesc');
+  setText('admin-compose-lbl-teacher', 'adminComposeLblTeacher');
+  setText('admin-compose-lbl-parent', 'adminComposeLblParent');
+  setText('admin-compose-lbl-broadcast', 'adminComposeLblBroadcast');
+  setText('admin-compose-lbl-pick-teacher', 'adminComposePickTeacher');
+  setText('admin-compose-lbl-p-grade', 'adminComposePickGrade');
+  setText('admin-compose-lbl-p-sec', 'adminComposePickSec');
+  setText('admin-compose-lbl-p-student', 'adminComposePickStudent');
+  setText('admin-compose-broadcast-note', 'adminComposeBroadcastNote');
+  setText('admin-compose-send-btn', 'adminComposeSendBtn');
+  const composeBody = document.getElementById('admin-compose-body');
+  if(composeBody) composeBody.placeholder = t('adminComposeBodyPH');
   setText('admin-upload-title', 'adminUploadTitle');
   setText('admin-students-title', 'adminStudentsTitle');
   setText('admin-manage-title', 'adminManageTitle');
@@ -4276,6 +4687,8 @@ function applyAdminLang(){
 
   const clearGradeBtn = document.querySelector('#admin-tab-upload button[onclick="adminClearGrade()"]');
   if(clearGradeBtn) clearGradeBtn.textContent = t('adminClearGrade');
+  const clearSecBtn = document.getElementById('admin-clear-section-btn');
+  if(clearSecBtn) clearSecBtn.textContent = t('adminClearSection');
 
   const missingDesc = document.getElementById('admin-missing-desc');
   if(missingDesc && !missingDesc.dataset.dynamic){
@@ -4508,6 +4921,7 @@ function toggleLang(){
     } else if(screenId === 'screen-admin'){
       try{ renderAdminComplaints(); }catch(e){}
       try{ updateAdminComplaintsBadge(); }catch(e){}
+      try{ renderAdminMessages(); }catch(e){}
       if(document.getElementById('admin-tab-monitor')?.style.display !== 'none'){
         adminLoadMonitoring();
       } else if(Object.keys(adminStudentsCache||{}).length){
