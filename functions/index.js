@@ -203,3 +203,4 @@ exports.adminDeleteTeacher = region.https.onCall(async (data, context) => {
 });
 
 Object.assign(exports, require('./push-notifications'));
+Object.assign(exports, require('./upload-attachment'));

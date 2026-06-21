@@ -1,0 +1,14 @@
+[
+  {
+    "origin": [
+      "https://emadabuhoujaila.github.io",
+      "http://localhost",
+      "http://127.0.0.1",
+      "capacitor://localhost",
+      "http://localhost:8100"
+    ],
+    "method": ["GET", "PUT", "HEAD", "POST", "DELETE"],
+    "maxAgeSeconds": 3600,
+    "responseHeader": ["Content-Type", "Authorization", "Content-Length", "x-goog-resumable"]
+  }
+]

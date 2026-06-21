@@ -172,6 +172,10 @@ function studentLabel(msg) {
   return [name, cls].filter(Boolean).join(' — ');
 }
 
+function attachSuffix(msg) {
+  return msg?.attachment?.url ? ' 📎' : '';
+}
+
 exports.notifyParentOnTeacherMessage = region.database
   .ref('teacherData/{teacherKey}/messages/{msgId}')
   .onCreate(async (snap, ctx) => {
@@ -182,7 +186,7 @@ exports.notifyParentOnTeacherMessage = region.database
     const body = name
       ? `${name}: ${(msg.body || 'رسالة جديدة من المعلم').slice(0, 120)}`
       : (msg.body || 'رسالة جديدة من المعلم');
-    await notifyParents(msg.cls, msg.name, `${icon} رسالة من المعلم`, body, {
+    await notifyParents(msg.cls, msg.name, `${icon} رسالة من المعلم${attachSuffix(msg)}`, body, {
       type: 'teacher_message',
       teacherKey: ctx.params.teacherKey,
       cls: msg.cls || '',
@@ -220,7 +224,7 @@ exports.notifyTeacherOnParentMessage = region.database
     const body = name
       ? `${name}: ${(msg.body || 'رسالة من ولي أمر').slice(0, 120)}`
       : (msg.body || 'رسالة جديدة من ولي أمر');
-    await notifyTeacher(ctx.params.teacherKey, '💬 رسالة من ولي أمر', body, {
+    await notifyTeacher(ctx.params.teacherKey, '💬 رسالة من ولي أمر' + attachSuffix(msg), body, {
       type: 'parent_message',
       teacherKey: ctx.params.teacherKey,
       cls: msg.cls || '',
@@ -263,20 +267,77 @@ exports.notifyParentOnAdminReply = region.database
   .onCreate(async (snap, ctx) => {
     const msg = snap.val() || {};
     const mid = ctx.params.mid;
+    const kind = msg.type === 'admin_broadcast' ? '📢 تعميم من الإدارة' : '📩 رسالة من الإدارة';
     const name = studentLabel(msg);
     const body = name
-      ? `${name}: ${(msg.body || 'رد من إدارة المدرسة').slice(0, 120)}`
-      : (msg.body || 'رد من إدارة المدرسة');
+      ? `${name}: ${(msg.body || 'رسالة من إدارة المدرسة').slice(0, 120)}`
+      : (msg.body || 'رسالة من إدارة المدرسة');
     const path = `fcmTokens/parents/${mid}`;
     const tokens = await collectTokens(path);
     await sendToTokens(tokens, {
-      title: '📩 رد من الإدارة',
+      title: kind + attachSuffix(msg),
       body,
     }, {
-      type: 'admin_reply',
+      type: msg.type === 'admin_broadcast' ? 'admin_broadcast' : 'admin_direct',
       mid,
       cls: msg.cls || '',
       name: msg.studentName || msg.name || '',
       url: APP_URL,
     }, path);
+  });
+
+exports.notifyTeacherOnAdminMessage = region.database
+  .ref('teacherData/{teacherKey}/adminMessages/{msgId}')
+  .onCreate(async (snap, ctx) => {
+    const msg = snap.val() || {};
+    const body = (msg.body || 'رسالة جديدة من المسؤول').slice(0, 120);
+    await notifyTeacher(ctx.params.teacherKey, '🏫 رسالة من المسؤول' + attachSuffix(msg), body, {
+      type: 'admin_message',
+      teacherKey: ctx.params.teacherKey,
+      url: APP_URL,
+    });
+  });
+
+exports.notifyAdminOnParentInbox = region.database
+  .ref('adminInbox/{msgId}')
+  .onCreate(async (snap) => {
+    const msg = snap.val() || {};
+    if(msg.fromRole === 'teacher'){
+      const from = msg.fromName || msg.teacherName || 'معلم';
+      const body = `${from}: ${(msg.body || 'رسالة من معلم').slice(0, 120)}`;
+      await notifyAdmins('✉️ رسالة من معلم' + attachSuffix(msg), body, {
+        type: 'teacher_to_admin',
+        teacherKey: msg.teacherKey || '',
+        url: APP_URL,
+      });
+      return;
+    }
+    const name = studentLabel(msg);
+    const body = name
+      ? `${name}: ${(msg.body || 'رسالة من ولي أمر').slice(0, 120)}`
+      : (msg.body || 'رسالة جديدة من ولي أمر');
+    await notifyAdmins('✉️ رسالة من ولي أمر' + attachSuffix(msg), body, {
+      type: 'parent_to_admin',
+      mid: msg.mid || '',
+      cls: msg.cls || '',
+      name: msg.studentName || msg.name || '',
+      url: APP_URL,
+    });
+  });
+
+exports.notifyAdminOnParentComplaintLog = region.database
+  .ref('parentComplaintLog/{mid}/{complaintId}')
+  .onCreate(async (snap, ctx) => {
+    const c = snap.val() || {};
+    const name = studentLabel(c);
+    const body = name
+      ? `${name}: ${(c.body || 'شكوى جديدة').slice(0, 120)}`
+      : (c.body || 'شكوى جديدة من ولي أمر');
+    await notifyAdmins('📢 شكوى جديدة', body, {
+      type: 'parent_complaint',
+      mid: ctx.params.mid || c.mid || '',
+      complaintId: ctx.params.complaintId || snap.key,
+      teacherKey: c.teacherKey || '',
+      url: APP_URL,
+    });
   });

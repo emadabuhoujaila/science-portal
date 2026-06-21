@@ -12,6 +12,7 @@
     "deploy:rules": "firebase deploy --only database",
     "deploy:functions": "firebase deploy --only functions",
     "deploy:push": "firebase deploy --only functions,database",
+    "deploy:attachments": "firebase deploy --only storage,database,functions",
     "seed:fcm": "node scripts/seed-fcm-config.mjs",
     "cap:sync": "npx cap sync",
     "cap:sync:android": "npx cap sync android",
