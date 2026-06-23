@@ -3260,9 +3260,6 @@ function renderAdminInbox(){
       </div>
       <p class="admin-complaint-body">${escapeHtml(m.body||'')}</p>
       ${_attRender(m)}
-      ${m.fromRole==='parent'
-        ? waBtnForMessage(m, { cls: m.cls, sec: m.section, name: m.studentName || m.name, mid: m.mid })
-        : waBtnForMessage(m, { teacherKey: m.teacherKey, text: m.body })}
       <div class="admin-complaint-actions">
         <button type="button" class="btn-icon admin-complaint-btn reply" onclick="adminReplyToInbox('${m.id}')">💬 ${isEn?'Reply':'رد'}</button>
         ${window.MsgDelete?.adminBtn('inbox', m.id) || ''}
@@ -3289,11 +3286,6 @@ function renderAdminOutbox(){
       <div class="admin-complaint-meta"><span>📤 ${adminOutboxToLabel(m, isEn)}</span>${m.broadcastCount?`<span>👥 ${m.broadcastCount}</span>`:''}</div>
       <p class="admin-complaint-body">${escapeHtml(m.body||'')}</p>
       ${_attRender(m)}
-      ${m.toRole==='parent'
-        ? waBtnForMessage(m, { cls: m.cls, sec: m.section, name: m.studentName || m.toLabel, mid: m.mid })
-        : m.toRole==='teacher'
-          ? waBtnForMessage(m, { teacherKey: m.teacherKey, text: m.body })
-          : waBtnForMessage(m, { text: m.body })}
       <div class="admin-complaint-actions">
         ${window.MsgDelete?.adminBtn('outbox', m.id) || ''}
       </div>
@@ -4582,11 +4574,7 @@ function renderSavedMessages(){
   if(!visible.length){ wrap.innerHTML='<div class="empty-state"><div class="ico">📭</div><p>'+t('noMessages')+'</p></div>'; return; }
   const icons={praise:'🌟',warning:'⚠️',info:'📘'};
   const labels={praise:t('praiseMsg'),warning:t('warningMsg'),info:t('infoMsg')};
-  wrap.innerHTML=[...visible].reverse().map(m=>{
-    const stu = resolveStudentForWhatsApp(m.cls, m.name, m.mid, m.section);
-    const sec = m.section || stu?.section || '';
-    const waBtn = waBtnForMessage(m, { cls: m.cls, sec: sec, name: m.name, mid: m.mid || stu?.mid, text: m.body });
-    return `
+  wrap.innerHTML=[...visible].reverse().map(m=>`
     <div class="msg-card">
       <div class="msg-header">
         <span class="msg-type ${m.type}">${icons[m.type]} ${labels[m.type]} · ${m.name} (ش${m.cls})</span>
@@ -4594,9 +4582,8 @@ function renderSavedMessages(){
           <span class="msg-date">${m.date||m.ts||''}</span>
           ${m.id ? (window.MsgDelete?.teacherDualBtn('teacher_msg', m.id) || '') : ''}
         </span>
-      </div><p>${escapeHtml(m.body||'')}</p>${_attRender(m)}${waBtn}
-    </div>`;
-  }).join('');
+      </div><p>${escapeHtml(m.body||'')}</p>${_attRender(m)}
+    </div>`).join('');
 }
 
 // ══════════════════════════════════════════════════
@@ -7074,7 +7061,6 @@ function renderParentSchoolAdminMessages(cls, sName){
           </div>
           <p style="margin:0;font-size:13px;color:var(--grey-2);white-space:pre-line;line-height:1.7">${escapeHtml(m.body || '')}</p>
           ${_attRender(m)}
-          ${waBtnForMessage(m, { cls, name: sName, mid: window._currentParent?.mid, sec: window._currentParent?.section, text: m.body })}
         </div>`;
       }).join('')}
     </div>`;
@@ -7109,7 +7095,6 @@ function renderParentSchoolSentToAdmin(mid){
           </div>
           <p style="margin:0;font-size:13px;color:var(--grey-2);white-space:pre-line;line-height:1.7">${escapeHtml(m.body || '')}</p>
           ${_attRender(m)}
-          ${waBtnForMessage(m, { cls: pctx.cls, name: pctx.name, mid, text: m.body, useAdminProfile: true })}
         </div>`;
       }).join('')}
     </div>`;
@@ -7735,7 +7720,6 @@ async function renderParentInboxAll(cls, studentName, teachersList){
           </div>
           <p style="margin:4px 0 0;font-size:13px">${escapeHtml(m.body||'')}</p>
           ${_attRender(m)}
-          ${waBtnForMessage(m, { cls, name: sName, mid: window._currentParent?.mid, sec: window._currentParent?.section, text: m.body, teacherKey })}
         </div>`;
       }).join('')
     : `<div class="empty-state" style="padding:24px"><div class="ico">📭</div>
@@ -7790,7 +7774,6 @@ async function renderParentSentAll(cls, studentName, teachersList){
             </div>
           </div>
           <p style="margin:0;font-size:13px;color:var(--grey-2);white-space:pre-line">${escapeHtml(m.body||'')}</p>
-          ${waBtnForMessage(m, { cls, name: sName, teacherKey: m._teacherKey, text: m.body })}
         </div>`;
       }).join('')
     : `<div class="empty-state" style="padding:24px"><div class="ico">📤</div><p>${isEn?'No sent messages yet':'لا توجد رسائل مرسلة بعد'}</p></div>`;
@@ -7870,7 +7853,6 @@ async function loadSubjectTabContent(idx, cls, studentName, mid, teachersList){
               ${parentMsgDeleteBtn('received', tc.key, m, idx)}
             </div>
           </div><p style="margin:4px 0 0">${escapeHtml(m.body||'')}</p>${_attRender(m)}
-          ${waBtnForMessage(m, { cls, name: sName, mid, sec: section, text: m.body, teacherKey: tc.key })}
         </div>`;
       }).join('')
     : `<div class="empty-state" style="padding:16px"><div class="ico" style="font-size:24px">📭</div>
@@ -8033,7 +8015,6 @@ function renderSubjectSentLog(idx, teacherKey, cls, studentName){
         </div>
         <p style="margin:0;font-size:13px;color:var(--grey-2);white-space:pre-line">${escapeHtml(m.body||'')}</p>
         ${_attRender(m)}
-        ${waBtnForMessage(m, { cls, name: sName, teacherKey, text: m.body })}
       </div>`).join('')
     +'</div>';
 }
@@ -9417,7 +9398,6 @@ function renderParentSentLog(cls, name){
       + (tk ? parentMsgDeleteBtn('sent', tk, m, idx >= 0 ? idx : 'null') : '')
       + '</div></div>'
       + '<p style="font-size:13px;color:var(--grey-2);line-height:1.6;margin:0;white-space:pre-line">'+escapeHtml(m.body||'')+'</p>'
-      + waBtnForMessage(m, { cls, name, teacherKey: tk, text: m.body || '' })
       + '</div>';
   }).join('');
 
@@ -9477,8 +9457,6 @@ function renderParentInbox(){
     const subj = m.subjLabel || '';
     const unread = !isTeacherParentMsgRead(m);
     const safeId = escapeHtml(m.id || '');
-    const stu = resolveStudentForWhatsApp(m.cls, m.name, m.mid, m.section);
-    const waBtn = waBtnForMessage(m, { cls: m.cls, sec: m.section || stu?.section, name: m.name, mid: m.mid || stu?.mid, text: m.body });
     return `
     <div class="inbox-card ${unread?'unread':''}" onclick="markRead('${safeId}')">
       <div class="inbox-header">
@@ -9493,7 +9471,6 @@ function renderParentInbox(){
       </div>
       <p>${escapeHtml(m.body)}</p>
       ${_attRender(m)}
-      ${waBtn}
     </div>`;
   }).join('');
   updateInboxBadge();
@@ -9779,7 +9756,6 @@ function renderTeacherAdminMessages(){
           </div>
           <p style="margin:0;font-size:13px;color:var(--grey-2);white-space:pre-line;line-height:1.7">${escapeHtml(m.body||'')}</p>
           ${_attRender(m)}
-          ${waBtnForMessage(m, { text: m.body, useAdminProfile: true })}
         </div>`;
       }).join('')}
     </div>`;
@@ -9812,7 +9788,6 @@ function renderTeacherSentToAdmin(){
           </div>
           <p style="margin:0;font-size:13px;color:var(--grey-2);white-space:pre-line;line-height:1.7">${escapeHtml(m.body||'')}</p>
           ${_attRender(m)}
-          ${waBtnForMessage(m, { text: m.body, useAdminProfile: true })}
         </div>`).join('')}
     </div>`;
 }
