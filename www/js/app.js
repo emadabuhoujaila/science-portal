@@ -10155,6 +10155,7 @@ function renderAllTabs(){
 // ══════════════════════════════════════════════════
 let swRegistration = null;
 let deferredPrompt  = null;
+const SW_SCRIPT_URL = 'sw.js?v=9';
 
 // ─── SW Registration ───
 async function registerSW(){
@@ -10162,7 +10163,7 @@ async function registerSW(){
   // تجنّب SW على localhost — يسبب تعارضات أثناء التطوير
   if(location.hostname === 'localhost' || location.hostname === '127.0.0.1') return;
   try {
-    swRegistration = await navigator.serviceWorker.register('sw.js');
+    swRegistration = await navigator.serviceWorker.register(SW_SCRIPT_URL);
     navigator.serviceWorker.addEventListener('message', e => {
       if(e.data?.type === 'NOTIFICATION_CLICK') openInboxFromAlert();
     });
@@ -10178,7 +10179,7 @@ async function registerSW(){
         console.log('Periodic sync registered ✅');
       } catch(e){ console.log('Periodic sync not supported:', e.message); }
     }
-    console.log('SW ✅');
+    console.log('SW ✅', SW_SCRIPT_URL);
   } catch(e){ console.warn('SW:', e); }
 }
 if('serviceWorker' in navigator) window.addEventListener('load', registerSW);

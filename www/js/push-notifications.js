@@ -198,7 +198,7 @@
         if(typeof registerSW === 'function' && !window.swRegistration){
           await registerSW();
         }
-        const reg = window.swRegistration || await navigator.serviceWorker.register('sw.js');
+        const reg = window.swRegistration || await navigator.serviceWorker.register('sw.js?v=9');
         window.swRegistration = reg;
         await navigator.serviceWorker.ready;
 
