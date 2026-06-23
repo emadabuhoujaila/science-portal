@@ -892,7 +892,18 @@ function adminImportGrade(input, targetGrade){
       }
 
       if(typeof db!=='undefined'){
-        await saveStudentRosterToFirebase(byGradeSec);
+        try{
+          await saveStudentRosterToFirebase(byGradeSec);
+        }catch(err){
+          console.error('adminImportGrade', err);
+          const msg = err?.code === 'PERMISSION_DENIED' || /permission/i.test(String(err?.message||''))
+            ? (isEn ? 'Permission denied — login as school admin' : 'صلاحية مرفوضة — سجّل الدخول كمسؤول المدرسة')
+            : (err?.message || String(err));
+          if(statEl) statEl.textContent = '❌ ' + msg;
+          showToast('❌ ' + msg);
+          input.value = '';
+          return;
+        }
         const countAll = Object.values(adminStudentsCache[targetGrade]||{})
           .reduce((s,sec)=>s+Object.keys(sec).length,0);
         if(statEl) statEl.innerHTML=`<span style="color:var(--green-soft)">✅ ${countAll} ${isEn?'students':'طالب'}</span>`;
@@ -984,7 +995,18 @@ function adminImportStudents(input){
         : `⏳ حفظ ${total} طالب (${sheetCount} ورقة)...`;
 
       if(typeof db!=='undefined'){
-        await saveStudentRosterToFirebase(byGradeSec);
+        try{
+          await saveStudentRosterToFirebase(byGradeSec);
+        }catch(err){
+          console.error('adminImportStudents', err);
+          const msg = err?.code === 'PERMISSION_DENIED' || /permission/i.test(String(err?.message||''))
+            ? (isEn ? 'Permission denied — login as school admin' : 'صلاحية مرفوضة — سجّل الدخول كمسؤول المدرسة')
+            : (err?.message || String(err));
+          if(prog) prog.textContent = '❌ ' + msg;
+          showToast('❌ ' + msg);
+          input.value = '';
+          return;
+        }
         adminStudentsCache = {};
         await adminLoadStudents();
         refreshAdminSecFilter();
@@ -9834,7 +9856,14 @@ async function processGradesWorkbook(wb, opts){
     allSaves.push(...result.saves);
   }
 
-  await Promise.allSettled(allSaves);
+  const saveResults = await Promise.allSettled(allSaves);
+  const saveFails = saveResults.filter(r => r.status === 'rejected');
+  if(saveFails.length && !silent){
+    console.warn('[Import] save failures:', saveFails.map(r => r.reason));
+    showToast(isEn
+      ? `⚠️ ${saveFails.length} save error(s) — check Firebase permissions`
+      : `⚠️ فشل حفظ ${saveFails.length} سجل — تحقق من صلاحيات Firebase`);
+  }
   const unmatched = [...unmatchedMap.values()];
 
   if(imported > 0){
@@ -9887,16 +9916,25 @@ function importExcel(input){
     try{
       const wb = XLSX.read(new Uint8Array(e.target.result), { type:'array' });
       const ok = await processGradesWorkbook(wb);
-      if(ok && typeof db !== 'undefined'){
+      if(ok){
         const tKey = getTeacherKey();
         const ts = new Date().toISOString();
         TEACHER_SETTINGS.lastGradeSync = ts;
-        if(tKey) await db.ref('teacherData/'+tKey+'/settings/lastGradeSync').set(ts);
+        if(tKey && typeof db !== 'undefined'){
+          try{
+            await db.ref('teacherData/'+tKey+'/settings/lastGradeSync').set(ts);
+          }catch(syncErr){
+            console.warn('lastGradeSync', syncErr);
+          }
+        }
         populateSettingsPhase3();
       }
     } catch(err){
       console.error(err);
-      showToast('❌ '+(isEn?'File error: ':'خطأ: ')+err.message);
+      const msg = err?.code === 'PERMISSION_DENIED' || /permission/i.test(String(err?.message||''))
+        ? (isEn ? 'Permission denied — contact admin' : 'صلاحية مرفوضة — تواصل مع مسؤول المدرسة')
+        : (err?.message || String(err));
+      showToast('❌ '+(isEn?'File error: ':'خطأ: ')+msg);
     }
     input.value = '';
   };
