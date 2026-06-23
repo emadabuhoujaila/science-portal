@@ -289,8 +289,15 @@ async function persistStudentPhone(grade, sec, mid, phone){
   const norm = normalizeParentPhone(phone);
   if(!norm) return;
   mergeStudentPhoneInCache(grade, sec, mid, norm);
-  if(typeof db !== 'undefined'){
+  if(typeof db === 'undefined') return;
+  try{
     await db.ref('students/' + grade + '/' + sec + '/' + mid + '/parentPhone').set(norm);
+  }catch(e){
+    if(e?.code === 'PERMISSION_DENIED' || /permission/i.test(String(e?.message||''))){
+      console.warn('persistStudentPhone skipped (no write access)', grade, sec, mid);
+      return;
+    }
+    throw e;
   }
 }
 
@@ -359,7 +366,20 @@ function clearParentGradesPoll(){
 }
 
 window.TEACHER_GRADES = window.TEACHER_GRADES || {};
-const GRADE_WEEK_COUNT = 11;
+const GRADE_PERIOD_COUNT = 3;
+const GRADE_WEEK_COUNT = GRADE_PERIOD_COUNT;
+
+function inferGradePeriodCount(map){
+  if(map?.hwStart != null && map?.portalStart != null){
+    const n = map.portalStart - map.hwStart;
+    if(n >= 1 && n <= 12) return n;
+  }
+  return GRADE_PERIOD_COUNT;
+}
+
+function getGradePeriodCount(){
+  return window._gradePeriodCount || GRADE_PERIOD_COUNT;
+}
 
 function mergeGradeScores(cls, student){
   if(!student || !window.TEACHER_GRADES) return student;
@@ -3661,17 +3681,18 @@ function renderGradesTableHead(){
   const thead = document.getElementById('grades-thead');
   if(!thead) return;
   const isEn = currentLang==='en';
-  const wk = n => isEn ? `W${n}` : `أ${n}`;
-  const weeks = n => Array.from({length:GRADE_WEEK_COUNT}, (_,i)=>`<th class="grp-${n}">${wk(i+1)}</th>`).join('');
+  const wk = n => isEn ? `M${n}` : `ش${n}`;
+  const periodCount = getGradePeriodCount();
+  const weeks = n => Array.from({length:periodCount}, (_,i)=>`<th class="grp-${n}">${wk(i+1)}</th>`).join('');
   thead.innerHTML = `<tr>
     <th rowspan="2">#</th>
     <th rowspan="2" class="name-cell">${isEn?'Name':'الاسم'}</th>
     <th rowspan="2">${isEn?'Diag.':'تشخيص'}</th>
     <th rowspan="2">${isEn?'F1':'ت1'}</th>
     <th rowspan="2">${isEn?'F2':'ت2'}</th>
-    <th colspan="${GRADE_WEEK_COUNT}" class="grp-hw">${isEn?'Homework':'الواجبات'}</th>
-    <th colspan="${GRADE_WEEK_COUNT}" class="grp-portal">${isEn?'Portal LMS':'بوابة LMS'}</th>
-    <th colspan="${GRADE_WEEK_COUNT}" class="grp-act">${isEn?'Participation':'المشاركة'}</th>
+    <th colspan="${periodCount}" class="grp-hw">${isEn?'Homework':'الواجبات'}</th>
+    <th colspan="${periodCount}" class="grp-portal">${isEn?'Portal LMS':'بوابة LMS'}</th>
+    <th colspan="${periodCount}" class="grp-act">${isEn?'Participation':'المشاركة'}</th>
     <th rowspan="2">LAB</th>
     <th rowspan="2">${isEn?'Total':'المحصلة'}</th>
     <th rowspan="2">${isEn?'Final':'نهائي'}</th>
@@ -3690,12 +3711,12 @@ function renderGradesTab(){
   const sec=document.getElementById('grades-sec')?.value||'';
   const isEn = currentLang==='en';
   const tbody = document.getElementById('grades-tbody');
-  const gradeCols = 5 + GRADE_WEEK_COUNT * 3 + 4;
+  const gradeCols = 5 + getGradePeriodCount() * 3 + 4;
   document.getElementById('grades-title').textContent = isEn
     ? `📝 Grades - Grade ${cls}${sec?' · Sec '+sec:''}`
     : `📝 درجات الصف ${cls}${sec?' · شعبة '+sec:''}`;
   const students = getImportedGradeStudents(cls, sec);
-  const weekCells = (arr)=> Array.from({length:GRADE_WEEK_COUNT}, (_,i)=>`<td>${formatWeekCell(arr?.[i])}</td>`).join('');
+  const weekCells = (arr)=> Array.from({length:getGradePeriodCount()}, (_,i)=>`<td>${formatWeekCell(arr?.[i])}</td>`).join('');
 
   if(!students.length){
     if(tbody) tbody.innerHTML = gradesUploadEmptyRow(gradeCols);
@@ -3722,8 +3743,8 @@ function renderGradesTab(){
 
   const avg = f=>( students.reduce((a,s)=>a+(s[f]||0),0)/students.length ).toFixed(1);
   const avgWeek = key=>{
-    const sums = Array(GRADE_WEEK_COUNT).fill(0);
-    const counts = Array(GRADE_WEEK_COUNT).fill(0);
+    const sums = Array(getGradePeriodCount()).fill(0);
+    const counts = Array(getGradePeriodCount()).fill(0);
     students.forEach(s=>{
       (s[key]||[]).forEach((v,i)=>{
         if(v != null && !isNaN(v)){ sums[i]+=v; counts[i]++; }
@@ -6071,9 +6092,10 @@ async function fetchTeacherGradeRecord(teacherKey, cls, section, mid, studentNam
 
 function buildParentWeeklyGradeTable(gd, isEn){
   if(!gd) return '';
-  const wk = n => isEn ? `W${n}` : `أ${n}`;
-  const weekHead = Array.from({length:GRADE_WEEK_COUNT}, (_,i)=>`<th>${wk(i+1)}</th>`).join('');
-  const weekCells = (arr)=> Array.from({length:GRADE_WEEK_COUNT}, (_,i)=>{
+  const wk = n => isEn ? `M${n}` : `ش${n}`;
+  const periodCount = getGradePeriodCount();
+  const weekHead = Array.from({length:periodCount}, (_,i)=>`<th>${wk(i+1)}</th>`).join('');
+  const weekCells = (arr)=> Array.from({length:periodCount}, (_,i)=>{
     const v = arr?.[i];
     if(v == null || v === '') return '<td>—</td>';
     const n = parseFloat(v);
@@ -6089,9 +6111,9 @@ function buildParentWeeklyGradeTable(gd, isEn){
           <th rowspan="2">${isEn?'Diag.':'تشخيص'}</th>
           <th rowspan="2">${isEn?'F1':'ت1'}</th>
           <th rowspan="2">${isEn?'F2':'ت2'}</th>
-          <th colspan="${GRADE_WEEK_COUNT}">${isEn?'Homework':'الواجبات'}</th>
-          <th colspan="${GRADE_WEEK_COUNT}">${isEn?'Portal LMS':'بوابة LMS'}</th>
-          <th colspan="${GRADE_WEEK_COUNT}">${isEn?'Participation':'المشاركة'}</th>
+          <th colspan="${periodCount}">${isEn?'Homework':'الواجبات'}</th>
+          <th colspan="${periodCount}">${isEn?'Portal LMS':'بوابة LMS'}</th>
+          <th colspan="${periodCount}">${isEn?'Participation':'المشاركة'}</th>
           <th rowspan="2">LAB</th>
           <th rowspan="2">${isEn?'Total':'المحصلة'}</th>
           <th rowspan="2">${isEn?'Final':'نهائي'}</th>
@@ -9632,11 +9654,12 @@ function buildGradeColumnMap(rows){
     if(map.total == null) map.total = 43;
     if(map.final == null) map.final = 44;
   }
-  for(let i=0; i<GRADE_WEEK_COUNT; i++){
+  for(let i=0; i<inferGradePeriodCount(map); i++){
     map.hwWeeks.push(map.hwStart + i);
     map.portalWeeks.push(map.portalStart + i);
     map.actWeeks.push(map.actStart + i);
   }
+  window._gradePeriodCount = inferGradePeriodCount(map);
   return map;
 }
 
@@ -9811,7 +9834,7 @@ async function processGradesWorkbook(wb, opts){
     allSaves.push(...result.saves);
   }
 
-  await Promise.all(allSaves);
+  await Promise.allSettled(allSaves);
   const unmatched = [...unmatchedMap.values()];
 
   if(imported > 0){
