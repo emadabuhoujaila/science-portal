@@ -37,7 +37,7 @@ window.__splashDeadline = Date.now() + 5000;
 </script>
 <script>
 (function(){
-  var key='portal-cache-reset-v64';
+  var key='portal-cache-reset-v65';
   if(localStorage.getItem(key)) return;
   localStorage.setItem(key,'1');
   var done=function(){ location.reload(); };
@@ -325,6 +325,7 @@ window.__splashDeadline = Date.now() + 5000;
   </div>
 
   <div class="main-content">
+    <div id="admin-wa-profile-host" class="card" style="margin-bottom:16px;padding:16px 18px;display:none"></div>
     <div class="admin-tabs-wrap" style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
       <button type="button" class="nav-tab admin-main-tab active" id="admin-tab-btn-upload" onclick="showAdminTab('upload',this)">📋 رفع قوائم الطلبة</button>
       <button type="button" class="nav-tab admin-main-tab" id="admin-tab-btn-monitor" onclick="showAdminTab('monitor',this)">📊 المتابعة</button>
@@ -1132,6 +1133,8 @@ window.__splashDeadline = Date.now() + 5000;
       <div id="settings-account-info" style="background:var(--teal-pale);border:1px solid var(--grey-5);border-radius:10px;padding:12px 14px;font-size:13px;line-height:1.8;color:var(--grey-1)"></div>
     </div>
 
+    <div id="settings-whatsapp-section" class="form-group" style="display:none;border-top:1.5px solid var(--grey-5);padding-top:14px;margin-top:4px"></div>
+
     <div id="settings-phase3-section" class="form-group" style="display:none;border-top:1.5px solid var(--grey-5);padding-top:14px;margin-top:4px">
       <label id="settings-phase3-lbl">💾 نسخ احتياطي وإشعارات</label>
       <p id="settings-grades-toolbar-hint" style="font-size:12px;color:var(--grey-3);margin:0 0 10px;line-height:1.65"></p>
@@ -1225,6 +1228,6 @@ window.__splashDeadline = Date.now() + 5000;
 <script src="js/attachments.js?v=7"></script>
 <script src="js/firebase-init.js?v=37"></script>
 <script src="js/msg-delete.js?v=5"></script>
-<script src="js/app.js?v=62"></script>
+<script src="js/app.js?v=63"></script>
 </body>
 </html>
