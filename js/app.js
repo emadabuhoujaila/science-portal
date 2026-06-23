@@ -177,8 +177,12 @@ function startSplashScreen(){
 // ══════════════════════════════════════════════════
 const STUDENTS = {}; // legacy alias — use getGradeStudents()
 
+function getStudentGradeData(cls){
+  return window.ADMIN_STUDENTS?.[cls] || adminStudentsCache?.[cls] || null;
+}
+
 function getGradeStudents(cls, section){
-  const gradeData = window.ADMIN_STUDENTS?.[cls] || adminStudentsCache?.[cls];
+  const gradeData = getStudentGradeData(cls);
   if(!gradeData) return [];
   if(section){
     const secData = gradeData[section];
@@ -204,7 +208,7 @@ function findStudentInGrade(cls, name, mid, section){
   const all = getGradeStudents(cls);
   const hit = match(all, section || '');
   if(hit) return hit;
-  const gradeData = window.ADMIN_STUDENTS?.[cls] || adminStudentsCache?.[cls];
+  const gradeData = getStudentGradeData(cls);
   if(!gradeData) return null;
   const secs = section ? [section] : Object.keys(gradeData);
   for(const sec of secs){
@@ -279,21 +283,49 @@ function resolveStudentForWhatsApp(grade, name, mid, section){
   return null;
 }
 
+window._parentPhoneByMid = window._parentPhoneByMid || {};
+
+function rebuildParentPhoneIndex(cache){
+  const index = {};
+  const root = cache || adminStudentsCache || window.ADMIN_STUDENTS || {};
+  Object.entries(root).forEach(([grade, secs])=>{
+    Object.entries(secs || {}).forEach(([sec, secData])=>{
+      if(!secData) return;
+      const walk = (midKey, row)=>{
+        if(!row || typeof row !== 'object') return;
+        const m = String(row.mid || midKey || '');
+        const ph = normalizeParentPhone(row.parentPhone || row.phone || '');
+        if(m && ph) index[m] = ph;
+      };
+      if(Array.isArray(secData)){
+        secData.forEach((row, i)=> walk(row?.mid || i, row));
+      }else{
+        Object.entries(secData).forEach(([key, row])=> walk(key, row));
+      }
+    });
+  });
+  window._parentPhoneByMid = index;
+  return index;
+}
+
 function getStudentParentPhone(cls, name, mid, section){
   const s = resolveStudentForWhatsApp(cls, name, mid, section);
   let phone = normalizeParentPhone(s?.parentPhone || s?.phone || '');
   if(phone) return phone;
+  if(mid && window._parentPhoneByMid[String(mid)]){
+    return window._parentPhoneByMid[String(mid)];
+  }
   if(mid && cls && section){
     const cached = adminFindStudentInCache(cls, section, mid);
     phone = normalizeParentPhone(cached?.parentPhone || '');
     if(phone) return phone;
   }
-  if(mid && adminStudentsCache){
-    for(const g of Object.keys(adminStudentsCache)){
-      if(cls && String(g) !== String(cls)) continue;
-      for(const sec of Object.keys(adminStudentsCache[g] || {})){
+  if(mid && cls){
+    const gradeData = getStudentGradeData(cls);
+    if(gradeData){
+      for(const sec of Object.keys(gradeData)){
         if(section && String(sec) !== String(section)) continue;
-        const secData = adminStudentsCache[g][sec];
+        const secData = gradeData[sec];
         if(!secData) continue;
         if(!Array.isArray(secData) && secData[mid]?.parentPhone){
           phone = normalizeParentPhone(secData[mid].parentPhone);
@@ -311,37 +343,50 @@ function getStudentParentPhone(cls, name, mid, section){
   return '';
 }
 
-async function resolveParentPhoneForWhatsApp(cls, name, mid, section){
+async function lookupParentPhoneForAdmin(cls, name, mid, section){
   let phone = getStudentParentPhone(cls, name, mid, section);
   if(phone || typeof db === 'undefined' || !mid) return phone;
   const grade = String(cls || '');
-  const sec = normalizeSectionCell(section || '1');
+  const secHint = normalizeSectionCell(section || '');
+  const m = String(mid);
   try{
-    if(grade && sec){
-      const snap = await db.ref('students/' + grade + '/' + sec + '/' + mid + '/parentPhone').once('value');
-      phone = normalizeParentPhone(snap.val() || '');
+    if(grade && secHint){
+      const direct = await db.ref('students/' + grade + '/' + secHint + '/' + m + '/parentPhone').once('value');
+      phone = normalizeParentPhone(direct.val() || '');
       if(phone){
-        mergeStudentPhoneInCache(grade, sec, mid, phone);
+        mergeStudentPhoneInCache(grade, secHint, m, phone);
+        window._parentPhoneByMid[m] = phone;
         return phone;
       }
     }
     if(grade){
       const gradeSnap = await db.ref('students/' + grade).once('value');
       if(gradeSnap.exists()){
-        gradeSnap.forEach(secChild => {
+        gradeSnap.forEach(secChild=>{
           if(phone) return;
           const secKey = secChild.key;
-          const val = secChild.child(String(mid)).child('parentPhone').val();
-          const norm = normalizeParentPhone(val || '');
-          if(norm){
-            phone = norm;
-            mergeStudentPhoneInCache(grade, secKey, mid, norm);
-          }
+          secChild.forEach(stChild=>{
+            if(phone) return;
+            const val = stChild.val() || {};
+            const cmid = String(val.mid || stChild.key);
+            if(cmid !== m) return;
+            const norm = normalizeParentPhone(val.parentPhone || stChild.child('parentPhone').val() || '');
+            if(norm){
+              phone = norm;
+              mergeStudentPhoneInCache(grade, secKey, m, norm);
+              window._parentPhoneByMid[m] = norm;
+            }
+          });
         });
       }
     }
+    if(!phone){
+      const regSnap = await db.ref('registeredParents/' + m + '/parentPhone').once('value');
+      phone = normalizeParentPhone(regSnap.val() || '');
+      if(phone) window._parentPhoneByMid[m] = phone;
+    }
   }catch(e){
-    console.warn('resolveParentPhoneForWhatsApp', e);
+    console.warn('lookupParentPhoneForAdmin', e);
   }
   return phone || '';
 }
@@ -544,6 +589,9 @@ function openWhatsAppForSend(target){
   let phone = target.phone || '';
   if(!phone && target.teacherKey) phone = getTeacherWhatsAppPhone(target.teacherKey);
   if(!phone && target.useAdminProfile) phone = window._adminWaProfile?.phone || '';
+  if(!phone && target.mid && window._parentPhoneByMid[String(target.mid)]){
+    phone = window._parentPhoneByMid[String(target.mid)];
+  }
   if(!phone && (target.cls || target.name || target.mid)){
     phone = getStudentParentPhone(target.cls, target.name, target.mid, target.sec || target.section);
   }
@@ -1009,6 +1057,7 @@ async function adminLoadStudents(){
       const snap = await db.ref('students').once('value');
       if(snap.exists()) adminStudentsCache = snap.val();
       window.ADMIN_STUDENTS = adminStudentsCache;
+      rebuildParentPhoneIndex(adminStudentsCache);
     }catch(e){ console.warn('adminLoadStudents error:',e); }
   }
   if(prog) prog.textContent='';
@@ -3507,9 +3556,10 @@ async function adminSendMessage(viaWhatsApp){
       if(attachment) payload.attachment = attachment;
       await outRef.set(payload);
       await db.ref('parentAdminInbox/'+mid).push({ mid:String(mid), studentName, cls:grade, section, body:msgBody, ts, date:dateStr, type:'admin_direct', outboxId:outId, fromAdmin:true, ...(attachment?{attachment}: {}) });
-      let parentPhone = getStudentParentPhone(grade, studentName, mid, section);
-      if(!parentPhone) parentPhone = await resolveParentPhoneForWhatsApp(grade, studentName, mid, section);
-      waTarget = { cls: grade, sec: section, name: studentName, mid: String(mid), text: msgBody, phone: parentPhone };
+      const parentPhone = viaWhatsApp
+        ? await lookupParentPhoneForAdmin(grade, studentName, mid, section)
+        : getStudentParentPhone(grade, studentName, mid, section);
+      waTarget = { cls: grade, sec: section, name: studentName, mid: String(mid), text: msgBody, phone: parentPhone || '' };
       showToast(isEn?'✅ Message sent to parent':'✅ تم إرسال الرسالة لولي الأمر');
     } else if(target==='broadcast'){
       if(!confirm(isEn?'Send to ALL registered parents?':'إرسال لجميع أولياء الأمور المسجّلين؟')) throw new Error('cancelled');
