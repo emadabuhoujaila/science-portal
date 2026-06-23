@@ -245,6 +245,69 @@ function enrichParentSession(cls, name, mid, section){
   };
 }
 
+function normalizeParentPhone(raw){
+  let p = String(raw || '').trim().replace(/[\s\-().]/g, '');
+  if(!p) return '';
+  if(p.startsWith('00')) p = p.slice(2);
+  if(p.startsWith('+')) p = p.slice(1);
+  if(/^0[5-9]\d{8}$/.test(p)) p = '971' + p.slice(1);
+  if(/^[5-9]\d{8}$/.test(p)) p = '971' + p;
+  return /^\d{9,15}$/.test(p) ? p : '';
+}
+
+function getStudentParentPhone(cls, name, mid, section){
+  const s = findStudentInGrade(cls, name, mid, section);
+  return normalizeParentPhone(s?.parentPhone || s?.phone || '');
+}
+
+function buildWhatsAppUrl(phone, text){
+  const p = normalizeParentPhone(phone);
+  if(!p) return text ? 'https://wa.me/?text=' + encodeURIComponent(text) : null;
+  const base = 'https://wa.me/' + p;
+  return text ? base + '?text=' + encodeURIComponent(text) : base;
+}
+
+function openWhatsAppToParent(cls, sec, name, mid, text){
+  const phone = getStudentParentPhone(cls, name, mid, sec);
+  const url = buildWhatsAppUrl(phone, text);
+  if(!url){
+    showToast(currentLang === 'en' ? '⚠️ No parent phone on file' : '⚠️ لا يوجد رقم هاتف مسجّل لولي الأمر');
+    return;
+  }
+  window.open(url, '_blank');
+}
+
+function mergeStudentPhoneInCache(grade, sec, mid, phone){
+  const norm = normalizeParentPhone(phone);
+  if(!norm) return;
+  const g = String(grade), s = String(sec), m = String(mid);
+  if(adminStudentsCache?.[g]?.[s]?.[m]) adminStudentsCache[g][s][m].parentPhone = norm;
+  if(window.ADMIN_STUDENTS?.[g]?.[s]?.[m]) window.ADMIN_STUDENTS[g][s][m].parentPhone = norm;
+}
+
+async function persistStudentPhone(grade, sec, mid, phone){
+  const norm = normalizeParentPhone(phone);
+  if(!norm) return;
+  mergeStudentPhoneInCache(grade, sec, mid, norm);
+  if(typeof db !== 'undefined'){
+    await db.ref('students/' + grade + '/' + sec + '/' + mid + '/parentPhone').set(norm);
+  }
+}
+
+window.__waPending = window.__waPending || {};
+function waParentBtnHtml(cls, sec, name, mid, text){
+  if(!getStudentParentPhone(cls, name, mid, sec)) return '';
+  const id = 'wa_' + Math.random().toString(36).slice(2, 11);
+  window.__waPending[id] = { cls, sec: sec || '', name, mid: mid || '', text: text || '' };
+  const lbl = currentLang === 'en' ? '📱 Send via WhatsApp' : '📱 إرسال عبر واتساب';
+  return '<button type="button" class="action-btn wa" style="font-size:11px;padding:4px 8px;margin-top:4px"'
+    + ' onclick="event.stopPropagation();openWhatsAppPending(\'' + id + '\')">' + lbl + '</button>';
+}
+function openWhatsAppPending(id){
+  const p = window.__waPending?.[id];
+  if(p) openWhatsAppToParent(p.cls, p.sec, p.name, p.mid, p.text);
+}
+
 function makeParentSessionKey(cls, section, name){
   const normalize = v => String(v||'').trim().toLowerCase().replace(/\s+/g, ' ');
   return [String(cls||'').trim(), String(section||'').trim(), normalize(name)]
@@ -521,7 +584,7 @@ function adminRenderStudents(){
   if(countEl) countEl.textContent = `(${rows.length} ${isEn?'students':'طالب'})`;
 
   if(!rows.length){
-    tbody.innerHTML = `<tr><td colspan="7" class="empty-state"><div class="ico">👥</div><p>${isEn?'No students yet — upload Excel file':'لا يوجد طلاب بعد — ارفع ملف Excel'}</p></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" class="empty-state"><div class="ico">👥</div><p>${isEn?'No students yet — upload Excel file':'لا يوجد طلاب بعد — ارفع ملف Excel'}</p></td></tr>`;
     return;
   }
 
@@ -536,6 +599,7 @@ function adminRenderStudents(){
     <td style="font-family:monospace;font-size:12px">${escapeHtml(mid||'—')}</td>
     <td style="text-align:right;font-weight:500">${escapeHtml(s.name||'—')}</td>
     <td style="text-align:left;color:var(--grey-3)">${escapeHtml(s.nameEn||'—')}</td>
+    <td style="font-family:monospace;font-size:11px;direction:ltr">${escapeHtml(normalizeParentPhone(s.parentPhone)||'—')}</td>
     <td style="white-space:nowrap">
       <select class="admin-row-xfer-sec" style="padding:4px 6px;border:1px solid var(--grey-5);border-radius:6px;font-size:11px;margin-left:4px;max-width:72px">
         <option value="">${isEn?'Sec':'ش'}</option>${secOptions}
@@ -1076,6 +1140,7 @@ function buildStudentRosterColumnMap(headerRow){
   const h = (headerRow||[]).map(c=>String(c||'').trim());
   const fi = (...kw)=> h.findIndex(x=> kw.some(k=> x === k || x.includes(k)));
   const serialIdx = h.findIndex(x=> x === 'م' || x.toLowerCase() === 'm');
+  const phoneIdx = fi('هاتف','phone','جوال','mobile','ولي');
   return {
     serial: serialIdx >= 0 ? serialIdx : 0,
     grade: fi('الصف','grade') >= 0 ? fi('الصف','grade') : 1,
@@ -1083,7 +1148,16 @@ function buildStudentRosterColumnMap(headerRow){
     mid: fi('رقم','طالب','وزاري','mid','ID') >= 0 ? fi('رقم','طالب','وزاري','mid','ID') : 3,
     nameAr: fi('عرب','بالعرب') >= 0 ? fi('عرب','بالعرب') : 4,
     nameEn: fi('إنج','انجل','English','أنكل') >= 0 ? fi('إنج','انجل','English','أنكل') : 5,
+    phone: phoneIdx >= 0 ? phoneIdx : (h.some(x=>x.includes('هاتف')) ? 6 : null),
   };
+}
+
+function isRosterDataRowSkipped(row, map){
+  const nameAr = String(row[map.nameAr] ?? '').trim();
+  const mid = String(row[map.mid] ?? '').trim().replace(/\s/g, '');
+  if(!nameAr || /اسم الطالب/i.test(nameAr)) return true;
+  if(!mid || !/^\d+$/.test(mid)) return true;
+  return false;
 }
 
 function parseSheetNameGradeSection(name){
@@ -1100,16 +1174,17 @@ function parseStudentRosterFromSheet(rows, sheetName){
   const out = [];
   for(let i=headerRowIdx+1; i<rows.length; i++){
     const row = rows[i]||[];
-    const nameAr = String(row[map.nameAr]??'').trim();
-    if(!nameAr || nameAr === 'اسم الطالب بالعربية') continue;
+    if(isRosterDataRowSkipped(row, map)) continue;
     let grade = normalizeGradeCell(row[map.grade]);
     let section = normalizeSectionCell(row[map.section]);
     if(!grade && sheetHint) grade = sheetHint.grade;
     if(!section && sheetHint) section = sheetHint.section;
     if(!grade || !section) continue;
     const mid = String(row[map.mid]??'').trim().replace(/\s/g,'');
+    const nameAr = String(row[map.nameAr]??'').trim();
     const nameEn = String(row[map.nameEn]??'').trim();
-    out.push({ grade, section, mid, name: nameAr, nameEn });
+    const parentPhone = map.phone != null ? String(row[map.phone] ?? '').trim() : '';
+    out.push({ grade, section, mid, name: nameAr, nameEn, parentPhone });
   }
   return out;
 }
@@ -1126,7 +1201,14 @@ function parseStudentWorkbook(wb, gradeFilter){
       if(!byGradeSec[s.grade]) byGradeSec[s.grade] = {};
       if(!byGradeSec[s.grade][s.section]) byGradeSec[s.grade][s.section] = {};
       const key = s.mid || ('s'+total);
-      byGradeSec[s.grade][s.section][key] = { mid: s.mid, name: s.name, nameEn: s.nameEn };
+      const rec = { mid: s.mid, name: s.name, nameEn: s.nameEn };
+      const ph = normalizeParentPhone(s.parentPhone);
+      if(ph) rec.parentPhone = ph;
+      else {
+        const prev = adminStudentsCache?.[s.grade]?.[s.section]?.[key]?.parentPhone;
+        if(prev) rec.parentPhone = prev;
+      }
+      byGradeSec[s.grade][s.section][key] = rec;
       total++;
     });
   });
@@ -1146,6 +1228,7 @@ async function saveStudentRosterToFirebase(byGradeSec){
     if(!adminStudentsCache) adminStudentsCache = {};
     adminStudentsCache[g] = { ...(adminStudentsCache[g]||{}), ...secs };
   });
+  window.ADMIN_STUDENTS = { ...(window.ADMIN_STUDENTS || {}), ...adminStudentsCache };
 }
 
 function buildRegGrids(){
@@ -3728,12 +3811,13 @@ function renderLinksTab(){
   document.getElementById('links-tbody').innerHTML=((getFilteredStudents()[cls])||[]).filter(s=>!sec||s.section===sec).map((s,i)=>{
     const pin = s.mid;
     const displayName = displayStudentName(s, cls, s.section, s.mid);
+    const secArg = s.section || '';
     return `<tr>
       <td>${i+1}</td>
       <td style="text-align:${isEn?'left':'right'};font-weight:500">${displayName}</td>
       <td><code style="font-size:12px;color:var(--teal-dark)">${pin}</code></td>
       <td>
-        <button class="action-btn wa" onclick="sendWA('${cls}','${s.name}','${pin}')">${isEn?"📱 WhatsApp":"📱 واتساب"}</button>
+        <button class="action-btn wa" onclick="sendWA('${cls}','${s.name}','${pin}','${secArg}')">${isEn?"📱 WhatsApp":"📱 واتساب"}</button>
         <button class="action-btn copy" onclick="copyWAMsg('${cls}','${s.name}','${pin}')">${isEn?"📋 Copy":"📋 نسخ"}</button>
       </td>
     </tr>`;
@@ -3743,8 +3827,10 @@ function buildWAMsg(cls, name, pin){
   const url = APP.siteUrl;
   return `السلام عليكم ولي أمر الطالب ${name} 👋\n\nيمكنكم الاطلاع على التقرير الأكاديمي لابنكم عبر الرابط:\n${url}\n\nطريقة الدخول:\n1️⃣ اختر (ولي الأمر)\n2️⃣ اختر الصف والشعبة\n3️⃣ اختر اسم ابنك\n4️⃣ أول مرة: الرقم الوزاري ${pin} ثم اختيار رمز سري\n5️⃣ بعد ذلك: الرمز السري فقط\n\n— بوابة المتابعة`;
 }
-function sendWA(cls,name,pin){
-  window.open('https://wa.me/?text='+encodeURIComponent(buildWAMsg(cls,name,pin)),'_blank');
+function sendWA(cls,name,pin,sec){
+  const phone = getStudentParentPhone(cls, name, pin, sec);
+  const url = buildWhatsAppUrl(phone, buildWAMsg(cls, name, pin));
+  if(url) window.open(url, '_blank');
 }
 function copyWAMsg(cls,name,pin){
   navigator.clipboard.writeText(buildWAMsg(cls,name,pin)).then(()=>showToast('✅ تم نسخ الرسالة'));
@@ -3913,7 +3999,11 @@ function renderSavedMessages(){
   if(!visible.length){ wrap.innerHTML='<div class="empty-state"><div class="ico">📭</div><p>'+t('noMessages')+'</p></div>'; return; }
   const icons={praise:'🌟',warning:'⚠️',info:'📘'};
   const labels={praise:t('praiseMsg'),warning:t('warningMsg'),info:t('infoMsg')};
-  wrap.innerHTML=[...visible].reverse().map(m=>`
+  wrap.innerHTML=[...visible].reverse().map(m=>{
+    const stu = findStudentInGrade(m.cls, m.name, m.mid);
+    const sec = stu?.section || m.section || '';
+    const waBtn = waParentBtnHtml(m.cls, sec, m.name, stu?.mid || m.mid, m.body || '');
+    return `
     <div class="msg-card">
       <div class="msg-header">
         <span class="msg-type ${m.type}">${icons[m.type]} ${labels[m.type]} · ${m.name} (ش${m.cls})</span>
@@ -3921,8 +4011,9 @@ function renderSavedMessages(){
           <span class="msg-date">${m.date||m.ts||''}</span>
           ${m.id ? (window.MsgDelete?.teacherDualBtn('teacher_msg', m.id) || '') : ''}
         </span>
-      </div><p>${escapeHtml(m.body||'')}</p>${_attRender(m)}
-    </div>`).join('');
+      </div><p>${escapeHtml(m.body||'')}</p>${_attRender(m)}${waBtn}
+    </div>`;
+  }).join('');
 }
 
 // ══════════════════════════════════════════════════
@@ -4281,6 +4372,7 @@ const TRANSLATIONS = {
     adminThMid: 'الرقم الوزاري',
     adminThName: 'الاسم بالعربية',
     adminThEn: 'الاسم بالإنجليزية',
+    adminThPhone: 'هاتف ولي الأمر',
     adminUploadFull: '📥 رفع ملف شامل (كل الصفوف)',
     adminClearAll: '🗑️ مسح كل الطلاب',
     adminClearGrade: '🗑️ مسح صف محدد',
@@ -4652,6 +4744,7 @@ const TRANSLATIONS = {
     adminThMid: 'Ministry ID',
     adminThName: 'Arabic Name',
     adminThEn: 'English Name',
+    adminThPhone: 'Parent Phone',
     adminUploadFull: '📥 Upload Full File (All Grades)',
     adminClearAll: '🗑️ Clear All Students',
     adminClearGrade: '🗑️ Clear Selected Grade',
@@ -5331,6 +5424,7 @@ function applyAdminLang(){
   setText('admin-th-mid', 'adminThMid');
   setText('admin-th-name', 'adminThName');
   setText('admin-th-en', 'adminThEn');
+  setText('admin-th-phone', 'adminThPhone');
   setText('admin-th-p-student', 'adminThPStudent');
   setText('admin-th-p-mid', 'adminThMid');
   setText('admin-th-p-grade', 'adminThGrade');
@@ -7928,6 +8022,9 @@ function renderBvLog(){
     const rows = studentLogs.map((e, rowIdx) => {
       const vObj = VIOLATIONS.find(v => v.id === e.violationId);
       const entryId = e.id || '';
+      const stu = findStudentInGrade(eCls, eName);
+      const waText = buildBehaviorMsg(eName, vObj?.label || e.violationLabel, e.academic, e.conduct, '', e.date || '');
+      const waBtn = waParentBtnHtml(eCls, stu?.section, eName, stu?.mid, waText);
       return `<tr>
         <td style="font-size:11px;white-space:nowrap;padding-right:28px">${e.date||''}</td>
         <td><span class="badge badge-teal">${e.cls}</span></td>
@@ -7936,8 +8033,9 @@ function renderBvLog(){
         <td style="font-size:12px">${vObj ? vObj.icon+' '+vObj.label : '—'}</td>
         <td style="font-size:12px;color:var(--grey-3)">${e.academic||'—'}</td>
         <td style="font-size:12px;color:var(--grey-3)">${e.conduct||'—'}</td>
-        <td style="padding:4px 8px">
-          <button class="action-btn danger bv-row-delete-btn" style="padding:3px 8px;font-size:11px"
+        <td style="padding:4px 8px;white-space:nowrap">
+          ${waBtn}
+          <button class="action-btn danger bv-row-delete-btn" style="padding:3px 8px;font-size:11px;margin-top:4px"
             data-id="${entryId}" data-cls="${eCls}" data-name="${eName}" data-idx="${rowIdx}"
             title="${currentLang==='en'?'Delete':'حذف'}">🗑️</button>
         </td>
@@ -7959,6 +8057,7 @@ function renderBvLog(){
     </tr>`;
     return headerRow + rows.join('');
   }).join('');
+  bindDeleteBtns();
 }
 
 function exportBehaviorExcel(){
@@ -8766,6 +8865,7 @@ function renderParentInbox(){
     const subj = m.subjLabel || '';
     const unread = !isTeacherParentMsgRead(m);
     const safeId = escapeHtml(m.id || '');
+    const waBtn = waParentBtnHtml(m.cls, m.section, m.name, m.mid, m.body || '');
     return `
     <div class="inbox-card ${unread?'unread':''}" onclick="markRead('${safeId}')">
       <div class="inbox-header">
@@ -8780,6 +8880,7 @@ function renderParentInbox(){
       </div>
       <p>${escapeHtml(m.body)}</p>
       ${_attRender(m)}
+      ${waBtn}
     </div>`;
   }).join('');
   updateInboxBadge();
@@ -9492,6 +9593,7 @@ function buildGradeColumnMap(rows){
     if((h.includes('رقم') && (h.includes('طالب') || h.includes('وزاري'))) && map.mid == null) map.mid = c;
     if(h.includes('عرب') && map.nameAr == null) map.nameAr = c;
     if((h.includes('إنج') || h.includes('انجل') || h.includes('English')) && map.nameEn == null) map.nameEn = c;
+    if((h.includes('هاتف') || h.includes('جوال') || /phone/i.test(h)) && map.phone == null) map.phone = c;
     if(h.includes('تشخيص') && map.diagnostic == null) map.diagnostic = c;
     if(h.includes('التكويني') && h.includes('أول') && map.t1 == null) map.t1 = c;
     if(h.includes('التكويني') && h.includes('ثان') && map.t2 == null) map.t2 = c;
@@ -9507,15 +9609,29 @@ function buildGradeColumnMap(rows){
   if(map.grade == null) map.grade = 1;
   if(map.section == null) map.section = 2;
   if(map.nameAr == null) map.nameAr = 4;
-  if(map.diagnostic == null) map.diagnostic = 6;
-  if(map.t1 == null) map.t1 = 7;
-  if(map.t2 == null) map.t2 = 8;
-  if(map.hwStart == null) map.hwStart = 9;
-  if(map.portalStart == null) map.portalStart = 20;
-  if(map.actStart == null) map.actStart = 31;
-  if(map.lab == null) map.lab = 42;
-  if(map.total == null) map.total = 43;
-  if(map.final == null) map.final = 44;
+  const hasPhoneCol = map.phone != null || combined.some(h => h.includes('هاتف') || /phone/i.test(h));
+  if(hasPhoneCol){
+    if(map.phone == null) map.phone = 6;
+    if(map.diagnostic == null) map.diagnostic = 7;
+    if(map.t1 == null) map.t1 = 8;
+    if(map.t2 == null) map.t2 = 9;
+    if(map.hwStart == null) map.hwStart = 10;
+    if(map.portalStart == null) map.portalStart = 13;
+    if(map.actStart == null) map.actStart = 16;
+    if(map.lab == null) map.lab = 19;
+    if(map.total == null) map.total = 20;
+    if(map.final == null) map.final = 21;
+  } else {
+    if(map.diagnostic == null) map.diagnostic = 6;
+    if(map.t1 == null) map.t1 = 7;
+    if(map.t2 == null) map.t2 = 8;
+    if(map.hwStart == null) map.hwStart = 9;
+    if(map.portalStart == null) map.portalStart = 20;
+    if(map.actStart == null) map.actStart = 31;
+    if(map.lab == null) map.lab = 42;
+    if(map.total == null) map.total = 43;
+    if(map.final == null) map.final = 44;
+  }
   for(let i=0; i<GRADE_WEEK_COUNT; i++){
     map.hwWeeks.push(map.hwStart + i);
     map.portalWeeks.push(map.portalStart + i);
@@ -9606,7 +9722,8 @@ function parseGradeRow(row, map, sheetHint){
     updatedAt: new Date().toISOString(),
   };
 
-  return { hit, gradeObj };
+  const parentPhone = map.phone != null ? String(row[map.phone] ?? '').trim() : '';
+  return { hit, gradeObj, parentPhone };
 }
 
 function importGradeSheet(ws, sheetName, tKey, scope){
@@ -9637,13 +9754,14 @@ function importGradeSheet(ws, sheetName, tKey, scope){
     }
     if(parsed.error) continue;
 
-    const { hit, gradeObj } = parsed;
+    const { hit, gradeObj, parentPhone } = parsed;
     const g = hit.grade;
     const sec = normalizeSectionCell(hit.student.section || sheetHint?.section);
 
     if(scope && !isTeacherScopeMatch(scope, g, sec)) continue;
 
     saves.push(persistGradeRecord(tKey, g, sec, hit.student.mid, gradeObj));
+    if(parentPhone) saves.push(persistStudentPhone(g, sec, hit.student.mid, parentPhone));
     imported++;
   }
 
