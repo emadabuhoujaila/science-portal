@@ -37,7 +37,7 @@ window.__splashDeadline = Date.now() + 5000;
 </script>
 <script>
 (function(){
-  var key='portal-cache-reset-v58';
+  var key='portal-cache-reset-v59';
   if(localStorage.getItem(key)) return;
   localStorage.setItem(key,'1');
   var done=function(){ location.reload(); };
@@ -512,11 +512,12 @@ window.__splashDeadline = Date.now() + 5000;
               <th id="admin-th-mid">الرقم الوزاري</th>
               <th id="admin-th-name">الاسم بالعربية</th>
               <th id="admin-th-en">الاسم بالإنجليزية</th>
+              <th id="admin-th-phone">هاتف ولي الأمر</th>
               <th id="admin-th-action">إجراء</th>
             </tr>
           </thead>
           <tbody id="admin-students-tbody">
-            <tr><td colspan="7" class="empty-state"><div class="ico">👥</div><p id="admin-empty-txt">لا يوجد طلاب بعد — ارفع ملف Excel</p></td></tr>
+            <tr><td colspan="8" class="empty-state"><div class="ico">👥</div><p id="admin-empty-txt">لا يوجد طلاب بعد — ارفع ملف Excel</p></td></tr>
           </tbody>
         </table>
       </div>
@@ -1224,6 +1225,6 @@ window.__splashDeadline = Date.now() + 5000;
 <script src="js/attachments.js?v=7"></script>
 <script src="js/firebase-init.js?v=37"></script>
 <script src="js/msg-delete.js?v=5"></script>
-<script src="js/app.js?v=56"></script>
+<script src="js/app.js?v=57"></script>
 </body>
 </html>
