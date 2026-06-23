@@ -8,6 +8,22 @@
       ".write": "auth != null && (root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin')"
     },
 
+    "adminWhatsApp": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid",
+        "phone": {
+          ".validate": "newData.isString() && newData.val().length <= 20"
+        },
+        "optIn": {
+          ".validate": "newData.isBoolean()"
+        },
+        "ts": {
+          ".validate": "newData.isString()"
+        }
+      }
+    },
+
     "students": {
       ".read": "auth != null && (root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).exists())",
       ".write": "auth != null && (root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin')",
@@ -40,7 +56,15 @@
       ".read": "auth != null && (root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin')",
       "$key": {
         ".read": "auth != null && (root.child('teacherLookup').child(auth.uid).child('key').val() === $key || root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin')",
-        ".write": "auth != null && ((!data.exists() && newData.child('uid').val() === auth.uid && root.child('teacherAllowlist').child($key).exists() && auth.token.email != null && newData.child('email').val().toLowerCase() === auth.token.email.toLowerCase()) || root.child('teacherLookup').child(auth.uid).child('key').val() === $key || root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin')"
+        ".write": "auth != null && ((!data.exists() && newData.child('uid').val() === auth.uid && root.child('teacherAllowlist').child($key).exists() && auth.token.email != null && newData.child('email').val().toLowerCase() === auth.token.email.toLowerCase()) || root.child('teacherLookup').child(auth.uid).child('key').val() === $key || root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin')",
+        "whatsappPhone": {
+          ".write": "auth != null && (root.child('teacherLookup').child(auth.uid).child('key').val() === $key || root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin')",
+          ".validate": "newData.isString() && newData.val().length <= 20"
+        },
+        "waOptIn": {
+          ".write": "auth != null && (root.child('teacherLookup').child(auth.uid).child('key').val() === $key || root.child('admins').child(auth.uid).val() === true || root.child('teacherLookup').child(auth.uid).child('role').val() === 'admin')",
+          ".validate": "newData.isBoolean()"
+        }
       }
     },
 
