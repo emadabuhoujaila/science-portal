@@ -260,6 +260,25 @@ tbody td{padding:10px 12px;text-align:center;color:var(--grey-2)}
 .action-btn{padding:5px 11px;border-radius:6px;border:none;cursor:pointer;font-family:inherit;font-size:12px;font-weight:500;transition:all .2s;margin:2px}
 .action-btn.copy{background:var(--grey-5);color:var(--grey-2)}.action-btn.copy:hover{background:var(--grey-4)}
 .action-btn.wa{background:#dcfce7;color:#166534}.action-btn.wa:hover{background:#bbf7d0}
+.compose-send-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:8px}
+.compose-send-row .btn-primary,.compose-send-row .compose-wa-btn{flex:1;min-width:140px}
+.compose-wa-btn{font-size:13px!important;padding:10px 16px!important;font-weight:600!important}
+.wa-setup-banner{background:linear-gradient(135deg,#ecfdf5,#f0fdf4);border:1px solid #86efac;border-radius:12px;padding:14px 16px}
+.wa-setup-title{font-size:15px;font-weight:700;color:#166534;margin-bottom:6px}
+.wa-setup-desc{font-size:13px;color:#374151;margin:0 0 12px;line-height:1.6}
+.wa-setup-input{width:100%;max-width:280px;padding:10px 12px;border:1.5px solid var(--grey-5);border-radius:8px;font-family:inherit;font-size:14px;margin-bottom:10px}
+.wa-setup-optin{display:flex;align-items:flex-start;gap:8px;font-size:13px;color:var(--grey-2);margin-bottom:12px;cursor:pointer;line-height:1.5}
+.wa-setup-save{background:#25D366;color:#fff;border:none;border-radius:8px;padding:9px 18px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer}
+.wa-setup-save:hover{background:#1da851}
+.wa-setup-save:disabled{opacity:.6;cursor:not-allowed}
+.wa-setup-status{font-size:12px;color:var(--grey-3);margin-top:8px}
+.wa-configured-bar{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;padding:4px 0}
+.wa-options-toggle{background:var(--teal-pale);color:var(--teal-dark);border:1.5px solid var(--teal-soft);border-radius:8px;padding:8px 14px;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer}
+.wa-options-toggle:hover{background:var(--teal-light)}
+.wa-options-menu{display:flex;flex-direction:column;gap:4px;background:var(--white);border:1px solid var(--grey-5);border-radius:8px;padding:6px;box-shadow:0 4px 12px rgba(0,0,0,.08);min-width:160px}
+.wa-options-menu button{background:none;border:none;text-align:start;padding:8px 10px;font-family:inherit;font-size:13px;cursor:pointer;border-radius:6px;color:var(--grey-1)}
+.wa-options-menu button:hover{background:var(--grey-6)}
+.wa-configured-phone{font-size:12px;color:var(--grey-3)}
 .action-btn.danger{background:var(--red-pale);color:var(--red-soft)}
 
 /* ─── PARENT VIEW ─── */

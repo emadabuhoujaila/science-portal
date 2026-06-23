@@ -436,28 +436,153 @@ async function loadParentWhatsAppProfile(cls, sec, name, mid){
   }catch(e){ console.warn('loadParentWhatsAppProfile', e); }
 }
 
-function whatsAppProfileHtml(role){
+function isWaProfileComplete(profile){
+  return !!(normalizeParentPhone(profile?.phone) && profile?.optIn);
+}
+
+function getWaProfileForRole(role){
+  if(role === 'parent') return window._parentWaProfile || {};
+  if(role === 'admin') return window._adminWaProfile || {};
+  const key = getTeacherKey();
+  return (key && window._teacherWaProfiles?.[key]) || {};
+}
+
+function waPrefixForRole(role){
+  return role === 'parent' ? 'parent-wa' : (role === 'admin' ? 'admin-wa' : 'teacher-wa');
+}
+
+function detectWaFormPrefix(role){
+  if(role === 'parent') return 'parent-wa';
+  if(role === 'admin' || document.getElementById('screen-admin')?.classList.contains('active')) return 'admin-wa';
+  if(document.getElementById('teacher-wa-phone')) return 'teacher-wa';
+  if(document.getElementById('settings-wa-phone')) return 'settings-wa';
+  return waPrefixForRole(role);
+}
+
+function applyComposeSendLabels(appId, waId){
   const isEn = currentLang === 'en';
-  const prefix = role === 'parent' ? 'parent-wa' : (role === 'admin' ? 'admin-wa' : 'settings-wa');
+  const appEl = document.getElementById(appId);
+  const waEl = document.getElementById(waId);
+  if(appEl) appEl.textContent = isEn ? '📤 Send & save' : '📤 إرسال وحفظ';
+  if(waEl) waEl.textContent = isEn ? '📱 Send via WhatsApp' : '📱 إرسال عبر واتساب';
+}
+
+function composeSendButtonsHtml(appOnclick, waOnclick, appBtnId, waBtnId){
+  const isEn = currentLang === 'en';
+  const appId = appBtnId || 'compose-app-btn';
+  const waId = waBtnId || 'compose-wa-btn';
+  return `<div class="compose-send-row">
+    <button type="button" class="btn-primary" id="${appId}" onclick="${appOnclick}">${isEn ? '📤 Send & save' : '📤 إرسال وحفظ'}</button>
+    <button type="button" class="action-btn wa compose-wa-btn" id="${waId}" onclick="${waOnclick}">${isEn ? '📱 Send via WhatsApp' : '📱 إرسال عبر واتساب'}</button>
+  </div>`;
+}
+
+function openWhatsAppForSend(target){
+  if(!target) return;
+  let phone = target.phone || '';
+  if(!phone && target.teacherKey) phone = getTeacherWhatsAppPhone(target.teacherKey);
+  if(!phone && target.useAdminProfile) phone = window._adminWaProfile?.phone || '';
+  if(!phone && (target.cls || target.name || target.mid)){
+    phone = getStudentParentPhone(target.cls, target.name, target.mid, target.sec || target.section);
+  }
+  const url = buildWhatsAppUrl(phone, target.text || '');
+  if(!url) return;
+  if(!phone){
+    showToast(currentLang === 'en'
+      ? 'ℹ️ No phone on file — choose contact in WhatsApp'
+      : 'ℹ️ لا يوجد رقم — اختر جهة الاتصال في واتساب');
+  }
+  window.open(url, '_blank');
+}
+
+function waSetupBannerHtml(role, prefix){
+  const isEn = currentLang === 'en';
   const saveFn = role === 'parent' ? 'saveParentWhatsAppProfile()' : 'saveStaffWhatsAppProfile()';
-  return `
-    <div class="wa-profile-card" id="${prefix}-profile-wrap">
-      <div style="font-size:14px;font-weight:700;color:var(--teal-dark);margin-bottom:6px">📱 ${isEn ? 'WhatsApp' : 'واتساب'}</div>
-      <p style="font-size:12px;color:var(--grey-3);margin:0 0 10px;line-height:1.65">${isEn
-        ? 'Register your number and allow receiving school messages on WhatsApp.'
-        : 'سجّل رقمك وفعّل استقبال رسائل المدرسة عبر واتساب.'}</p>
-      <input type="tel" id="${prefix}-phone" placeholder="05xxxxxxxx" dir="ltr"
-        style="width:100%;padding:10px 12px;border:1.5px solid var(--grey-5);border-radius:10px;font-family:inherit;font-size:14px;margin-bottom:10px">
-      <label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:pointer;margin-bottom:10px;line-height:1.5">
-        <input type="checkbox" id="${prefix}-optin" style="margin-top:3px">
-        <span>${isEn ? 'Allow receiving WhatsApp messages on my number' : 'السماح بتلقي رسائل واتساب على رقمي'}</span>
-      </label>
-      <button type="button" id="${prefix}-save-btn" onclick="${saveFn}"
-        style="width:100%;padding:10px 12px;background:#25D366;color:#fff;border:none;border-radius:10px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer">
-        💾 ${isEn ? 'Save WhatsApp settings' : 'حفظ إعدادات واتساب'}
-      </button>
-      <div id="${prefix}-status" style="font-size:12px;color:var(--grey-3);margin-top:8px"></div>
-    </div>`;
+  return `<div class="wa-setup-banner" id="${prefix}-setup">
+    <div class="wa-setup-title">${isEn ? '📱 WhatsApp setup' : '📱 إعداد واتساب'}</div>
+    <p class="wa-setup-desc">${isEn
+      ? 'Enter your number and enable receiving messages via WhatsApp.'
+      : 'أدخل رقمك وفعّل تلقي الرسائل عبر واتساب.'}</p>
+    <input type="tel" id="${prefix}-phone" placeholder="05xxxxxxxx" dir="ltr" class="wa-setup-input">
+    <label class="wa-setup-optin"><input type="checkbox" id="${prefix}-optin"> ${isEn ? 'Allow receiving WhatsApp messages on my number' : 'السماح بتلقي رسائل واتساب على رقمي'}</label>
+    <button type="button" id="${prefix}-save-btn" class="wa-setup-save" onclick="${saveFn}">${isEn ? 'Activate' : 'تفعيل'}</button>
+    <div id="${prefix}-status" class="wa-setup-status"></div>
+  </div>`;
+}
+
+function waConfiguredBarHtml(role, prefix){
+  const isEn = currentLang === 'en';
+  const profile = getWaProfileForRole(role);
+  return `<div class="wa-configured-bar" id="${prefix}-configured">
+    <button type="button" class="wa-options-toggle" onclick="toggleWaOptionsMenu('${prefix}')">
+      ⚙️ ${isEn ? 'Edit WhatsApp send options' : 'تعديل خيارات الإرسال عبر واتساب'}
+    </button>
+    <div id="${prefix}-menu" class="wa-options-menu" style="display:none">
+      <button type="button" onclick="waStartEditNumber('${role}','${prefix}')">✏️ ${isEn ? 'Edit number' : 'تعديل الرقم'}</button>
+      <button type="button" onclick="waDeleteNumber('${role}','${prefix}')">🗑️ ${isEn ? 'Delete number' : 'حذف الرقم'}</button>
+    </div>
+    <span class="wa-configured-phone">${isEn ? 'Number:' : 'الرقم:'} ${escapeHtml(profile.phone || '—')}</span>
+  </div>`;
+}
+
+function renderWaProfileSlot(role, hostId){
+  const host = document.getElementById(hostId);
+  if(!host) return;
+  host.style.display = 'block';
+  const prefix = waPrefixForRole(role);
+  const profile = getWaProfileForRole(role);
+  host.innerHTML = isWaProfileComplete(profile)
+    ? waConfiguredBarHtml(role, prefix)
+    : waSetupBannerHtml(role, prefix);
+  if(!isWaProfileComplete(profile)) fillWhatsAppProfileFields(prefix, profile);
+}
+
+function toggleWaOptionsMenu(prefix){
+  const menu = document.getElementById(prefix + '-menu');
+  if(!menu) return;
+  menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+}
+
+function waStartEditNumber(role, prefix){
+  const host = document.getElementById(prefix + '-configured')?.closest('#admin-wa-profile-host, #teacher-wa-profile-host, #parent-wa-profile-host')
+    || document.getElementById(waPrefixForRole(role) === prefix ? (role === 'parent' ? 'parent-wa-profile-host' : role === 'admin' ? 'admin-wa-profile-host' : 'teacher-wa-profile-host') : '');
+  if(!host) return;
+  const profile = getWaProfileForRole(role);
+  host.innerHTML = waSetupBannerHtml(role, prefix);
+  fillWhatsAppProfileFields(prefix, profile);
+  const opt = document.getElementById(prefix + '-optin');
+  if(opt) opt.checked = true;
+}
+
+async function waDeleteNumber(role, prefix){
+  const isEn = currentLang === 'en';
+  if(!confirm(isEn ? 'Delete WhatsApp number and disable receiving?' : 'حذف رقم واتساب وإيقاف الاستقبال؟')) return;
+  try{
+    if(role === 'parent'){
+      const token = getParentSessionToken();
+      if(!token || typeof functions === 'undefined') throw new Error('no session');
+      const fn = functions.httpsCallable('updateParentWhatsApp');
+      await fn({ sessionToken: token, delete: true });
+      window._parentWaProfile = { phone: '', optIn: false };
+      renderWaProfileSlot('parent', 'parent-wa-profile-host');
+    } else if(role === 'admin'){
+      if(typeof db === 'undefined' || !auth?.currentUser) throw new Error('no auth');
+      await db.ref('adminWhatsApp/' + auth.currentUser.uid).remove();
+      window._adminWaProfile = { phone: '', optIn: false };
+      renderWaProfileSlot('admin', 'admin-wa-profile-host');
+    } else {
+      const key = getTeacherKey();
+      if(!key || typeof db === 'undefined') throw new Error('no key');
+      await db.ref('teachers/' + key + '/whatsappPhone').remove();
+      await db.ref('teachers/' + key + '/waOptIn').set(false);
+      window._teacherWaProfiles[key] = { phone: '', optIn: false };
+      renderWaProfileSlot('teacher', 'teacher-wa-profile-host');
+    }
+    showToast(isEn ? '✅ WhatsApp number removed' : '✅ تم حذف رقم واتساب');
+  }catch(e){
+    console.warn('waDeleteNumber', e);
+    showToast(isEn ? '⚠️ Delete failed' : '⚠️ فشل الحذف');
+  }
 }
 
 function fillWhatsAppProfileFields(prefix, profile){
@@ -470,57 +595,37 @@ function fillWhatsAppProfileFields(prefix, profile){
     const isEn = currentLang === 'en';
     statusEl.textContent = profile?.phone
       ? (isEn ? 'Number saved' : 'الرقم محفوظ') + (profile.optIn ? (isEn ? ' · receiving enabled' : ' · الاستقبال مفعّل') : '')
-      : (isEn ? 'No number saved yet' : 'لم يُسجَّل رقم بعد');
+      : '';
   }
 }
 
-function populateSettingsWhatsApp(){
-  const wrap = document.getElementById('settings-whatsapp-section');
-  if(!wrap) return;
-  if(!CURRENT_TEACHER || CURRENT_TEACHER.isAdmin){
-    wrap.style.display = 'none';
-    return;
-  }
-  wrap.style.display = '';
-  if(wrap.dataset.ready !== '1'){
-    wrap.innerHTML = whatsAppProfileHtml('teacher');
-    wrap.dataset.ready = '1';
-  }
-  const key = getTeacherKey();
-  if(key) loadTeacherWhatsAppProfile(key).then(() => {
-    fillWhatsAppProfileFields('settings-wa', window._teacherWaProfiles[key] || {});
-  });
-}
+function populateSettingsWhatsApp(){ /* moved to teacher-wa-profile-host */ }
 
 function renderAdminWhatsAppBar(){
-  const host = document.getElementById('admin-wa-profile-host');
-  if(!host) return;
-  host.style.display = 'block';
-  if(host.dataset.ready !== '1'){
-    host.innerHTML = whatsAppProfileHtml('admin');
-    host.dataset.ready = '1';
-  }
-  fillWhatsAppProfileFields('admin-wa', window._adminWaProfile);
+  renderWaProfileSlot('admin', 'admin-wa-profile-host');
 }
 
 function renderParentWhatsAppCard(){
-  const host = document.getElementById('parent-wa-profile-host');
-  if(!host) return;
-  if(host.dataset.ready !== '1'){
-    host.innerHTML = whatsAppProfileHtml('parent');
-    host.dataset.ready = '1';
-  }
-  fillWhatsAppProfileFields('parent-wa', window._parentWaProfile);
+  renderWaProfileSlot('parent', 'parent-wa-profile-host');
+}
+
+function renderTeacherWhatsAppBar(){
+  renderWaProfileSlot('teacher', 'teacher-wa-profile-host');
 }
 
 async function saveStaffWhatsAppProfile(){
   const isEn = currentLang === 'en';
   const isAdminScreen = !!document.getElementById('screen-admin')?.classList.contains('active');
-  const prefix = isAdminScreen ? 'admin-wa' : 'settings-wa';
+  const role = isAdminScreen ? 'admin' : 'teacher';
+  const prefix = detectWaFormPrefix(role);
   const phone = normalizeParentPhone(document.getElementById(prefix + '-phone')?.value || '');
   const optIn = !!document.getElementById(prefix + '-optin')?.checked;
   if(!phone){
     showToast(isEn ? '⚠️ Enter a valid phone number' : '⚠️ أدخل رقماً صحيحاً');
+    return;
+  }
+  if(!optIn){
+    showToast(isEn ? '⚠️ Enable receiving via WhatsApp' : '⚠️ فعّل تلقي الرسائل عبر واتساب');
     return;
   }
   if(typeof db === 'undefined' || typeof auth === 'undefined' || !auth.currentUser){
@@ -530,23 +635,23 @@ async function saveStaffWhatsAppProfile(){
   const btn = document.getElementById(prefix + '-save-btn');
   if(btn){ btn.disabled = true; btn.textContent = isEn ? 'Saving…' : 'جارٍ الحفظ…'; }
   try{
-    if(isAdminScreen){
+    if(role === 'admin'){
       await db.ref('adminWhatsApp/' + auth.currentUser.uid).set({
         phone,
         optIn,
         ts: new Date().toISOString(),
       });
       window._adminWaProfile = { phone, optIn };
-      fillWhatsAppProfileFields('admin-wa', window._adminWaProfile);
+      renderWaProfileSlot('admin', 'admin-wa-profile-host');
     } else {
       const key = getTeacherKey();
       if(!key) throw new Error('no teacher key');
       await db.ref('teachers/' + key + '/whatsappPhone').set(phone);
       await db.ref('teachers/' + key + '/waOptIn').set(optIn);
       window._teacherWaProfiles[key] = { phone, optIn };
-      fillWhatsAppProfileFields('settings-wa', window._teacherWaProfiles[key]);
+      renderWaProfileSlot('teacher', 'teacher-wa-profile-host');
     }
-    showToast(isEn ? '✅ WhatsApp settings saved' : '✅ تم حفظ إعدادات واتساب');
+    showToast(isEn ? '✅ WhatsApp activated' : '✅ تم تفعيل واتساب');
   }catch(e){
     console.warn('saveStaffWhatsAppProfile', e);
     const denied = e?.code === 'PERMISSION_DENIED' || /permission/i.test(String(e?.message || ''));
@@ -556,7 +661,7 @@ async function saveStaffWhatsAppProfile(){
   }finally{
     if(btn){
       btn.disabled = false;
-      btn.textContent = isEn ? '💾 Save WhatsApp settings' : '💾 حفظ إعدادات واتساب';
+      btn.textContent = isEn ? 'Activate' : 'تفعيل';
     }
   }
 }
@@ -570,6 +675,10 @@ async function saveParentWhatsAppProfile(){
     showToast(isEn ? '⚠️ Enter a valid phone number' : '⚠️ أدخل رقماً صحيحاً');
     return;
   }
+  if(!optIn){
+    showToast(isEn ? '⚠️ Enable receiving via WhatsApp' : '⚠️ فعّل تلقي الرسائل عبر واتساب');
+    return;
+  }
   const token = typeof getParentSessionToken === 'function' ? getParentSessionToken() : '';
   if(!token || typeof functions === 'undefined'){
     showToast(isEn ? '⚠️ Session expired — log in again' : '⚠️ انتهت الجلسة — سجّل الدخول مجدداً');
@@ -581,18 +690,16 @@ async function saveParentWhatsAppProfile(){
     const fn = functions.httpsCallable('updateParentWhatsApp');
     await fn({ sessionToken: token, phone, optIn });
     window._parentWaProfile = { phone, optIn };
-    if(ctx.cls && ctx.mid){
-      mergeStudentPhoneInCache(ctx.cls, ctx.section || '', ctx.mid, phone);
-    }
-    fillWhatsAppProfileFields('parent-wa', window._parentWaProfile);
-    showToast(isEn ? '✅ WhatsApp settings saved' : '✅ تم حفظ إعدادات واتساب');
+    if(ctx.cls && ctx.mid) mergeStudentPhoneInCache(ctx.cls, ctx.section || '', ctx.mid, phone);
+    renderWaProfileSlot('parent', 'parent-wa-profile-host');
+    showToast(isEn ? '✅ WhatsApp activated' : '✅ تم تفعيل واتساب');
   }catch(e){
     console.warn('saveParentWhatsAppProfile', e);
     showToast(isEn ? '⚠️ Save failed' : '⚠️ فشل الحفظ');
   }finally{
     if(btn){
       btn.disabled = false;
-      btn.textContent = isEn ? '💾 Save WhatsApp settings' : '💾 حفظ إعدادات واتساب';
+      btn.textContent = isEn ? 'Activate' : 'تفعيل';
     }
   }
 }
@@ -1840,6 +1947,7 @@ function _enterDashboard(teacher){
         if(!TEACHER_SETTINGS.lastGradeSync) TEACHER_SETTINGS.lastGradeSync = '';
       } catch(e){ console.warn('teacherData settings load error:', e); }
       await loadTeacherWhatsAppProfile(key);
+      renderTeacherWhatsAppBar();
     }
 
     // Step 3: Start Firebase listeners for this teacher's data
@@ -2713,9 +2821,7 @@ function renderAdminComplaints(){
           <div class="admin-reply-quick">${adminReplyQuickButtons(c.id, isEn)}</div>
           <textarea id="admin-reply-input-${c.id}" class="admin-reply-textarea" rows="4"
             placeholder="${isEn?'Write your reply to the parent...':'اكتب ردك لولي الأمر...'}"></textarea>
-          <button type="button" class="btn-primary admin-reply-send" onclick="adminSendComplaintReply('${c.id}')">
-            📤 ${isEn?'Send Reply':'إرسال الرد'}
-          </button>
+          ${composeSendButtonsHtml(`adminSendComplaintReply('${c.id}')`, `adminSendComplaintReply('${c.id}',true)`, 'admin-reply-send-'+c.id, 'admin-reply-wa-'+c.id)}
         </div>
       </div>`;
   }).join('');
@@ -2727,7 +2833,7 @@ function renderAdminComplaints(){
   }
 }
 
-async function adminSendComplaintReply(complaintId){
+async function adminSendComplaintReply(complaintId, viaWhatsApp){
   const isEn = currentLang==='en';
   const c = adminComplaintsCache.find(x=>x.id===complaintId);
   const body = (document.getElementById('admin-reply-input-'+complaintId)?.value||'').trim();
@@ -2778,6 +2884,9 @@ async function adminSendComplaintReply(complaintId){
     await db.ref('complaints/'+complaintId).update({ lastReplyAt: now.toISOString(), status: newStatus });
     window._adminOpenReply = null;
     if(window._adminReplyDrafts) delete window._adminReplyDrafts[complaintId];
+    if(viaWhatsApp){
+      openWhatsAppForSend({ cls: c.cls, sec: c.section, name: c.studentName, mid: c.mid, text: body });
+    }
     showToast('✅ '+(isEn?'Reply sent to parent':'تم إرسال الرد لولي الأمر'));
     renderAdminComplaints();
   }catch(e){
@@ -3277,7 +3386,7 @@ async function adminDeleteComplaintAll(complaintId){
   }
 }
 
-async function adminSendMessage(){
+async function adminSendMessage(viaWhatsApp){
   const isEn = currentLang==='en';
   const body = (document.getElementById('admin-compose-body')?.value||'').trim();
   const attInput = 'admin-compose-att';
@@ -3292,7 +3401,10 @@ async function adminSendMessage(){
   const dateStr = now.toLocaleDateString(isEn?'en-AE':'ar-AE')+' '+now.toLocaleTimeString(isEn?'en-AE':'ar-AE',{hour:'2-digit',minute:'2-digit'});
   const ts = now.toISOString();
   const btn = document.getElementById('admin-compose-send-btn');
+  const waBtn = document.getElementById('admin-compose-wa-btn');
   if(btn){ btn.disabled=true; btn.textContent=isEn?'Sending…':'جارٍ الإرسال…'; }
+  if(waBtn) waBtn.disabled = true;
+  let waTarget = null;
 
   try{
     let attachment = null;
@@ -3312,6 +3424,7 @@ async function adminSendMessage(){
       if(attachment) payload.attachment = attachment;
       await outRef.set(payload);
       await db.ref('teacherData/'+teacherKey+'/adminMessages').push({ body:msgBody, ts, date:dateStr, fromAdmin:true, outboxId:outId, read:false, ...(attachment?{attachment}: {}) });
+      waTarget = { teacherKey, text: msgBody };
       showToast(isEn?'✅ Message sent to teacher':'✅ تم إرسال الرسالة للمعلم');
     } else if(target==='parent'){
       const grade = document.getElementById('admin-compose-grade')?.value;
@@ -3331,6 +3444,7 @@ async function adminSendMessage(){
       if(attachment) payload.attachment = attachment;
       await outRef.set(payload);
       await db.ref('parentAdminInbox/'+mid).push({ mid:String(mid), studentName, cls:grade, section, body:msgBody, ts, date:dateStr, type:'admin_direct', outboxId:outId, fromAdmin:true, ...(attachment?{attachment}: {}) });
+      waTarget = { cls: grade, sec: section, name: studentName, mid: String(mid), text: msgBody };
       showToast(isEn?'✅ Message sent to parent':'✅ تم إرسال الرسالة لولي الأمر');
     } else if(target==='broadcast'){
       if(!confirm(isEn?'Send to ALL registered parents?':'إرسال لجميع أولياء الأمور المسجّلين؟')) throw new Error('cancelled');
@@ -3349,17 +3463,20 @@ async function adminSendMessage(){
       for(const p of parents){
         await db.ref('parentAdminInbox/'+p.mid).push({ mid:p.mid, studentName:p.name, cls:p.cls, section:p.section||'', body:msgBody, ts, date:dateStr, type:'admin_broadcast', outboxId:outId, fromAdmin:true, ...(attachment?{attachment}: {}) });
       }
+      waTarget = { text: msgBody };
       showToast(isEn?`✅ Broadcast sent to ${parents.length} parents`:`✅ تم التعميم على ${parents.length} ولي أمر`);
     }
     document.getElementById('admin-compose-body').value = '';
     _attClear(attInput, 'admin-compose-att-preview');
+    if(viaWhatsApp && waTarget) openWhatsAppForSend(waTarget);
     showAdminMsgSubTab('outbox', document.getElementById('admin-msg-tab-outbox'));
   }catch(e){
     if(e.message==='cancelled') return;
     console.error('adminSendMessage', e);
     showToast('⚠️ '+(e.message||(isEn?'Send failed':'فشل الإرسال')));
   }finally{
-    if(btn){ btn.disabled=false; btn.textContent=isEn?'📤 Send message':'📤 إرسال الرسالة'; }
+    if(btn){ btn.disabled=false; btn.textContent=isEn?'📤 Send & save':'📤 إرسال وحفظ'; }
+    if(waBtn) waBtn.disabled = false;
   }
 }
 
@@ -4246,7 +4363,7 @@ function initAttachmentFields(){
   const taw = document.getElementById('teacher-admin-att-wrap');
   if(taw && !taw.dataset.init){ taw.innerHTML = _attField('teacher-admin-att','teacher-admin-att-preview'); taw.dataset.init='1'; }
 }
-function saveMessage(){
+function saveMessage(viaWhatsApp){
   const cls  = document.getElementById('msg-class')?.value||'';
   const sec  = document.getElementById('msg-sec')?.value||'';
   const name = document.getElementById('msg-student')?.value||'';
@@ -4263,8 +4380,10 @@ function saveMessage(){
     return;
   }
   const btn = document.getElementById('msg-save-btn');
+  const waBtn = document.getElementById('msg-wa-btn');
   const btnLabel = btn ? btn.textContent : '';
   if(btn){ btn.disabled=true; btn.textContent=currentLang==='en'?'Sending…':'جارٍ الإرسال…'; }
+  if(waBtn) waBtn.disabled = true;
 
   (async ()=>{
     try{
@@ -4290,12 +4409,16 @@ function saveMessage(){
       await window.fbPushMsg(key, msg);
       document.getElementById('msg-body').value='';
       _attClear(attInput, 'teacher-msg-att-preview');
+      if(viaWhatsApp){
+        openWhatsAppForSend({ cls, sec: msg.section, name, mid: msg.mid, text: msg.body });
+      }
       showToast(currentLang==='en'?'✅ Message sent':'✅ تم إرسال الرسالة لولي الأمر');
     }catch(e){
       console.error('saveMessage', e);
       showToast('⚠️ '+(e.message||(currentLang==='en'?'Send failed':'فشل الإرسال')));
     }finally{
-      if(btn){ btn.disabled=false; btn.textContent=btnLabel||'💾 حفظ الرسالة'; }
+      if(btn){ btn.disabled=false; btn.textContent=btnLabel||'📤 إرسال وحفظ'; }
+      if(waBtn) waBtn.disabled = false;
     }
   })();
 }
@@ -5535,7 +5658,7 @@ function applyBehaviorLang(){
   setText('bv-lbl-violation', isAr?'نوع المخالفة السلوكية':'Violation Type');
   setText('bv-lbl-conduct', isAr?'ملاحظة سلوكية إضافية (اختياري)':'Behavioral Note (optional)');
   setPH('bv-conduct-ph', isAr?'أي تفاصيل إضافية...':'Any additional details...');
-  setText('bv-save-btn', isAr?'💾 حفظ وإرسال لولي الأمر':'💾 Save & Send to Parent');
+  applyComposeSendLabels('bv-save-btn', 'bv-wa-btn');
 
   // Log section
   setText('bv-log-title', isAr?'📋 سجل الملاحظات':'📋 Behavior Log');
@@ -5608,7 +5731,7 @@ function applyMessagesLang(){
   setText('msg-lbl-body', isAr?'نص الرسالة':'Message Text');
   const msgBodyEl = document.getElementById('msg-body');
   if(msgBodyEl) msgBodyEl.placeholder = isAr?'اكتب الرسالة...':'Write message...';
-  setText('msg-save-btn', isAr?'💾 حفظ الرسالة':'💾 Save Message');
+  applyComposeSendLabels('msg-save-btn', 'msg-wa-btn');
 
   // Saved messages
   setText('msg-saved-title',  isAr?'📬 الرسائل المحفوظة':'📬 Saved Messages');
@@ -5722,7 +5845,7 @@ function applyAdminLang(){
   setText('admin-compose-lbl-p-sec', 'adminComposePickSec');
   setText('admin-compose-lbl-p-student', 'adminComposePickStudent');
   setText('admin-compose-broadcast-note', 'adminComposeBroadcastNote');
-  setText('admin-compose-send-btn', 'adminComposeSendBtn');
+  applyComposeSendLabels('admin-compose-send-btn', 'admin-compose-wa-btn');
   const composeBody = document.getElementById('admin-compose-body');
   if(composeBody) composeBody.placeholder = t('adminComposeBodyPH');
   setText('admin-upload-title', 'adminUploadTitle');
@@ -5922,7 +6045,7 @@ function applyTeacherLang(){
   setText('teacher-school-admin-desc', 'teacherSchoolAdminDesc');
   setText('teacher-school-send-title', 'teacherSchoolSendTitle');
   setText('teacher-school-send-desc', 'teacherSchoolSendDesc');
-  setText('teacher-school-send-btn', 'teacherSchoolSendBtn');
+  applyComposeSendLabels('teacher-school-send-btn', 'teacher-school-wa-btn');
   setText('teacher-school-complaints-title', 'teacherSchoolComplaintsTitle');
   setText('teacher-school-complaints-desc', 'teacherSchoolComplaintsDesc');
   setText('teacher-complaints-empty', 'teacherComplaintsEmpty');
@@ -6045,6 +6168,7 @@ function toggleLang(){
       try{ renderParentInbox(); }catch(e){}
       try{ renderTeacherComplaints(); }catch(e){}
       try{ renderTeacherSchoolTab(); }catch(e){}
+      try{ renderTeacherWhatsAppBar(); }catch(e){}
       try{ updateTeacherSchoolBadge(); }catch(e){}
       try{ renderLinksTab(); }catch(e){}
     } else if(screenId === 'screen-parent' && window._currentParent){
@@ -6053,6 +6177,7 @@ function toggleLang(){
       try{ renderAdminComplaints(); }catch(e){}
       try{ updateAdminComplaintsBadge(); }catch(e){}
       try{ renderAdminMessages(); }catch(e){}
+      try{ renderAdminWhatsAppBar(); }catch(e){}
       if(document.getElementById('admin-tab-monitor')?.style.display !== 'none'){
         adminLoadMonitoring();
       } else if(Object.keys(adminStudentsCache||{}).length){
@@ -6773,9 +6898,7 @@ function renderParentSchoolTab(cls, studentName, mid, teachersList){
       <textarea id="parent-school-admin-input" class="parent-msg-textarea" rows="4"
         placeholder="${isEn ? 'Write your message to the school admin...' : 'اكتب رسالتك لمسؤول المدرسة...'}"></textarea>
       ${_attField('parent-admin-att', 'parent-admin-att-preview')}
-      <button type="button" class="parent-msg-send" onclick="submitParentMessageToAdmin()">
-        ${isEn ? 'Send to Admin ←' : 'إرسال للمسؤول ←'}
-      </button>
+      ${composeSendButtonsHtml('submitParentMessageToAdmin()', 'submitParentMessageToAdmin(true)', 'parent-admin-send-btn', 'parent-admin-wa-btn')}
       <div id="parent-school-admin-sent"></div>
     </div>
 
@@ -6795,10 +6918,7 @@ function renderParentSchoolTab(cls, studentName, mid, teachersList){
         <div id="parent-school-complaint-form" class="parent-complaint-form" style="display:none;margin-top:12px">
           <textarea id="parent-school-complaint-input" class="parent-msg-textarea" rows="4"
             placeholder="${isEn ? 'Describe your complaint...' : 'اكتب نص الشكوى...'}"></textarea>
-          <button type="button" class="parent-msg-send" style="background:#e65100;margin-top:8px"
-            onclick="submitParentSchoolComplaint('${mid}')">
-            ${isEn ? 'Send Complaint ←' : 'إرسال الشكوى ←'}
-          </button>
+          ${composeSendButtonsHtml(`submitParentSchoolComplaint('${mid}')`, `submitParentSchoolComplaint('${mid}',true)`, 'parent-complaint-send-btn', 'parent-complaint-wa-btn')}
         </div>
       </div>
       <div id="parent-school-complaints-log" style="margin-top:16px"></div>
@@ -6919,10 +7039,7 @@ function parentComplaintThreadCard(c, isEn, teachersList){
     <div class="parent-complaint-reply-box">
       <textarea id="parent-complaint-followup-${c.id}" class="parent-msg-textarea" rows="2"
         placeholder="${isEn ? 'Your reply on this complaint...' : 'ردك على هذه الشكوى...'}"></textarea>
-      <button type="button" class="parent-msg-send" style="background:var(--teal-mid);margin-top:8px;font-size:12px;padding:8px 14px"
-        onclick="submitParentComplaintFollowUp('${c.id}')">
-        ${isEn ? 'Send Reply ←' : 'إرسال الرد ←'}
-      </button>
+      ${composeSendButtonsHtml(`submitParentComplaintFollowUp('${c.id}')`, `submitParentComplaintFollowUp('${c.id}',true)`, 'parent-followup-send-'+c.id, 'parent-followup-wa-'+c.id)}
     </div>` : '';
   return `
     <div class="parent-sent-complaint-card parent-complaint-thread-card">
@@ -6962,7 +7079,7 @@ function toggleParentSchoolComplaintForm(){
   form.style.display = form.style.display === 'none' ? 'block' : 'none';
 }
 
-async function submitParentSchoolComplaint(mid){
+async function submitParentSchoolComplaint(mid, viaWhatsApp){
   const isEn = currentLang === 'en';
   const body = (document.getElementById('parent-school-complaint-input')?.value || '').trim();
   if(!body){
@@ -6977,6 +7094,7 @@ async function submitParentSchoolComplaint(mid){
     return;
   }
   await submitParentComplaintCore(idx, tc.key, ctx.cls, ctx.name, mid, body);
+  if(viaWhatsApp) openWhatsAppForSend({ text: body, useAdminProfile: true });
   const ta = document.getElementById('parent-school-complaint-input');
   if(ta) ta.value = '';
   const form = document.getElementById('parent-school-complaint-form');
@@ -7026,7 +7144,7 @@ async function submitParentComplaintCore(idx, teacherKey, cls, studentName, mid,
   return complaintId;
 }
 
-async function submitParentMessageToAdmin(){
+async function submitParentMessageToAdmin(viaWhatsApp){
   const isEn = currentLang === 'en';
   const ctx = window._parentSubjectContext || {};
   const mid = ctx.mid || window._currentParent?.mid;
@@ -7073,6 +7191,7 @@ async function submitParentMessageToAdmin(){
     document.getElementById('parent-school-admin-input').value = '';
     _attClear(attInput, 'parent-admin-att-preview');
     renderParentSchoolSentToAdmin(mid);
+    if(viaWhatsApp) openWhatsAppForSend({ text: msgBody, useAdminProfile: true });
     showToast('✅ ' + (isEn ? 'Message sent to admin' : 'تم إرسال الرسالة للمسؤول'));
   }catch(e){
     console.error('submitParentMessageToAdmin', e);
@@ -7080,7 +7199,7 @@ async function submitParentMessageToAdmin(){
   }
 }
 
-async function submitParentComplaintFollowUp(complaintId){
+async function submitParentComplaintFollowUp(complaintId, viaWhatsApp){
   const isEn = currentLang === 'en';
   const ctx = window._parentSubjectContext || {};
   const mid = ctx.mid || window._currentParent?.mid;
@@ -7113,6 +7232,7 @@ async function submitParentComplaintFollowUp(complaintId){
       type: 'complaint_followup',
     });
     document.getElementById('parent-complaint-followup-' + complaintId).value = '';
+    if(viaWhatsApp) openWhatsAppForSend({ text: body, useAdminProfile: true });
     showToast('✅ ' + (isEn ? 'Reply sent' : 'تم إرسال الرد'));
   }catch(e){
     console.error('submitParentComplaintFollowUp', e);
@@ -7667,10 +7787,12 @@ async function loadSubjectTabContent(idx, cls, studentName, mid, teachersList){
       <textarea id="subj-msg-input-${idx}" class="parent-msg-textarea"
         placeholder="${isEn?'Write your message...':'اكتب رسالتك...'}" rows="4"></textarea>
       ${_attField('parent-subj-att-'+idx, 'parent-subj-att-'+idx+'-preview')}
-      <button class="parent-msg-send" id="parent-msg-send-${idx}"
-        onclick="sendParentMsgToTeacher('${idx}','${tc.key}','${cls}','${studentName.replace(/'/g,"\\'")}')">
-        ${isEn?'Send Message ←':'إرسال الرسالة ←'}
-      </button>
+      ${composeSendButtonsHtml(
+        `sendParentMsgToTeacher('${idx}','${tc.key}','${cls}','${studentName.replace(/'/g,"\\'")}')`,
+        `sendParentMsgToTeacher('${idx}','${tc.key}','${cls}','${studentName.replace(/'/g,"\\'")}',true)`,
+        'parent-msg-send-'+idx,
+        'parent-msg-wa-'+idx
+      )}
       <div id="parent-msg-confirm-${idx}" class="parent-msg-confirm" style="display:none">
         ✅ ${isEn?'Message sent!':'تم الإرسال!'}
       </div>
@@ -7698,7 +7820,7 @@ function selectQuickSubj(btn, key, idx, firstName){
 }
 
 
-async function sendParentMsgToTeacher(idx, teacherKey, cls, studentName){
+async function sendParentMsgToTeacher(idx, teacherKey, cls, studentName, viaWhatsApp){
   const body = (
     document.getElementById('subj-msg-input-'+idx)?.value ||
     document.getElementById('parent-msg-input-'+idx)?.value || ''
@@ -7731,9 +7853,10 @@ async function sendParentMsgToTeacher(idx, teacherKey, cls, studentName){
     ts: d.toISOString()
   };
 
-  const sendBtn = document.querySelector('#subj-content-'+idx+' .parent-msg-send');
-  const btnLabel = sendBtn ? sendBtn.textContent : '';
+  const sendBtn = document.getElementById('parent-msg-send-'+idx);
+  const waBtn = document.getElementById('parent-msg-wa-'+idx);
   if(sendBtn){ sendBtn.disabled = true; sendBtn.textContent = isEn ? 'Sending…' : 'جارٍ الإرسال…'; }
+  if(waBtn) waBtn.disabled = true;
 
   try{
     if(PortalAttachments?.getPending(attInput)){
@@ -7754,12 +7877,14 @@ async function sendParentMsgToTeacher(idx, teacherKey, cls, studentName){
     const conf = document.getElementById('parent-msg-confirm-'+idx);
     if(conf){ conf.style.display='block'; setTimeout(()=>conf.style.display='none',3000); }
     renderSubjectSentLog(idx, teacherKey, cls, studentName);
+    if(viaWhatsApp) openWhatsAppForSend({ teacherKey, text: msgBody });
     showToast(isEn ? '✅ Message sent' : '✅ تم إرسال الرسالة');
   }catch(err){
     console.error(err);
     showToast(isEn ? '❌ Send failed' : '❌ فشل الإرسال');
   }finally{
-    if(sendBtn){ sendBtn.disabled = false; sendBtn.textContent = btnLabel || (isEn ? 'Send Message ←' : 'إرسال الرسالة ←'); }
+    if(sendBtn){ sendBtn.disabled = false; sendBtn.textContent = isEn ? '📤 Send & save' : '📤 إرسال وحفظ'; }
+    if(waBtn) waBtn.disabled = false;
   }
 }
 
@@ -8262,7 +8387,7 @@ function calcBehaviorLevel(cls, name){
   return 1;                            // ضعيف
 }
 
-function saveBehaviorEntry(){
+function saveBehaviorEntry(viaWhatsApp){
   const cls     = document.getElementById('behavior-class')?.value||'';
   const sec     = document.getElementById('behavior-sec')?.value||'';
   const name    = document.getElementById('bv-student-sel')?.value||'';
@@ -8303,12 +8428,19 @@ function saveBehaviorEntry(){
     APP.messages.push(parentMsg); saveState();
   }
 
+  const gradeStudents = getFilteredStudents()[cls]||[];
+  const students = sec ? gradeStudents.filter(s=>s.section===sec) : gradeStudents;
+  const stu = students.find(s=>s.name===name);
+
   // Reset form
   document.getElementById('bv-academic-input').value='';
   document.getElementById('bv-conduct-input').value='';
   selectedViolation=null;
   document.querySelectorAll('.violation-btn').forEach(b=>b.classList.remove('selected'));
   renderBvLog();
+  if(viaWhatsApp){
+    openWhatsAppForSend({ cls, sec, name, mid: stu?.mid, text: msgBody });
+  }
   showToast('✅ تم الحفظ والإرسال لولي الأمر');
 }
 
@@ -9570,7 +9702,7 @@ function renderTeacherSentToAdmin(){
     </div>`;
 }
 
-async function submitTeacherMessageToAdmin(){
+async function submitTeacherMessageToAdmin(viaWhatsApp){
   const isEn = currentLang==='en';
   const key = getTeacherKey();
   const body = (document.getElementById('teacher-school-admin-input')?.value||'').trim();
@@ -9590,7 +9722,9 @@ async function submitTeacherMessageToAdmin(){
   const subjLabel = subj ? (isEn?subj.en:subj.ar) : (CURRENT_TEACHER?.subject||'');
   const msgBody = body || (isEn ? '📎 Attachment' : '📎 مرفق');
   const btn = document.getElementById('teacher-school-send-btn');
+  const waBtn = document.getElementById('teacher-school-wa-btn');
   if(btn){ btn.disabled=true; btn.textContent=isEn?'Sending…':'جارٍ الإرسال…'; }
+  if(waBtn) waBtn.disabled = true;
   try{
     let attachment = null;
     if(PortalAttachments?.getPending(attInput)){
@@ -9613,12 +9747,14 @@ async function submitTeacherMessageToAdmin(){
     document.getElementById('teacher-school-admin-input').value = '';
     _attClear(attInput, 'teacher-admin-att-preview');
     renderTeacherSentToAdmin();
+    if(viaWhatsApp) openWhatsAppForSend({ text: msgBody, useAdminProfile: true });
     showToast('✅ '+(isEn?'Message sent to admin':'تم إرسال الرسالة للمسؤول'));
   }catch(e){
     console.error('submitTeacherMessageToAdmin', e);
     showToast('⚠️ '+(isEn?'Send failed':'فشل الإرسال'));
   }finally{
-    if(btn){ btn.disabled=false; btn.textContent=isEn?'📤 Send to Admin':'📤 إرسال للمسؤول'; }
+    if(btn){ btn.disabled=false; btn.textContent=isEn?'📤 Send & save':'📤 إرسال وحفظ'; }
+    if(waBtn) waBtn.disabled = false;
   }
 }
 

@@ -698,7 +698,10 @@ window.__splashDeadline = Date.now() + 5000;
 
             <textarea id="admin-compose-body" rows="5" placeholder="اكتب رسالتك هنا..." style="width:100%;padding:12px 14px;border:1.5px solid var(--grey-5);border-radius:10px;font-family:inherit;font-size:14px;outline:none;resize:vertical;margin-bottom:12px"></textarea>
             <div id="admin-compose-att-wrap"></div>
-            <button type="button" class="btn-primary" id="admin-compose-send-btn" onclick="adminSendMessage()">📤 إرسال الرسالة</button>
+            <div class="compose-send-row">
+              <button type="button" class="btn-primary" id="admin-compose-send-btn" onclick="adminSendMessage()">📤 إرسال وحفظ</button>
+              <button type="button" class="action-btn wa compose-wa-btn" id="admin-compose-wa-btn" onclick="adminSendMessage(true)">📱 إرسال عبر واتساب</button>
+            </div>
           </div>
         </div>
       </div>
@@ -747,6 +750,8 @@ window.__splashDeadline = Date.now() + 5000;
     </div>
     <div class="portal-hero-sep portal-hero-sep--bottom" aria-hidden="true"></div>
   </div>
+
+  <div id="teacher-wa-profile-host" class="card" style="margin:0 16px 16px;padding:16px 18px;display:none"></div>
 
   <div class="nav-tabs">
     <button class="nav-tab active" onclick="showTab('overview',this)" id="ttab-overview">📊 نظرة عامة</button>
@@ -925,7 +930,10 @@ window.__splashDeadline = Date.now() + 5000;
               <input type="text" id="bv-conduct-input" id="bv-conduct-ph" placeholder="أي تفاصيل إضافية..." style="width:100%;padding:10px 12px;border:1.5px solid var(--grey-5);border-radius:8px;font-family:inherit;font-size:13px;outline:none">
             </div>
           </div>
-          <button class="btn-primary" id="bv-save-btn" onclick="saveBehaviorEntry()" style="margin-top:4px">💾 حفظ وإرسال لولي الأمر</button>
+          <div class="compose-send-row" style="margin-top:4px">
+            <button type="button" class="btn-primary" id="bv-save-btn" onclick="saveBehaviorEntry()">📤 إرسال وحفظ</button>
+            <button type="button" class="action-btn wa compose-wa-btn" id="bv-wa-btn" onclick="saveBehaviorEntry(true)">📱 إرسال عبر واتساب</button>
+          </div>
         </div>
       </div>
 
@@ -996,7 +1004,10 @@ window.__splashDeadline = Date.now() + 5000;
                 <textarea id="msg-body" rows="5" style="width:100%;padding:11px 14px;border:1.5px solid var(--grey-5);border-radius:10px;font-family:inherit;font-size:14px;outline:none;resize:vertical" placeholder="اكتب الرسالة..."></textarea>
               </div>
               <div id="teacher-msg-att-wrap"></div>
-              <button class="btn-primary" id="msg-save-btn" onclick="saveMessage()">💾 حفظ الرسالة</button>
+              <div class="compose-send-row">
+                <button type="button" class="btn-primary" id="msg-save-btn" onclick="saveMessage()">📤 إرسال وحفظ</button>
+                <button type="button" class="action-btn wa compose-wa-btn" id="msg-wa-btn" onclick="saveMessage(true)">📱 إرسال عبر واتساب</button>
+              </div>
             </div>
           </div>
         </div>
@@ -1042,9 +1053,10 @@ window.__splashDeadline = Date.now() + 5000;
           <textarea id="teacher-school-admin-input" class="parent-msg-textarea" rows="4"
             placeholder="اكتب رسالتك لمسؤول المدرسة..."></textarea>
           <div id="teacher-admin-att-wrap"></div>
-          <button type="button" class="btn-primary" id="teacher-school-send-btn" onclick="submitTeacherMessageToAdmin()" style="margin-top:10px">
-            📤 إرسال للمسؤول
-          </button>
+          <div class="compose-send-row" style="margin-top:10px">
+            <button type="button" class="btn-primary" id="teacher-school-send-btn" onclick="submitTeacherMessageToAdmin()">📤 إرسال وحفظ</button>
+            <button type="button" class="action-btn wa compose-wa-btn" id="teacher-school-wa-btn" onclick="submitTeacherMessageToAdmin(true)">📱 إرسال عبر واتساب</button>
+          </div>
           <div id="teacher-admin-sent-list"></div>
         </div>
       </div>
@@ -1228,6 +1240,6 @@ window.__splashDeadline = Date.now() + 5000;
 <script src="js/attachments.js?v=7"></script>
 <script src="js/firebase-init.js?v=37"></script>
 <script src="js/msg-delete.js?v=5"></script>
-<script src="js/app.js?v=64"></script>
+<script src="js/app.js?v=65"></script>
 </body>
 </html>
