@@ -880,6 +880,99 @@ function getGradePeriodCount(){
   return window._gradePeriodCount || GRADE_PERIOD_COUNT;
 }
 
+function parseOptionalGradeCell(raw){
+  if(raw == null) return null;
+  const s = String(raw).trim();
+  if(!s || s === '—' || s === '-') return null;
+  const n = parseFloat(s);
+  return isNaN(n) || n === 0 ? null : n;
+}
+
+function toPctPoints(v){
+  if(v == null || v === '') return null;
+  const n = parseFloat(v);
+  if(isNaN(n)) return null;
+  if(n > 0 && n <= 1) return +(n * 100).toFixed(1);
+  if(n === 0) return null;
+  return +n.toFixed(1);
+}
+
+function weekArrayAvgPct(weeks){
+  const vals = (weeks || []).map(w => {
+    if(w == null || w === '') return null;
+    const n = parseFloat(w);
+    if(isNaN(n)) return null;
+    if(n === 0) return null;
+    return n <= 1 ? n * 100 : n;
+  }).filter(v => v != null);
+  if(!vals.length) return null;
+  return +(vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1);
+}
+
+function collectFilledGradeComponents(g){
+  if(!g) return [];
+  const parts = [];
+  const addScalar = (v) => {
+    const p = toPctPoints(v);
+    if(p != null) parts.push(p);
+  };
+  addScalar(g.diagnostic);
+  addScalar(g.t1);
+  addScalar(g.t2);
+  const hwA = weekArrayAvgPct(g.hwWeeks);
+  if(hwA != null) parts.push(hwA);
+  else addScalar(g.hw);
+  const portalA = weekArrayAvgPct(g.portalWeeks);
+  if(portalA != null) parts.push(portalA);
+  else addScalar(g.portal);
+  const actA = weekArrayAvgPct(g.actWeeks);
+  if(actA != null) parts.push(actA);
+  else addScalar(g.activity);
+  if(g.lab != null && g.lab !== ''){
+    const n = parseFloat(g.lab);
+    if(!isNaN(n) && n !== 0) parts.push(n <= 1 ? n * 100 : n);
+  }
+  return parts;
+}
+
+function computeGradeTotal(g){
+  const parts = collectFilledGradeComponents(g);
+  if(!parts.length) return null;
+  return +(parts.reduce((a, b) => a + b, 0) / parts.length).toFixed(1);
+}
+
+function getGradeDisplayScore(g){
+  if(!g) return null;
+  const finalVal = parseOptionalGradeCell(g.final);
+  if(finalVal != null) return pctVal(finalVal);
+  return computeGradeTotal(g);
+}
+
+function enrichGradeRecord(g){
+  if(!g) return g;
+  const computedTotal = computeGradeTotal(g);
+  const displayScore = getGradeDisplayScore(g);
+  return { ...g, computedTotal, displayScore };
+}
+
+function hasAnyGradeData(g){
+  if(!g) return false;
+  if(parseOptionalGradeCell(g.final) != null) return true;
+  return computeGradeTotal(g) != null;
+}
+
+function formatScalarGradeCell(v){
+  if(v == null || v === '') return '—';
+  const n = parseFloat(v);
+  if(isNaN(n) || n === 0) return '—';
+  return n.toFixed(1);
+}
+
+function gradeScoreColor(score){
+  if(score == null || isNaN(score)) return 'var(--grey-3)';
+  return score >= 80 ? '#1a9a9a' : score >= 70 ? '#c8961e' : '#e53935';
+}
+
 function mergeGradeScores(cls, student){
   if(!student || !window.TEACHER_GRADES) return student;
   const sec = student.section || '';
@@ -2489,10 +2582,14 @@ async function checkPinAsync(){
 //  HELPERS
 // ══════════════════════════════════════════════════
 function getGrade(tot){
+  if(tot == null || isNaN(tot)) return currentLang === 'en' ? '—' : '—';
   if(currentLang==='en') return tot>=90?'Excellent':tot>=80?'Very Good':tot>=70?'Good':tot>=60?'Acceptable':'Weak';
   return tot>=90?'ممتاز':tot>=80?'جيد جداً':tot>=70?'جيد':tot>=60?'مقبول':'ضعيف';
 }
 function gradeBadge(tot){
+  if(tot == null || isNaN(tot)){
+    return `<span class="badge badge-grey">—</span>`;
+  }
   const g=getGrade(tot);
   const m = currentLang==='en'
     ? {'Excellent':'badge-teal','Very Good':'badge-green','Good':'badge-gold','Acceptable':'badge-grey','Weak':'badge-red'}
@@ -2541,15 +2638,15 @@ function getImportedGradeStudents(cls, sec){
         name: rec.name || '',
         nameEn: rec.nameEn || '',
         mid: rec.mid || '',
-        diagnostic: rec.diagnostic || 0,
-        t1: rec.t1 || 0,
-        t2: rec.t2 || 0,
-        hw: rec.hw || 0,
-        portal: rec.portal || 0,
-        activity: rec.activity || 0,
-        lab: rec.lab || 0,
-        total: rec.total || 0,
-        final: rec.final || 0,
+        diagnostic: rec.diagnostic ?? null,
+        t1: rec.t1 ?? null,
+        t2: rec.t2 ?? null,
+        hw: rec.hw ?? null,
+        portal: rec.portal ?? null,
+        activity: rec.activity ?? null,
+        lab: rec.lab ?? null,
+        total: rec.total ?? 0,
+        final: rec.final ?? null,
         hwWeeks: rec.hwWeeks || [],
         portalWeeks: rec.portalWeeks || [],
         actWeeks: rec.actWeeks || [],
@@ -2557,7 +2654,7 @@ function getImportedGradeStudents(cls, sec){
     });
   });
 
-  return list.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar'));
+  return list.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar')).map(enrichGradeRecord);
 }
 
 function gradesUploadEmptyRow(colspan){
@@ -4185,9 +4282,13 @@ function renderOverview(){
   if(!tbody) return;
 
   document.getElementById('stat-total').textContent=list.length || '0';
-  document.getElementById('stat-pass').textContent=list.filter(s=>(s.total||0)>=80).length;
-  document.getElementById('stat-low').textContent=list.filter(s=>(s.total||0)<70&&(s.total||0)>0).length;
-  const avg=list.length?(list.reduce((a,s)=>a+(s.total||0),0)/list.length).toFixed(1):'—';
+  document.getElementById('stat-pass').textContent=list.filter(s=>(s.displayScore ?? s.computedTotal ?? 0)>=80).length;
+  document.getElementById('stat-low').textContent=list.filter(s=>{
+    const sc = s.displayScore ?? s.computedTotal;
+    return sc != null && sc < 70 && sc > 0;
+  }).length;
+  const withScores = list.filter(s => (s.displayScore ?? s.computedTotal) != null);
+  const avg=withScores.length?(withScores.reduce((a,s)=>a+(s.displayScore ?? s.computedTotal),0)/withScores.length).toFixed(1):'—';
   document.getElementById('stat-avg').textContent=avg==='—'?'—':avg+'%';
 
   if(!list.length){
@@ -4196,24 +4297,22 @@ function renderOverview(){
   }
 
   tbody.innerHTML=list.map((s,i)=>{
-    const tot=(s.total||0); const c=tot>=80?'#1a9a9a':tot>=70?'#c8961e':'#e53935';
-    const diag=(s.diagnostic||0);
-    const t1=(s.t1||0),t2=(s.t2||0),hw=(s.hw||0),portal=(s.portal||0),
-          activity=(s.activity||0),total=(s.total||0),lab=(s.lab||0),finalG=(s.final||0);
-    const secLbl=s.section?` <span style="font-size:11px;color:var(--grey-3)">${s.section}</span>`:'';
+    const total = s.computedTotal;
+    const score = s.displayScore;
+    const c = gradeScoreColor(score ?? total);
     return `<tr>
       <td>${i+1}</td>
-      <td><span class="badge badge-teal">${s.cls}</span>${secLbl}</td>
+      <td><span class="badge badge-teal">${s.cls}</span>${s.section ? ` <span style="font-size:11px;color:var(--grey-3)">${s.section}</span>` : ''}</td>
       <td style="text-align:right;font-weight:500">${displayStudentName(s, s.cls || cls, s.section, s.mid)}</td>
-      <td>${diag ? diag.toFixed(1) : '—'}</td>
-      <td>${t1.toFixed(1)}</td><td>${t2.toFixed(1)}</td>
-      <td>${hw.toFixed(1)}%${bar(hw)}</td>
-      <td>${portal.toFixed(1)}%${bar(portal)}</td>
-      <td>${activity}%${bar(activity,'#c8961e')}</td>
-      <td>${lab || '—'}</td>
-      <td><strong>${total.toFixed(1)}</strong>${bar(total,c)}</td>
-      <td>${finalG ? finalG.toFixed(1) : '—'}</td>
-      <td>${gradeBadge(total)}</td>
+      <td>${formatScalarGradeCell(s.diagnostic)}</td>
+      <td>${formatScalarGradeCell(s.t1)}</td><td>${formatScalarGradeCell(s.t2)}</td>
+      <td>${s.hw != null ? s.hw.toFixed(1)+'%'+bar(s.hw) : '—'}</td>
+      <td>${s.portal != null ? s.portal.toFixed(1)+'%'+bar(s.portal) : '—'}</td>
+      <td>${s.activity != null ? s.activity+'%'+bar(s.activity,'#c8961e') : '—'}</td>
+      <td>${s.lab != null && s.lab !== 0 ? s.lab : '—'}</td>
+      <td>${total != null ? `<strong>${total.toFixed(1)}</strong>${bar(total,c)}` : '—'}</td>
+      <td>${parseOptionalGradeCell(s.final) != null ? pctVal(s.final).toFixed(1) : '—'}</td>
+      <td>${gradeBadge(score)}</td>
     </tr>`;
   }).join('');
 }
@@ -4242,7 +4341,7 @@ function renderGradesTableHead(){
 function formatWeekCell(v){
   if(v == null || v === '') return '—';
   const n = parseFloat(v);
-  if(isNaN(n)) return '—';
+  if(isNaN(n) || n === 0) return '—';
   return n <= 1 ? (n * 100).toFixed(0) : n.toFixed(0);
 }
 function renderGradesTab(){
@@ -4264,47 +4363,58 @@ function renderGradesTab(){
   }
 
   const rows = students.map((s,i)=>{
-    const c=s.total>=80?'#1a9a9a':s.total>=70?'#c8961e':'#e53935';
+    const total = s.computedTotal;
+    const score = s.displayScore;
+    const c = gradeScoreColor(score ?? total);
     const displayName = displayStudentName(s, cls, s.section, s.mid);
     return `<tr>
       <td>${i+1}</td>
       <td class="name-cell">${displayName}</td>
-      <td>${(s.diagnostic||0) ? s.diagnostic.toFixed(1) : '—'}</td>
-      <td>${(s.t1||0).toFixed(1)}</td><td>${(s.t2||0).toFixed(1)}</td>
+      <td>${formatScalarGradeCell(s.diagnostic)}</td>
+      <td>${formatScalarGradeCell(s.t1)}</td><td>${formatScalarGradeCell(s.t2)}</td>
       ${weekCells(s.hwWeeks)}
       ${weekCells(s.portalWeeks)}
       ${weekCells(s.actWeeks)}
-      <td>${s.lab ?? '—'}</td>
-      <td><strong style="color:${c}">${(s.total||0).toFixed(1)}</strong></td>
-      <td>${(s.final||0) ? s.final.toFixed(1) : '—'}</td>
-      <td>${gradeBadge(s.total)}</td>
+      <td>${s.lab != null && s.lab !== 0 ? s.lab : '—'}</td>
+      <td>${total != null ? `<strong style="color:${c}">${total.toFixed(1)}</strong>` : '—'}</td>
+      <td>${parseOptionalGradeCell(s.final) != null ? pctVal(s.final).toFixed(1) : '—'}</td>
+      <td>${gradeBadge(score)}</td>
     </tr>`;
   }).join('');
 
-  const avg = f=>( students.reduce((a,s)=>a+(s[f]||0),0)/students.length ).toFixed(1);
+  const avgScalar = key=>{
+    const vals = students.map(st => parseOptionalGradeCell(st[key])).filter(v => v != null && v !== 0);
+    if(!vals.length) return '—';
+    return (vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(1);
+  };
+  const avgComputed = ()=>{
+    const vals = students.map(st => st.computedTotal).filter(v => v != null);
+    if(!vals.length) return '—';
+    return (vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(1);
+  };
   const avgWeek = key=>{
     const sums = Array(getGradePeriodCount()).fill(0);
     const counts = Array(getGradePeriodCount()).fill(0);
     students.forEach(s=>{
       (s[key]||[]).forEach((v,i)=>{
-        if(v != null && !isNaN(v)){ sums[i]+=v; counts[i]++; }
+        if(v != null && !isNaN(v) && parseFloat(v) !== 0){ sums[i]+=parseFloat(v); counts[i]++; }
       });
     });
     return sums.map((s,i)=> counts[i] ? `<td>${formatWeekCell(s/counts[i])}</td>` : '<td>—</td>').join('');
   };
-  const avgTotal = parseFloat(avg('total'));
-  const avgColor = avgTotal>=80?'#1a9a9a':avgTotal>=70?'#c8961e':'#e53935';
+  const avgTotal = parseFloat(avgComputed());
+  const avgColor = isNaN(avgTotal) ? 'var(--grey-3)' : gradeScoreColor(avgTotal);
   const avgLabel = isEn?'Class Average':'المتوسط';
   if(tbody){
     tbody.innerHTML = rows + `<tr class="avg-row">
       <td>—</td><td class="name-cell">${avgLabel}</td>
       <td>—</td>
-      <td>${avg('t1')}</td><td>${avg('t2')}</td>
+      <td>${avgScalar('t1')}</td><td>${avgScalar('t2')}</td>
       ${avgWeek('hwWeeks')}
       ${avgWeek('portalWeeks')}
       ${avgWeek('actWeeks')}
       <td>—</td>
-      <td style="color:${avgColor}">${avg('total')}</td>
+      <td style="color:${avgColor}">${avgComputed()}</td>
       <td>—</td>
       <td>—</td>
     </tr>`;
@@ -6644,6 +6754,7 @@ async function fetchTeacherGradeRecord(teacherKey, cls, section, mid, studentNam
 
 function buildParentWeeklyGradeTable(gd, isEn){
   if(!gd) return '';
+  const g = enrichGradeRecord(gd);
   const wk = n => isEn ? `M${n}` : `ش${n}`;
   const periodCount = getGradePeriodCount();
   const weekHead = Array.from({length:periodCount}, (_,i)=>`<th>${wk(i+1)}</th>`).join('');
@@ -6651,10 +6762,12 @@ function buildParentWeeklyGradeTable(gd, isEn){
     const v = arr?.[i];
     if(v == null || v === '') return '<td>—</td>';
     const n = parseFloat(v);
-    if(isNaN(n)) return '<td>—</td>';
+    if(isNaN(n) || n === 0) return '<td>—</td>';
     const txt = n <= 1 ? (n * 100).toFixed(0) : n.toFixed(0);
     return `<td>${txt}</td>`;
   }).join('');
+  const total = g.computedTotal;
+  const score = g.displayScore;
 
   return `<div class="table-wrap parent-grades-wrap" style="margin-bottom:14px">
     <table class="grades-template-table parent-grades-table">
@@ -6673,15 +6786,15 @@ function buildParentWeeklyGradeTable(gd, isEn){
         <tr>${weekHead}${weekHead}${weekHead}</tr>
       </thead>
       <tbody><tr>
-        <td>${(gd.diagnostic||0) ? gd.diagnostic.toFixed(1) : '—'}</td>
-        <td>${(gd.t1||0).toFixed(1)}</td>
-        <td>${(gd.t2||0).toFixed(1)}</td>
-        ${weekCells(gd.hwWeeks)}
-        ${weekCells(gd.portalWeeks)}
-        ${weekCells(gd.actWeeks)}
-        <td>${gd.lab ?? '—'}</td>
-        <td><strong style="color:var(--teal-dark)">${(gd.total||0).toFixed(1)}%</strong></td>
-        <td>${(gd.final||0) ? gd.final.toFixed(1) : '—'}</td>
+        <td>${formatScalarGradeCell(g.diagnostic)}</td>
+        <td>${formatScalarGradeCell(g.t1)}</td>
+        <td>${formatScalarGradeCell(g.t2)}</td>
+        ${weekCells(g.hwWeeks)}
+        ${weekCells(g.portalWeeks)}
+        ${weekCells(g.actWeeks)}
+        <td>${g.lab != null && g.lab !== 0 ? g.lab : '—'}</td>
+        <td><strong style="color:var(--teal-dark)">${total != null ? total.toFixed(1)+'%' : '—'}</strong></td>
+        <td>${parseOptionalGradeCell(g.final) != null ? pctVal(g.final).toFixed(1) : '—'}</td>
       </tr></tbody>
     </table>
   </div>`;
@@ -7551,39 +7664,38 @@ async function renderParentAcademic(cls, studentName, mid, teachersList){
         return {...s, subject:tc.subject, subjLabel:tc.subjLabel, teacherName:tc.name};
       })
     );
-    allGrades = results.filter(Boolean);
+    allGrades = results.filter(Boolean).map(enrichGradeRecord);
   }
-
-  const hasGradeValue = g => (g.total||0) > 0 || (g.t1||0) > 0 || (g.t2||0) > 0 || (g.hw||0) > 0;
 
   const tableRows = (teachersList || []).map(tc=>{
     const g = allGrades.find(x=>x.subject===tc.subject);
-    const total  = g && hasGradeValue(g) ? (g.total||0) : null;
-    const color  = total===null?'var(--grey-3)':total>=80?'var(--green-soft)':total>=70?'var(--gold)':'var(--red-soft)';
-    const badge  = total===null
+    const total = g && hasAnyGradeData(g) ? g.computedTotal : null;
+    const score = g ? g.displayScore : null;
+    const color = gradeScoreColor(score ?? total);
+    const badge = score == null && total == null
       ? `<span style="color:var(--grey-3);font-size:12px">${isEnL?'Not entered':'لم يُدخل'}</span>`
-      : `<strong style="color:${color}">${total.toFixed(1)}%</strong>`;
+      : `<strong style="color:${color}">${(score ?? total).toFixed(1)}%</strong>`;
     return `<tr>
       <td style="font-weight:600">${tc.subjLabel}</td>
       <td style="font-size:12px;color:var(--grey-3)">${tc.name}</td>
-      <td>${g?(g.diagnostic||0)?g.diagnostic.toFixed(1):'—':'—'}</td>
-      <td>${g?(g.t1||0).toFixed(1):'—'}</td>
-      <td>${g?(g.t2||0).toFixed(1):'—'}</td>
-      <td>${g?(g.hw||0).toFixed(1)+'%':'—'}</td>
-      <td>${g?(g.portal||0).toFixed(1)+'%':'—'}</td>
-      <td>${g?(g.activity||0)+'%':'—'}</td>
-      <td>${g?(g.lab||0):'—'}</td>
+      <td>${g ? formatScalarGradeCell(g.diagnostic) : '—'}</td>
+      <td>${g ? formatScalarGradeCell(g.t1) : '—'}</td>
+      <td>${g ? formatScalarGradeCell(g.t2) : '—'}</td>
+      <td>${g && g.hw != null ? g.hw.toFixed(1)+'%' : '—'}</td>
+      <td>${g && g.portal != null ? g.portal.toFixed(1)+'%' : '—'}</td>
+      <td>${g && g.activity != null ? g.activity+'%' : '—'}</td>
+      <td>${g && g.lab != null && g.lab !== 0 ? g.lab : '—'}</td>
       <td>${badge}</td>
-      <td>${g?(g.final||0)?g.final.toFixed(1):'—':'—'}</td>
+      <td>${g && parseOptionalGradeCell(g.final) != null ? pctVal(g.final).toFixed(1) : '—'}</td>
     </tr>`;
   }).join('');
 
-  const enteredGrades = allGrades.filter(g=>(g.total||0)>0);
+  const enteredGrades = allGrades.filter(g => g.displayScore != null || g.computedTotal != null);
   const overallAvg = enteredGrades.length
-    ? (enteredGrades.reduce((s,g)=>s+(g.total||0),0)/enteredGrades.length).toFixed(1)
+    ? (enteredGrades.reduce((s,g)=>s+(g.displayScore ?? g.computedTotal),0)/enteredGrades.length).toFixed(1)
     : null;
 
-  const sorted = [...enteredGrades].sort((a,b)=>(b.total||0)-(a.total||0));
+  const sorted = [...enteredGrades].sort((a,b)=>(b.displayScore ?? b.computedTotal ?? 0)-(a.displayScore ?? a.computedTotal ?? 0));
   const best   = sorted[0];
   const weak   = sorted[sorted.length-1];
 
@@ -7816,8 +7928,8 @@ async function loadSubjectTabContent(idx, cls, studentName, mid, teachersList){
   const color   = violations===0?'#2e7d32':violations<=2?'#1a9a9a':violations<=4?'#e65100':'#c62828';
   const bg      = violations===0?'#e8f5e9':violations<=2?'#e0f7f7':violations<=4?'#fff3e0':'#ffebee';
 
-  const gd = gradeData||{};
-  const gradeHtml = gradeData ? `
+  const gd = gradeData ? enrichGradeRecord(gradeData) : null;
+  const gradeHtml = gd ? `
     <div class="parent-subject-panel">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <div class="section-title" style="margin:0">📊 ${isEn?'Subject Grades':'سجل المادة'}</div>
@@ -7825,8 +7937,8 @@ async function loadSubjectTabContent(idx, cls, studentName, mid, teachersList){
     </div>
     ${buildParentWeeklyGradeTable(gd, isEn)}
     <div style="text-align:center;background:var(--teal-pale);border-radius:8px;padding:10px;margin-bottom:14px">
-      <span style="font-size:22px;font-weight:800;color:var(--teal-dark)">${(gd.total||0).toFixed(1)}%</span>
-      <span style="margin-right:8px">${gradeBadge(gd.total||0)}</span>
+      <span style="font-size:22px;font-weight:800;color:var(--teal-dark)">${gd.displayScore != null ? gd.displayScore.toFixed(1)+'%' : '—'}</span>
+      <span style="margin-right:8px">${gradeBadge(gd.displayScore)}</span>
     </div></div>` : `<div class="empty-state" style="padding:20px;margin-bottom:14px">
       <div class="ico">📊</div>
       <p style="font-size:13px">${isEn?'No grades yet — teacher will upload via Excel':'لا توجد درجات بعد — سيحدّثها المعلم من ملف Excel'}</p>
@@ -8182,7 +8294,9 @@ function renderParentView(cls,name){
       <div class="notes-half">
         <h4 style="color:var(--teal-dark)">${t('academicStatus')}</h4>
         ${(()=>{
-          const tot = student.total||0;
+          const enriched = enrichGradeRecord(student);
+          const tot = enriched.displayScore ?? enriched.computedTotal ?? 0;
+          if(!tot) return `<p style="color:var(--grey-3);font-size:13px">${t('noGradesYet')||'—'}</p>`;
           const acColor = tot>=85?'#1b5e20':tot>=70?'#1a9a9a':tot>=60?'#e65100':'#c62828';
           const bar = '<div style="display:flex;gap:24px;align-items:flex-end;justify-content:center;margin-top:8px">'
             +'<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1">'
@@ -10245,7 +10359,7 @@ function readWeekValues(row, cols){
 
 function avgWeekValues(vals){
   const nums = (vals || []).filter(v => v !== null && !isNaN(v));
-  if(!nums.length) return 0;
+  if(!nums.length) return null;
   const sum = nums.reduce((a,b)=>a+b, 0);
   const avg = sum / nums.length;
   return avg <= 1 ? +(avg * 100).toFixed(1) : +avg.toFixed(1);
@@ -10291,32 +10405,26 @@ function parseGradeRow(row, map, sheetHint){
   const portalVals = readWeekValues(row, map.portalWeeks);
   const actVals = readWeekValues(row, map.actWeeks);
 
-  const t1 = parseFloat(row[map.t1]) || 0;
-  const t2 = parseFloat(row[map.t2]) || 0;
-  const lab = parseFloat(row[map.lab]) || 0;
-  let total = parseFloat(row[map.total]);
-  if(isNaN(total)){
-    total = parseFloat(row[map.final]) || 0;
-  }
-  total = pctVal(total);
-
   const gradeObj = {
     name: hit.student.name,
     mid: hit.student.mid,
-    diagnostic: parseFloat(row[map.diagnostic]) || 0,
-    t1: +t1.toFixed(1),
-    t2: +t2.toFixed(1),
+    diagnostic: parseOptionalGradeCell(row[map.diagnostic]),
+    t1: parseOptionalGradeCell(row[map.t1]),
+    t2: parseOptionalGradeCell(row[map.t2]),
     hw: avgWeekValues(hwVals),
     portal: avgWeekValues(portalVals),
-    activity: Math.round(avgWeekValues(actVals)),
-    lab: +lab.toFixed(0),
-    total,
-    final: parseFloat(row[map.final]) || 0,
+    activity: (()=>{
+      const a = avgWeekValues(actVals);
+      return a != null ? Math.round(a) : null;
+    })(),
+    lab: parseOptionalGradeCell(row[map.lab]),
+    final: parseOptionalGradeCell(row[map.final]),
     hwWeeks: hwVals,
     portalWeeks: portalVals,
     actWeeks: actVals,
     updatedAt: new Date().toISOString(),
   };
+  gradeObj.total = computeGradeTotal(gradeObj) ?? 0;
 
   const parentPhone = map.phone != null ? String(row[map.phone] ?? '').trim() : '';
   return { hit, gradeObj, parentPhone };
@@ -10519,14 +10627,14 @@ function renderAnalysisTab(){
   const isEn = currentLang==='en';
   const cls  = document.getElementById('analysis-class')?.value || '';
   const sec  = document.getElementById('analysis-sec')?.value || '';
-  const students = allStudents(cls, sec);
-
-  const withGrades = students.filter(s => (s.total||0) > 0 || (s.t1||0) > 0 || (s.t2||0) > 0);
+  const students = allStudents(cls, sec).map(enrichGradeRecord);
+  const scoreOf = s => s.displayScore ?? s.computedTotal;
+  const withGrades = students.filter(hasAnyGradeData);
   const avg = withGrades.length
-    ? (withGrades.reduce((a,s)=>a+(s.total||0),0)/withGrades.length).toFixed(1)
+    ? (withGrades.reduce((a,s)=>a+scoreOf(s),0)/withGrades.length).toFixed(1)
     : '—';
-  const pass = withGrades.filter(s=>(s.total||0)>=70).length;
-  const fail = withGrades.filter(s=>(s.total||0)>0 && (s.total||0)<70).length;
+  const pass = withGrades.filter(s=>scoreOf(s)>=70).length;
+  const fail = withGrades.filter(s=>{ const sc = scoreOf(s); return sc != null && sc < 70; }).length;
 
   statsEl.innerHTML = `
     <div class="stat-card"><div class="stat-icon teal">👥</div><div><div class="stat-val">${withGrades.length}</div><div class="stat-label">${isEn?'With grades':'طلاب بدرجات'}</div></div></div>
@@ -10539,7 +10647,7 @@ function renderAnalysisTab(){
     : ['ممتاز 90+','جيد جداً 80+','جيد 70+','مقبول 60+','ضعيف <60'];
   const bucketCounts = [0,0,0,0,0];
   withGrades.forEach(s=>{
-    const t = s.total||0;
+    const t = scoreOf(s) || 0;
     if(t>=90) bucketCounts[0]++;
     else if(t>=80) bucketCounts[1]++;
     else if(t>=70) bucketCounts[2]++;
@@ -10548,9 +10656,11 @@ function renderAnalysisTab(){
   });
 
   const remedial = withGrades.filter(s=>{
-    const t = s.total||0;
-    return t < 70 || (s.t1||0) < 60 || (s.t2||0) < 60;
-  }).sort((a,b)=>(a.total||0)-(b.total||0));
+    const t = scoreOf(s) || 0;
+    const t1 = parseOptionalGradeCell(s.t1);
+    const t2 = parseOptionalGradeCell(s.t2);
+    return t < 70 || (t1 != null && t1 < 60) || (t2 != null && t2 < 60);
+  }).sort((a,b)=>(scoreOf(a)||0)-(scoreOf(b)||0));
 
   document.getElementById('an-remedial-count').textContent =
     remedial.length
@@ -10559,19 +10669,21 @@ function renderAnalysisTab(){
 
   listEl.innerHTML = remedial.length
     ? remedial.map(s=>{
-        const rec = getStudentGradeRecord(s);
         const name = displayStudentName(s, s.cls || cls, s.section, s.mid);
+        const sc = scoreOf(s) || 0;
         const reasons = [];
-        if((s.total||0)<70) reasons.push(isEn?'Total below 70%':'المحصلة دون 70%');
-        if((s.t1||0)<60) reasons.push(isEn?'Formative 1 weak':'تكويني 1 ضعيف');
-        if((s.t2||0)<60) reasons.push(isEn?'Formative 2 weak':'تكويني 2 ضعيف');
+        if(sc < 70) reasons.push(isEn?'Score below 70%':'التقدير دون 70%');
+        const t1 = parseOptionalGradeCell(s.t1);
+        const t2 = parseOptionalGradeCell(s.t2);
+        if(t1 != null && t1 < 60) reasons.push(isEn?'Formative 1 weak':'تكويني 1 ضعيف');
+        if(t2 != null && t2 < 60) reasons.push(isEn?'Formative 2 weak':'تكويني 2 ضعيف');
         return `<div class="remedial-card">
           <div>
             <strong>${name}</strong>
-            <div class="remedial-meta">${isEn?'Grade':'الصف'} ${s.cls}${s.section?' · '+s.section:''} · ${isEn?'Total':'المحصلة'}: ${(s.total||0).toFixed(1)}%</div>
+            <div class="remedial-meta">${isEn?'Grade':'الصف'} ${s.cls}${s.section?' · '+s.section:''} · ${isEn?'Score':'التقدير'}: ${sc.toFixed(1)}%</div>
             <div class="remedial-meta">${reasons.join(' · ')}</div>
           </div>
-          <span class="badge badge-red">${(s.total||0).toFixed(1)}%</span>
+          <span class="badge badge-red">${sc.toFixed(1)}%</span>
         </div>`;
       }).join('')
     : `<div class="empty-state"><div class="ico">🌟</div><p>${isEn?'No students need a remedial plan right now':'لا يوجد طلاب مستهدفون حالياً'}</p></div>`;
