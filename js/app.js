@@ -255,8 +255,32 @@ function normalizeParentPhone(raw){
   return /^\d{9,15}$/.test(p) ? p : '';
 }
 
+function resolveStudentForWhatsApp(grade, name, mid, section){
+  if(grade && (name || mid)){
+    const hit = findStudentInGrade(grade, name, mid, section);
+    if(hit) return hit;
+  }
+  if(grade && name){
+    const hit = findStudentInGrade(grade, name);
+    if(hit) return hit;
+  }
+  if(mid){
+    for(const g of ['5','6','7','8']){
+      const hit = findStudentInGrade(g, name, mid, section);
+      if(hit) return hit;
+    }
+  }
+  if(name){
+    for(const g of ['5','6','7','8']){
+      const hit = findStudentInGrade(g, name);
+      if(hit) return hit;
+    }
+  }
+  return null;
+}
+
 function getStudentParentPhone(cls, name, mid, section){
-  const s = findStudentInGrade(cls, name, mid, section);
+  const s = resolveStudentForWhatsApp(cls, name, mid, section);
   return normalizeParentPhone(s?.parentPhone || s?.phone || '');
 }
 
@@ -270,9 +294,11 @@ function buildWhatsAppUrl(phone, text){
 function openWhatsAppToParent(cls, sec, name, mid, text){
   const phone = getStudentParentPhone(cls, name, mid, sec);
   const url = buildWhatsAppUrl(phone, text);
-  if(!url){
-    showToast(currentLang === 'en' ? '⚠️ No parent phone on file' : '⚠️ لا يوجد رقم هاتف مسجّل لولي الأمر');
-    return;
+  if(!url) return;
+  if(!phone){
+    showToast(currentLang === 'en'
+      ? 'ℹ️ No phone on file — choose the parent in WhatsApp'
+      : 'ℹ️ لا يوجد رقم مسجّل — اختر ولي الأمر في واتساب');
   }
   window.open(url, '_blank');
 }
@@ -303,11 +329,10 @@ async function persistStudentPhone(grade, sec, mid, phone){
 
 window.__waPending = window.__waPending || {};
 function waParentBtnHtml(cls, sec, name, mid, text){
-  if(!getStudentParentPhone(cls, name, mid, sec)) return '';
   const id = 'wa_' + Math.random().toString(36).slice(2, 11);
   window.__waPending[id] = { cls, sec: sec || '', name, mid: mid || '', text: text || '' };
   const lbl = currentLang === 'en' ? '📱 Send via WhatsApp' : '📱 إرسال عبر واتساب';
-  return '<button type="button" class="action-btn wa" style="font-size:11px;padding:4px 8px;margin-top:4px"'
+  return '<button type="button" class="action-btn wa" style="font-size:11px;padding:6px 12px;margin-top:8px;display:inline-block"'
     + ' onclick="event.stopPropagation();openWhatsAppPending(\'' + id + '\')">' + lbl + '</button>';
 }
 function openWhatsAppPending(id){
@@ -3978,9 +4003,17 @@ function saveMessage(){
       if(PortalAttachments?.getPending(attInput)){
         attachment = await _uploadAtt(attInput, 'tm', { teacherKey: key });
       }
+      const gradeStudents = getFilteredStudents()[cls]||[];
+      const students = sec ? gradeStudents.filter(s=>s.section===sec) : gradeStudents;
+      const stu = students.find(s=>s.name===name);
       const d = new Date();
       const msg = {
-        cls, name, type, body: body || (currentLang==='en' ? '📎 Attachment' : '📎 مرفق'),
+        cls,
+        section: sec || stu?.section || '',
+        mid: stu?.mid || '',
+        name,
+        type,
+        body: body || (currentLang==='en' ? '📎 Attachment' : '📎 مرفق'),
         date: d.toLocaleDateString('ar-AE')+' '+d.toLocaleTimeString('ar-AE',{hour:'2-digit',minute:'2-digit'}),
         ts: d.toISOString()
       };
@@ -4043,9 +4076,9 @@ function renderSavedMessages(){
   const icons={praise:'🌟',warning:'⚠️',info:'📘'};
   const labels={praise:t('praiseMsg'),warning:t('warningMsg'),info:t('infoMsg')};
   wrap.innerHTML=[...visible].reverse().map(m=>{
-    const stu = findStudentInGrade(m.cls, m.name, m.mid);
-    const sec = stu?.section || m.section || '';
-    const waBtn = waParentBtnHtml(m.cls, sec, m.name, stu?.mid || m.mid, m.body || '');
+    const stu = resolveStudentForWhatsApp(m.cls, m.name, m.mid, m.section);
+    const sec = m.section || stu?.section || '';
+    const waBtn = waParentBtnHtml(m.cls, sec, m.name, m.mid || stu?.mid, m.body || '');
     return `
     <div class="msg-card">
       <div class="msg-header">
@@ -8066,9 +8099,9 @@ function renderBvLog(){
     const rows = studentLogs.map((e, rowIdx) => {
       const vObj = VIOLATIONS.find(v => v.id === e.violationId);
       const entryId = e.id || '';
-      const stu = findStudentInGrade(eCls, eName);
+      const stu = resolveStudentForWhatsApp(eCls, eName, e.mid);
       const waText = buildBehaviorMsg(eName, vObj?.label || e.violationLabel, e.academic, e.conduct, '', e.date || '');
-      const waBtn = waParentBtnHtml(eCls, stu?.section, eName, stu?.mid, waText);
+      const waBtn = waParentBtnHtml(eCls, stu?.section || e.section, eName, stu?.mid || e.mid, waText);
       return `<tr>
         <td style="font-size:11px;white-space:nowrap;padding-right:28px">${e.date||''}</td>
         <td><span class="badge badge-teal">${e.cls}</span></td>
@@ -8909,7 +8942,8 @@ function renderParentInbox(){
     const subj = m.subjLabel || '';
     const unread = !isTeacherParentMsgRead(m);
     const safeId = escapeHtml(m.id || '');
-    const waBtn = waParentBtnHtml(m.cls, m.section, m.name, m.mid, m.body || '');
+    const stu = resolveStudentForWhatsApp(m.cls, m.name, m.mid, m.section);
+    const waBtn = waParentBtnHtml(m.cls, m.section || stu?.section, m.name, m.mid || stu?.mid, m.body || '');
     return `
     <div class="inbox-card ${unread?'unread':''}" onclick="markRead('${safeId}')">
       <div class="inbox-header">
