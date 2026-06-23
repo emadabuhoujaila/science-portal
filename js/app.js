@@ -530,7 +530,7 @@ async function saveStaffWhatsAppProfile(){
   const btn = document.getElementById(prefix + '-save-btn');
   if(btn){ btn.disabled = true; btn.textContent = isEn ? 'Saving…' : 'جارٍ الحفظ…'; }
   try{
-    if(isAdminScreen || IS_ADMIN){
+    if(isAdminScreen){
       await db.ref('adminWhatsApp/' + auth.currentUser.uid).set({
         phone,
         optIn,
@@ -541,14 +541,18 @@ async function saveStaffWhatsAppProfile(){
     } else {
       const key = getTeacherKey();
       if(!key) throw new Error('no teacher key');
-      await db.ref('teachers/' + key).update({ whatsappPhone: phone, waOptIn: optIn });
+      await db.ref('teachers/' + key + '/whatsappPhone').set(phone);
+      await db.ref('teachers/' + key + '/waOptIn').set(optIn);
       window._teacherWaProfiles[key] = { phone, optIn };
       fillWhatsAppProfileFields('settings-wa', window._teacherWaProfiles[key]);
     }
     showToast(isEn ? '✅ WhatsApp settings saved' : '✅ تم حفظ إعدادات واتساب');
   }catch(e){
     console.warn('saveStaffWhatsAppProfile', e);
-    showToast(isEn ? '⚠️ Save failed' : '⚠️ فشل الحفظ');
+    const denied = e?.code === 'PERMISSION_DENIED' || /permission/i.test(String(e?.message || ''));
+    showToast(denied
+      ? (isEn ? '⚠️ Save denied — refresh and try again' : '⚠️ رُفِض الحفظ — حدّث الصفحة وحاول مجدداً')
+      : (isEn ? '⚠️ Save failed' : '⚠️ فشل الحفظ'));
   }finally{
     if(btn){
       btn.disabled = false;
