@@ -973,6 +973,31 @@ function gradeScoreColor(score){
   return score >= 80 ? '#1a9a9a' : score >= 70 ? '#c8961e' : '#e53935';
 }
 
+function hasFilledFinalGrade(g){
+  return parseOptionalGradeCell(g?.final) != null;
+}
+
+function formatGradeTotalCell(g, opts){
+  opts = opts || {};
+  const suffix = opts.suffix || '';
+  const total = g?.computedTotal;
+  if(total == null) return '—';
+  if(hasFilledFinalGrade(g)){
+    return `<strong>${total.toFixed(1)}${suffix}</strong>`;
+  }
+  const c = gradeScoreColor(total);
+  return `<strong style="color:${c}">${total.toFixed(1)}${suffix}</strong>${bar(total, c)}`;
+}
+
+function formatGradeFinalCell(g, opts){
+  opts = opts || {};
+  const suffix = opts.suffix || '';
+  if(!hasFilledFinalGrade(g)) return '—';
+  const pct = pctVal(g.final);
+  const c = gradeScoreColor(pct);
+  return `<strong style="color:${c}">${pct.toFixed(1)}${suffix}</strong>${bar(pct, c)}`;
+}
+
 function mergeGradeScores(cls, student){
   if(!student || !window.TEACHER_GRADES) return student;
   const sec = student.section || '';
@@ -4296,11 +4321,8 @@ function renderOverview(){
     return;
   }
 
-  tbody.innerHTML=list.map((s,i)=>{
-    const total = s.computedTotal;
-    const score = s.displayScore;
-    const c = gradeScoreColor(score ?? total);
-    return `<tr>
+  tbody.innerHTML=list.map((s,i)=>`
+    <tr>
       <td>${i+1}</td>
       <td><span class="badge badge-teal">${s.cls}</span>${s.section ? ` <span style="font-size:11px;color:var(--grey-3)">${s.section}</span>` : ''}</td>
       <td style="text-align:right;font-weight:500">${displayStudentName(s, s.cls || cls, s.section, s.mid)}</td>
@@ -4310,11 +4332,10 @@ function renderOverview(){
       <td>${s.portal != null ? s.portal.toFixed(1)+'%'+bar(s.portal) : '—'}</td>
       <td>${s.activity != null ? s.activity+'%'+bar(s.activity,'#c8961e') : '—'}</td>
       <td>${s.lab != null && s.lab !== 0 ? s.lab : '—'}</td>
-      <td>${total != null ? `<strong>${total.toFixed(1)}</strong>${bar(total,c)}` : '—'}</td>
-      <td>${parseOptionalGradeCell(s.final) != null ? pctVal(s.final).toFixed(1) : '—'}</td>
-      <td>${gradeBadge(score)}</td>
-    </tr>`;
-  }).join('');
+      <td>${formatGradeTotalCell(s)}</td>
+      <td>${formatGradeFinalCell(s)}</td>
+      <td>${gradeBadge(s.displayScore)}</td>
+    </tr>`).join('');
 }
 function renderGradesTableHead(){
   const thead = document.getElementById('grades-thead');
@@ -4363,9 +4384,6 @@ function renderGradesTab(){
   }
 
   const rows = students.map((s,i)=>{
-    const total = s.computedTotal;
-    const score = s.displayScore;
-    const c = gradeScoreColor(score ?? total);
     const displayName = displayStudentName(s, cls, s.section, s.mid);
     return `<tr>
       <td>${i+1}</td>
@@ -4376,9 +4394,9 @@ function renderGradesTab(){
       ${weekCells(s.portalWeeks)}
       ${weekCells(s.actWeeks)}
       <td>${s.lab != null && s.lab !== 0 ? s.lab : '—'}</td>
-      <td>${total != null ? `<strong style="color:${c}">${total.toFixed(1)}</strong>` : '—'}</td>
-      <td>${parseOptionalGradeCell(s.final) != null ? pctVal(s.final).toFixed(1) : '—'}</td>
-      <td>${gradeBadge(score)}</td>
+      <td>${formatGradeTotalCell(s)}</td>
+      <td>${formatGradeFinalCell(s)}</td>
+      <td>${gradeBadge(s.displayScore)}</td>
     </tr>`;
   }).join('');
 
@@ -6766,9 +6784,6 @@ function buildParentWeeklyGradeTable(gd, isEn){
     const txt = n <= 1 ? (n * 100).toFixed(0) : n.toFixed(0);
     return `<td>${txt}</td>`;
   }).join('');
-  const total = g.computedTotal;
-  const score = g.displayScore;
-
   return `<div class="table-wrap parent-grades-wrap" style="margin-bottom:14px">
     <table class="grades-template-table parent-grades-table">
       <thead>
@@ -6793,8 +6808,8 @@ function buildParentWeeklyGradeTable(gd, isEn){
         ${weekCells(g.portalWeeks)}
         ${weekCells(g.actWeeks)}
         <td>${g.lab != null && g.lab !== 0 ? g.lab : '—'}</td>
-        <td><strong style="color:var(--teal-dark)">${total != null ? total.toFixed(1)+'%' : '—'}</strong></td>
-        <td>${parseOptionalGradeCell(g.final) != null ? pctVal(g.final).toFixed(1) : '—'}</td>
+        <td>${formatGradeTotalCell(g, { suffix: '%' })}</td>
+        <td>${formatGradeFinalCell(g)}</td>
       </tr></tbody>
     </table>
   </div>`;
@@ -7669,12 +7684,10 @@ async function renderParentAcademic(cls, studentName, mid, teachersList){
 
   const tableRows = (teachersList || []).map(tc=>{
     const g = allGrades.find(x=>x.subject===tc.subject);
-    const total = g && hasAnyGradeData(g) ? g.computedTotal : null;
-    const score = g ? g.displayScore : null;
-    const color = gradeScoreColor(score ?? total);
-    const badge = score == null && total == null
-      ? `<span style="color:var(--grey-3);font-size:12px">${isEnL?'Not entered':'لم يُدخل'}</span>`
-      : `<strong style="color:${color}">${(score ?? total).toFixed(1)}%</strong>`;
+    const totalCell = g && hasAnyGradeData(g)
+      ? formatGradeTotalCell(g, { suffix: '%' })
+      : `<span style="color:var(--grey-3);font-size:12px">${isEnL?'Not entered':'لم يُدخل'}</span>`;
+    const finalCell = g ? formatGradeFinalCell(g) : '—';
     return `<tr>
       <td style="font-weight:600">${tc.subjLabel}</td>
       <td style="font-size:12px;color:var(--grey-3)">${tc.name}</td>
@@ -7685,8 +7698,8 @@ async function renderParentAcademic(cls, studentName, mid, teachersList){
       <td>${g && g.portal != null ? g.portal.toFixed(1)+'%' : '—'}</td>
       <td>${g && g.activity != null ? g.activity+'%' : '—'}</td>
       <td>${g && g.lab != null && g.lab !== 0 ? g.lab : '—'}</td>
-      <td>${badge}</td>
-      <td>${g && parseOptionalGradeCell(g.final) != null ? pctVal(g.final).toFixed(1) : '—'}</td>
+      <td>${totalCell}</td>
+      <td>${finalCell}</td>
     </tr>`;
   }).join('');
 
@@ -7937,7 +7950,7 @@ async function loadSubjectTabContent(idx, cls, studentName, mid, teachersList){
     </div>
     ${buildParentWeeklyGradeTable(gd, isEn)}
     <div style="text-align:center;background:var(--teal-pale);border-radius:8px;padding:10px;margin-bottom:14px">
-      <span style="font-size:22px;font-weight:800;color:var(--teal-dark)">${gd.displayScore != null ? gd.displayScore.toFixed(1)+'%' : '—'}</span>
+      <span style="font-size:22px;font-weight:800;color:${gradeScoreColor(gd.displayScore)}">${gd.displayScore != null ? gd.displayScore.toFixed(1)+'%' : '—'}</span>
       <span style="margin-right:8px">${gradeBadge(gd.displayScore)}</span>
     </div></div>` : `<div class="empty-state" style="padding:20px;margin-bottom:14px">
       <div class="ico">📊</div>
