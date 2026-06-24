@@ -880,6 +880,157 @@ function getGradePeriodCount(){
   return window._gradePeriodCount || GRADE_PERIOD_COUNT;
 }
 
+function defaultGradeColumnLabels(isEn){
+  const wk = n => isEn ? `M${n}` : `ش${n}`;
+  const pc = GRADE_PERIOD_COUNT;
+  return {
+    diagnostic: isEn ? 'Diag.' : 'تشخيص',
+    t1: isEn ? 'F1' : 'ت1',
+    t2: isEn ? 'F2' : 'ت2',
+    lab: 'LAB',
+    total: isEn ? 'Total' : 'المحصلة',
+    final: isEn ? 'Final' : 'نهائي',
+    hwGroup: isEn ? 'Homework' : 'الواجبات',
+    portalGroup: isEn ? 'Portal LMS' : 'بوابة LMS',
+    actGroup: isEn ? 'Participation' : 'المشاركة',
+    hwWeeks: Array.from({length: pc}, (_, i) => wk(i + 1)),
+    portalWeeks: Array.from({length: pc}, (_, i) => wk(i + 1)),
+    actWeeks: Array.from({length: pc}, (_, i) => wk(i + 1)),
+    periodCount: pc,
+  };
+}
+
+function headerCellFromRows(rows, col, headerRows){
+  if(col == null) return '';
+  headerRows = headerRows || Math.min(rows.length, 6);
+  for(let r = headerRows - 1; r >= 0; r--){
+    const v = String(rows[r]?.[col] ?? '').trim();
+    if(v) return v;
+  }
+  return '';
+}
+
+function groupHeaderFromRows(rows, startCol, headerRows){
+  if(startCol == null) return '';
+  headerRows = headerRows || Math.min(rows.length, 6);
+  for(let r = 0; r < headerRows; r++){
+    const v = String(rows[r]?.[startCol] ?? '').trim();
+    if(v && !/^ش\s*\d|^m\s*\d|^month\s*\d/i.test(v)) return v;
+  }
+  return headerCellFromRows(rows, startCol, headerRows);
+}
+
+function extractGradeColumnLabels(rows, map){
+  const headerRows = Math.min(rows.length, 6);
+  const periodCount = inferGradePeriodCount(map);
+  const pick = col => headerCellFromRows(rows, col, headerRows);
+  const weekLabels = cols => (cols || []).map(c => pick(c));
+  const fb = defaultGradeColumnLabels(false);
+  const fillWeeks = (arr, fbArr) => Array.from({length: periodCount}, (_, i) => arr[i] || fbArr[i] || fbArr[0] || `ش${i + 1}`);
+  return {
+    diagnostic: pick(map.diagnostic) || fb.diagnostic,
+    t1: pick(map.t1) || fb.t1,
+    t2: pick(map.t2) || fb.t2,
+    lab: pick(map.lab) || fb.lab,
+    total: pick(map.total) || fb.total,
+    final: pick(map.final) || fb.final,
+    hwGroup: groupHeaderFromRows(rows, map.hwStart, headerRows) || fb.hwGroup,
+    portalGroup: groupHeaderFromRows(rows, map.portalStart, headerRows) || fb.portalGroup,
+    actGroup: groupHeaderFromRows(rows, map.actStart, headerRows) || fb.actGroup,
+    hwWeeks: fillWeeks(weekLabels(map.hwWeeks), fb.hwWeeks),
+    portalWeeks: fillWeeks(weekLabels(map.portalWeeks), fb.portalWeeks),
+    actWeeks: fillWeeks(weekLabels(map.actWeeks), fb.actWeeks),
+    periodCount,
+  };
+}
+
+function applyGradeColumnLabels(labels){
+  if(!labels) return;
+  window._gradeColumnLabels = labels;
+  if(labels.periodCount) window._gradePeriodCount = labels.periodCount;
+}
+
+function cacheParentTeacherColumnLabels(teacherKey, labels){
+  if(!teacherKey || !labels) return;
+  window._parentTeacherColumnLabels = window._parentTeacherColumnLabels || {};
+  window._parentTeacherColumnLabels[teacherKey] = labels;
+}
+
+function getGradeColumnLabels(opts){
+  opts = opts || {};
+  const fb = defaultGradeColumnLabels(opts.isEn != null ? opts.isEn : currentLang === 'en');
+  let src = null;
+  if(opts.teacherKey && window._parentTeacherColumnLabels?.[opts.teacherKey]){
+    src = window._parentTeacherColumnLabels[opts.teacherKey];
+  } else if(TEACHER_SETTINGS?.gradeColumnLabels){
+    src = TEACHER_SETTINGS.gradeColumnLabels;
+  } else if(window._gradeColumnLabels){
+    src = window._gradeColumnLabels;
+  }
+  if(!src) return fb;
+  const pc = src.periodCount || fb.periodCount;
+  const fillWeeks = (arr, fbArr) => Array.from({length: pc}, (_, i) => (arr?.[i] || fbArr?.[i] || fbArr?.[0] || `ش${i + 1}`));
+  return {
+    diagnostic: src.diagnostic || fb.diagnostic,
+    t1: src.t1 || fb.t1,
+    t2: src.t2 || fb.t2,
+    lab: src.lab || fb.lab,
+    total: src.total || fb.total,
+    final: src.final || fb.final,
+    hwGroup: src.hwGroup || fb.hwGroup,
+    portalGroup: src.portalGroup || fb.portalGroup,
+    actGroup: src.actGroup || fb.actGroup,
+    hwWeeks: fillWeeks(src.hwWeeks, fb.hwWeeks),
+    portalWeeks: fillWeeks(src.portalWeeks, fb.portalWeeks),
+    actWeeks: fillWeeks(src.actWeeks, fb.actWeeks),
+    periodCount: pc,
+  };
+}
+
+function buildGradeTableHeadHtml(labels, opts){
+  opts = opts || {};
+  const esc = s => escapeHtml(String(s || ''));
+  const pc = labels.periodCount || getGradePeriodCount();
+  const weekHead = (arr, grp) => Array.from({length: pc}, (_, i) =>
+    `<th class="grp-${grp}">${esc(arr?.[i] || `ش${i + 1}`)}</th>`
+  ).join('');
+  const idxCol = opts.showIndex ? '<th rowspan="2">#</th>' : '';
+  const clsCol = opts.showCls ? `<th rowspan="2">${esc(opts.clsLabel || 'ش')}</th>` : '';
+  const nameCol = opts.showName
+    ? `<th rowspan="2" class="name-cell">${esc(opts.nameLabel || (currentLang === 'en' ? 'Name' : 'الاسم'))}</th>`
+    : '';
+  const gradeCol = opts.showGrade
+    ? `<th rowspan="2">${esc(opts.gradeLabel || (currentLang === 'en' ? 'Grade' : 'التقدير'))}</th>`
+    : '';
+  return `<tr>
+    ${idxCol}${clsCol}${nameCol}
+    <th rowspan="2">${esc(labels.diagnostic)}</th>
+    <th rowspan="2">${esc(labels.t1)}</th>
+    <th rowspan="2">${esc(labels.t2)}</th>
+    <th colspan="${pc}" class="grp-hw">${esc(labels.hwGroup)}</th>
+    <th colspan="${pc}" class="grp-portal">${esc(labels.portalGroup)}</th>
+    <th colspan="${pc}" class="grp-act">${esc(labels.actGroup)}</th>
+    <th rowspan="2">${esc(labels.lab)}</th>
+    <th rowspan="2">${esc(labels.total)}</th>
+    <th rowspan="2">${esc(labels.final)}</th>
+    ${gradeCol}
+  </tr><tr>${weekHead(labels.hwWeeks, 'hw')}${weekHead(labels.portalWeeks, 'portal')}${weekHead(labels.actWeeks, 'act')}</tr>`;
+}
+
+function updateOverviewGradeHeaders(){
+  const labels = getGradeColumnLabels();
+  const set = (id, text) => { const el = document.getElementById(id); if(el) el.textContent = text; };
+  set('ov-th-diag', labels.diagnostic);
+  set('ov-th-t1', labels.t1);
+  set('ov-th-t2', labels.t2);
+  set('ov-th-hw', labels.hwGroup);
+  set('ov-th-portal', labels.portalGroup);
+  set('ov-th-act', labels.actGroup);
+  set('ov-th-lab', labels.lab);
+  set('ov-th-total', labels.total);
+  set('ov-th-final', labels.final);
+}
+
 function parseOptionalGradeCell(raw){
   if(raw == null) return null;
   const s = String(raw).trim();
@@ -2175,6 +2326,7 @@ function _enterDashboard(teacher){
         TEACHER_SETTINGS = settingsSnap.exists() ? settingsSnap.val() : {};
         if(TEACHER_SETTINGS.autoRefresh === undefined) TEACHER_SETTINGS.autoRefresh = true;
         if(!TEACHER_SETTINGS.lastGradeSync) TEACHER_SETTINGS.lastGradeSync = '';
+        if(TEACHER_SETTINGS.gradeColumnLabels) applyGradeColumnLabels(TEACHER_SETTINGS.gradeColumnLabels);
       } catch(e){ console.warn('teacherData settings load error:', e); }
       await loadTeacherWhatsAppProfile(key);
       renderTeacherWhatsAppBar();
@@ -4300,6 +4452,7 @@ function initDashboard(){
   try { updateTeacherComplaintsBadge(); } catch(e){}
 }
 function renderOverview(){
+  updateOverviewGradeHeaders();
   const cls=document.getElementById('class-filter')?.value||'';
   const sec=document.getElementById('sec-filter')?.value||'';
   const list=getImportedGradeStudents(cls, sec);
@@ -4340,24 +4493,12 @@ function renderOverview(){
 function renderGradesTableHead(){
   const thead = document.getElementById('grades-thead');
   if(!thead) return;
-  const isEn = currentLang==='en';
-  const wk = n => isEn ? `M${n}` : `ش${n}`;
-  const periodCount = getGradePeriodCount();
-  const weeks = n => Array.from({length:periodCount}, (_,i)=>`<th class="grp-${n}">${wk(i+1)}</th>`).join('');
-  thead.innerHTML = `<tr>
-    <th rowspan="2">#</th>
-    <th rowspan="2" class="name-cell">${isEn?'Name':'الاسم'}</th>
-    <th rowspan="2">${isEn?'Diag.':'تشخيص'}</th>
-    <th rowspan="2">${isEn?'F1':'ت1'}</th>
-    <th rowspan="2">${isEn?'F2':'ت2'}</th>
-    <th colspan="${periodCount}" class="grp-hw">${isEn?'Homework':'الواجبات'}</th>
-    <th colspan="${periodCount}" class="grp-portal">${isEn?'Portal LMS':'بوابة LMS'}</th>
-    <th colspan="${periodCount}" class="grp-act">${isEn?'Participation':'المشاركة'}</th>
-    <th rowspan="2">LAB</th>
-    <th rowspan="2">${isEn?'Total':'المحصلة'}</th>
-    <th rowspan="2">${isEn?'Final':'نهائي'}</th>
-    <th rowspan="2">${isEn?'Grade':'التقدير'}</th>
-  </tr><tr>${weeks('hw')}${weeks('portal')}${weeks('act')}</tr>`;
+  const labels = getGradeColumnLabels();
+  thead.innerHTML = buildGradeTableHeadHtml(labels, {
+    showIndex: true,
+    showName: true,
+    showGrade: true,
+  });
 }
 function formatWeekCell(v){
   if(v == null || v === '') return '—';
@@ -5772,22 +5913,12 @@ function applyOverviewLang(){
   const os = document.getElementById('ov-search');
   if(os) os.placeholder = isAr?'🔍 ابحث...':'🔍 Search...';
 
-  // Table headers
-  const headers = {
-    'ov-th-cls':   isAr?'ش':'Cl',
-    'ov-th-name':  isAr?'الاسم':'Name',
-    'ov-th-diag':  isAr?'تشخيص':'Diag.',
-    'ov-th-t1':    isAr?'ت1':'F1',
-    'ov-th-t2':    isAr?'ت2':'F2',
-    'ov-th-hw':    isAr?'واجبات%':'HW%',
-    'ov-th-portal':isAr?'بوابة%':'Portal%',
-    'ov-th-act':   isAr?'نشاط%':'Activity%',
-    'ov-th-lab':   isAr?'LAB':'LAB',
-    'ov-th-total': isAr?'المحصلة':'Total',
-    'ov-th-final': isAr?'نهائي':'Final',
-    'ov-th-grade': isAr?'التقدير':'Grade',
-  };
-  Object.entries(headers).forEach(([id,txt])=>{ const el=document.getElementById(id); if(el) el.textContent=txt; });
+  // Table headers (grade columns from Excel when available)
+  updateOverviewGradeHeaders();
+  const setUiHeader = (id, txt) => { const el = document.getElementById(id); if(el) el.textContent = txt; };
+  setUiHeader('ov-th-cls', isAr ? 'ش' : 'Cl');
+  setUiHeader('ov-th-name', isAr ? 'الاسم' : 'Name');
+  setUiHeader('ov-th-grade', isAr ? 'التقدير' : 'Grade');
 
   // Re-render table rows (so student names flip)
 }
@@ -6732,6 +6863,7 @@ async function fetchTeacherGradeRecord(teacherKey, cls, section, mid, studentNam
   if(sessionToken){
     try{
       const data = await callParentPublicFn('getParentGrades', { sessionToken, teacherKey });
+      if(data?.columnLabels) cacheParentTeacherColumnLabels(teacherKey, data.columnLabels);
       if(data && Object.prototype.hasOwnProperty.call(data, 'grade')) return data.grade;
     }catch(e){
       console.warn('getParentGrades', e);
@@ -6770,12 +6902,11 @@ async function fetchTeacherGradeRecord(teacherKey, cls, section, mid, studentNam
   return null;
 }
 
-function buildParentWeeklyGradeTable(gd, isEn){
+function buildParentWeeklyGradeTable(gd, isEn, teacherKey){
   if(!gd) return '';
   const g = enrichGradeRecord(gd);
-  const wk = n => isEn ? `M${n}` : `ش${n}`;
-  const periodCount = getGradePeriodCount();
-  const weekHead = Array.from({length:periodCount}, (_,i)=>`<th>${wk(i+1)}</th>`).join('');
+  const labels = getGradeColumnLabels({ teacherKey });
+  const periodCount = labels.periodCount || getGradePeriodCount();
   const weekCells = (arr)=> Array.from({length:periodCount}, (_,i)=>{
     const v = arr?.[i];
     if(v == null || v === '') return '<td>—</td>';
@@ -6787,18 +6918,7 @@ function buildParentWeeklyGradeTable(gd, isEn){
   return `<div class="table-wrap parent-grades-wrap" style="margin-bottom:14px">
     <table class="grades-template-table parent-grades-table">
       <thead>
-        <tr>
-          <th rowspan="2">${isEn?'Diag.':'تشخيص'}</th>
-          <th rowspan="2">${isEn?'F1':'ت1'}</th>
-          <th rowspan="2">${isEn?'F2':'ت2'}</th>
-          <th colspan="${periodCount}">${isEn?'Homework':'الواجبات'}</th>
-          <th colspan="${periodCount}">${isEn?'Portal LMS':'بوابة LMS'}</th>
-          <th colspan="${periodCount}">${isEn?'Participation':'المشاركة'}</th>
-          <th rowspan="2">LAB</th>
-          <th rowspan="2">${isEn?'Total':'المحصلة'}</th>
-          <th rowspan="2">${isEn?'Final':'نهائي'}</th>
-        </tr>
-        <tr>${weekHead}${weekHead}${weekHead}</tr>
+        ${buildGradeTableHeadHtml(labels, { showGrade: false })}
       </thead>
       <tbody><tr>
         <td>${formatScalarGradeCell(g.diagnostic)}</td>
@@ -7665,6 +7785,9 @@ async function renderParentAcademic(cls, studentName, mid, teachersList){
           teacherKeys: teachersList.map(tc => tc.key).filter(Boolean),
         });
         if(batch?.grades) gradeMap = batch.grades;
+        if(batch?.columnLabels){
+          Object.entries(batch.columnLabels).forEach(([key, labels]) => cacheParentTeacherColumnLabels(key, labels));
+        }
       }catch(e){
         console.warn('getParentGradesBatch', e);
       }
@@ -7684,6 +7807,7 @@ async function renderParentAcademic(cls, studentName, mid, teachersList){
 
   const tableRows = (teachersList || []).map(tc=>{
     const g = allGrades.find(x=>x.subject===tc.subject);
+    const labels = getGradeColumnLabels({ teacherKey: tc.key });
     const totalCell = g && hasAnyGradeData(g)
       ? formatGradeTotalCell(g, { suffix: '%' })
       : `<span style="color:var(--grey-3);font-size:12px">${isEnL?'Not entered':'لم يُدخل'}</span>`;
@@ -7733,15 +7857,15 @@ async function renderParentAcademic(cls, studentName, mid, teachersList){
         <thead><tr>
           <th>${isEnL?'Subject':'المادة'}</th>
           <th>${isEnL?'Teacher':'المعلم'}</th>
-          <th>${isEnL?'Diag.':'تشخيص'}</th>
-          <th>${isEnL?'F1':'ت1'}</th>
-          <th>${isEnL?'F2':'ت2'}</th>
-          <th>${isEnL?'HW':'واجبات'}</th>
-          <th>${isEnL?'Portal':'بوابة'}</th>
-          <th>${isEnL?'Activity':'نشاط'}</th>
-          <th>LAB</th>
-          <th>${isEnL?'Total':'المحصلة'}</th>
-          <th>${isEnL?'Final':'نهائي'}</th>
+          <th>${escapeHtml(labels.diagnostic)}</th>
+          <th>${escapeHtml(labels.t1)}</th>
+          <th>${escapeHtml(labels.t2)}</th>
+          <th>${escapeHtml(labels.hwGroup)}</th>
+          <th>${escapeHtml(labels.portalGroup)}</th>
+          <th>${escapeHtml(labels.actGroup)}</th>
+          <th>${escapeHtml(labels.lab)}</th>
+          <th>${escapeHtml(labels.total)}</th>
+          <th>${escapeHtml(labels.final)}</th>
         </tr></thead>
         <tbody>${tableRows||`<tr><td colspan="11" style="text-align:center;color:var(--grey-3);padding:20px">
           ${isEnL?'No grades yet — teacher will upload via Excel':'لا توجد درجات بعد — سيحدّثها المعلم من ملف Excel'}</td></tr>`}
@@ -7948,7 +8072,7 @@ async function loadSubjectTabContent(idx, cls, studentName, mid, teachersList){
       <div class="section-title" style="margin:0">📊 ${isEn?'Subject Grades':'سجل المادة'}</div>
       <span style="font-size:11px;color:var(--grey-3)">🔄 ${isEn?'Live sync':'تحديث فوري'}</span>
     </div>
-    ${buildParentWeeklyGradeTable(gd, isEn)}
+    ${buildParentWeeklyGradeTable(gd, isEn, tc.key)}
     <div style="text-align:center;background:var(--teal-pale);border-radius:8px;padding:10px;margin-bottom:14px">
       <span style="font-size:22px;font-weight:800;color:${gradeScoreColor(gd.displayScore)}">${gd.displayScore != null ? gd.displayScore.toFixed(1)+'%' : '—'}</span>
       <span style="margin-right:8px">${gradeBadge(gd.displayScore)}</span>
@@ -10360,6 +10484,7 @@ function buildGradeColumnMap(rows){
     map.actWeeks.push(map.actStart + i);
   }
   window._gradePeriodCount = inferGradePeriodCount(map);
+  map.labels = extractGradeColumnLabels(rows, map);
   return map;
 }
 
@@ -10454,6 +10579,7 @@ function importGradeSheet(ws, sheetName, tKey, scope){
   const sheetHint = decision.hint;
 
   const map = buildGradeColumnMap(rows);
+  if(map.labels) applyGradeColumnLabels(map.labels);
   const start = findGradeDataStartRow(rows, map);
   let imported = 0;
   const unmatched = [];
@@ -10482,7 +10608,7 @@ function importGradeSheet(ws, sheetName, tKey, scope){
     imported++;
   }
 
-  return { imported, unmatched, skipped:false, saves };
+  return { imported, unmatched, skipped:false, saves, labels: map.labels || null };
 }
 
 async function processGradesWorkbook(wb, opts){
@@ -10502,6 +10628,7 @@ async function processGradesWorkbook(wb, opts){
   let sheetsSkipped = 0;
   const matchedSheets = [];
   const skippedSheets = [];
+  let importedLabels = null;
 
   for(const sheetName of wb.SheetNames){
     const ws = wb.Sheets[sheetName];
@@ -10521,6 +10648,7 @@ async function processGradesWorkbook(wb, opts){
     sheetsProcessed++;
     matchedSheets.push(sheetName);
     imported += result.imported;
+    if(result.labels) importedLabels = result.labels;
     result.unmatched.forEach(u=>{
       const key = String(u.mid);
       if(!unmatchedMap.has(key)) unmatchedMap.set(key, u);
@@ -10539,6 +10667,17 @@ async function processGradesWorkbook(wb, opts){
   const unmatched = [...unmatchedMap.values()];
 
   if(imported > 0){
+    if(importedLabels){
+      applyGradeColumnLabels(importedLabels);
+      TEACHER_SETTINGS.gradeColumnLabels = importedLabels;
+      if(tKey && typeof db !== 'undefined'){
+        try{
+          await db.ref(`teacherData/${tKey}/settings/gradeColumnLabels`).set(importedLabels);
+        }catch(labelErr){
+          console.warn('gradeColumnLabels', labelErr);
+        }
+      }
+    }
     const sheetList = matchedSheets.slice(0, 8).join(', ')
       + (matchedSheets.length > 8 ? '…' : '');
     const skipInfo = sheetsSkipped
