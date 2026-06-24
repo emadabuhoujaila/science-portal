@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>بوابة المتابعة</title>
 <link rel="manifest" href="manifest.json">
 <meta name="mobile-web-app-capable" content="yes">
@@ -55,7 +55,7 @@ window.__splashDeadline = Date.now() + 5000;
   Promise.all(p).then(done).catch(done);
 })();
 </script>
-<link rel="stylesheet" href="css/app.css?v=58">
+<link rel="stylesheet" href="css/app.css?v=71">
 <link rel="stylesheet" href="css/uae-theme.css?v=2">
 </head>
 <body>
@@ -346,7 +346,7 @@ window.__splashDeadline = Date.now() + 5000;
         </p>
 
         <!-- Per-grade upload buttons -->
-        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:16px">
+        <div class="responsive-grid-2" style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:16px">
           <div style="border:1.5px solid var(--grey-5);border-radius:10px;padding:14px">
             <div style="font-weight:700;color:var(--teal-dark);margin-bottom:8px">📂 الصف 5</div>
             <div id="admin-grade5-status" style="font-size:12px;color:var(--grey-3);margin-bottom:8px">—</div>
@@ -418,7 +418,7 @@ window.__splashDeadline = Date.now() + 5000;
 
         <div style="border:1.5px solid var(--grey-5);border-radius:12px;padding:16px;margin-bottom:16px">
           <h4 id="admin-add-title" style="margin:0 0 12px;color:var(--teal-dark);font-size:14px">➕ إضافة طالب</h4>
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px">
+          <div class="responsive-grid-auto" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px">
             <div>
               <label id="admin-add-lbl-grade" style="font-size:12px;color:var(--grey-3);display:block;margin-bottom:4px">الصف</label>
               <select id="admin-add-grade" style="width:100%;padding:9px 10px;border:1.5px solid var(--grey-5);border-radius:8px;font-family:inherit;font-size:13px">
@@ -449,7 +449,7 @@ window.__splashDeadline = Date.now() + 5000;
 
         <div style="border:1.5px solid var(--grey-5);border-radius:12px;padding:16px">
           <h4 id="admin-transfer-title" style="margin:0 0 12px;color:var(--teal-dark);font-size:14px">↔️ نقل طالب إلى شعبة أخرى</h4>
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px">
+          <div class="responsive-grid-auto" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px">
             <div>
               <label id="admin-xfer-lbl-grade" style="font-size:12px;color:var(--grey-3);display:block;margin-bottom:4px">الصف</label>
               <select id="admin-xfer-grade" onchange="adminRefreshTransferStudentList()" style="width:100%;padding:9px 10px;border:1.5px solid var(--grey-5);border-radius:8px;font-family:inherit;font-size:13px">
@@ -462,7 +462,7 @@ window.__splashDeadline = Date.now() + 5000;
                 <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option>
               </select>
             </div>
-            <div style="grid-column:span 2">
+            <div class="admin-xfer-student-span" style="grid-column:span 2">
               <label id="admin-xfer-lbl-student" style="font-size:12px;color:var(--grey-3);display:block;margin-bottom:4px">الطالب</label>
               <select id="admin-xfer-student" style="width:100%;padding:9px 10px;border:1.5px solid var(--grey-5);border-radius:8px;font-family:inherit;font-size:13px">
                 <option value="">— اختر الطالب —</option>
