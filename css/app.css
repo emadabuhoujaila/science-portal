@@ -237,13 +237,41 @@ body{
 .search-input{padding:8px 14px;border:1.5px solid var(--grey-5);border-radius:8px;font-family:inherit;font-size:13px;outline:none;width:200px;transition:border-color .2s}
 .search-input:focus{border-color:var(--teal-soft)}
 .table-wrap{overflow-x:auto}
-.grades-template-table{font-size:11px;min-width:max-content}
-.grades-template-table th,.grades-template-table td{padding:6px 5px;text-align:center;white-space:nowrap}
-.grades-template-table th.grp-hw{background:rgba(13,110,110,.08)}
-.grades-template-table th.grp-portal{background:rgba(200,150,30,.1)}
-.grades-template-table th.grp-act{background:rgba(46,125,50,.08)}
-.grades-template-table td.name-cell{text-align:right;font-weight:500;min-width:120px;position:sticky;left:0;background:#fff;z-index:1}
+.grades-template-table,#overview-table.grades-template-table{
+  font-size:11px;min-width:max-content;border-collapse:separate;border-spacing:0;
+  border:1px solid rgba(107,127,127,.22);border-radius:10px;overflow:hidden;
+}
+.grades-template-table th,.grades-template-table td,
+#overview-table.grades-template-table th,#overview-table.grades-template-table td{
+  padding:7px 6px;text-align:center;white-space:nowrap;
+  border-bottom:1px solid rgba(107,127,127,.16);
+  border-inline-start:1px solid rgba(107,127,127,.18);
+}
+.grades-template-table tr > :first-child,
+#overview-table.grades-template-table tr > :first-child{border-inline-start:none}
+.grades-template-table thead th,.grades-template-table tr.avg-row td,
+#overview-table.grades-template-table thead th{font-weight:600}
+.grades-template-table th.grp-hw,.grades-template-table td.col-grp-hw{background:rgba(232,248,248,.88)}
+.grades-template-table th.grp-portal,.grades-template-table td.col-grp-portal{background:rgba(255,248,232,.9)}
+.grades-template-table th.grp-act,.grades-template-table td.col-grp-act{background:rgba(241,248,241,.88)}
+.grades-template-table .col-grp-diag,.grades-template-table td.col-grp-diag{background:rgba(236,245,255,.78)}
+.grades-template-table .col-grp-t1,.grades-template-table td.col-grp-t1{background:rgba(245,240,255,.72)}
+.grades-template-table .col-grp-t2,.grades-template-table td.col-grp-t2{background:rgba(248,244,255,.72)}
+.grades-template-table .col-grp-lab,.grades-template-table td.col-grp-lab{background:rgba(248,246,252,.82)}
+.grades-template-table .col-grp-total,.grades-template-table td.col-grp-total{background:rgba(240,250,250,.95)}
+.grades-template-table .col-grp-final,.grades-template-table td.col-grp-final{background:rgba(255,250,245,.95)}
+.grades-template-table .col-grp-grade,.grades-template-table td.col-grp-grade{background:rgba(248,252,252,.92)}
+.grades-template-table .col-grp-sep{border-inline-start:2px solid rgba(13,110,110,.24)!important}
+.grades-template-table .col-meta-idx,.grades-template-table .col-meta-cls{background:rgba(250,252,252,.95)}
+.grades-template-table td.name-cell,.grades-template-table th.name-cell{
+  text-align:right;font-weight:500;min-width:120px;position:sticky;inset-inline-start:0;background:#fff;z-index:2;
+  box-shadow:2px 0 6px rgba(10,74,74,.06);
+}
 .grades-template-table tr.avg-row td{background:var(--teal-pale);font-weight:700}
+.grades-template-table tbody tr:hover td{background-image:linear-gradient(rgba(255,255,255,.45),rgba(255,255,255,.45))}
+.grades-template-table .col-meta-subject,.grades-template-table .col-meta-teacher{background:rgba(250,252,252,.95)}
+.grades-template-table .col-meta-subject{text-align:right;font-weight:600}
+.grades-template-table .col-meta-teacher{text-align:right;color:var(--grey-3);font-size:12px}
 table{width:100%;border-collapse:collapse;font-size:13px}
 thead th{background:var(--teal-pale);color:var(--teal-dark);font-weight:600;padding:11px 12px;text-align:center;border-bottom:2px solid var(--teal-light);white-space:nowrap}
 tbody tr{border-bottom:1px solid var(--grey-5);transition:background .15s}

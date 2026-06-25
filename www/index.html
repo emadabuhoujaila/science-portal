@@ -55,7 +55,7 @@ window.__splashDeadline = Date.now() + 5000;
   Promise.all(p).then(done).catch(done);
 })();
 </script>
-<link rel="stylesheet" href="css/app.css?v=71">
+<link rel="stylesheet" href="css/app.css?v=72">
 <link rel="stylesheet" href="css/uae-theme.css?v=2">
 </head>
 <body>
@@ -789,8 +789,22 @@ window.__splashDeadline = Date.now() + 5000;
           <input class="search-input" type="text" id="ov-search" placeholder="🔍 ابحث..." oninput="filterTable('overview-table',this.value)">
         </div>
         <div class="table-wrap">
-          <table id="overview-table">
-            <thead><tr><th>#</th><th id="ov-th-cls">ش</th><th id="ov-th-name">الاسم</th><th id="ov-th-diag">تشخيص</th><th id="ov-th-t1">ت1</th><th id="ov-th-t2">ت2</th><th id="ov-th-hw">واجبات%</th><th id="ov-th-portal">بوابة%</th><th id="ov-th-act">نشاط%</th><th id="ov-th-lab">LAB</th><th id="ov-th-total">المحصلة</th><th id="ov-th-final">نهائي</th><th id="ov-th-grade">التقدير</th></tr></thead>
+          <table id="overview-table" class="grades-template-table">
+            <thead><tr>
+              <th class="col-meta col-meta-idx">#</th>
+              <th class="col-meta col-meta-cls" id="ov-th-cls">ش</th>
+              <th class="col-meta col-meta-name name-cell" id="ov-th-name">الاسم</th>
+              <th class="col-grp col-grp-diag" id="ov-th-diag">تشخيص</th>
+              <th class="col-grp col-grp-t1" id="ov-th-t1">ت1</th>
+              <th class="col-grp col-grp-t2" id="ov-th-t2">ت2</th>
+              <th class="col-grp col-grp-hw" id="ov-th-hw">واجبات%</th>
+              <th class="col-grp col-grp-portal" id="ov-th-portal">بوابة%</th>
+              <th class="col-grp col-grp-act" id="ov-th-act">نشاط%</th>
+              <th class="col-grp col-grp-lab col-grp-sep" id="ov-th-lab">LAB</th>
+              <th class="col-grp col-grp-total" id="ov-th-total">المحصلة</th>
+              <th class="col-grp col-grp-final" id="ov-th-final">نهائي</th>
+              <th class="col-grp col-grp-grade col-grp-sep" id="ov-th-grade">التقدير</th>
+            </tr></thead>
             <tbody id="overview-tbody"></tbody>
           </table>
         </div>
@@ -1240,6 +1254,6 @@ window.__splashDeadline = Date.now() + 5000;
 <script src="js/attachments.js?v=7"></script>
 <script src="js/firebase-init.js?v=37"></script>
 <script src="js/msg-delete.js?v=5"></script>
-<script src="js/app.js?v=72"></script>
+<script src="js/app.js?v=73"></script>
 </body>
 </html>
