@@ -386,10 +386,26 @@ tbody td{padding:10px 12px;text-align:center;color:var(--grey-2)}
 .inline-pin-input{width:90px;padding:6px 10px;border:1.5px solid var(--teal-soft);border-radius:8px;font-family:monospace;font-size:16px;font-weight:700;text-align:center;letter-spacing:3px;color:var(--teal-dark);outline:none}
 
 /* ─── MODAL ─── */
-.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;align-items:center;justify-content:center;padding:20px}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;align-items:center;justify-content:center;padding:20px;overflow-y:auto;-webkit-overflow-scrolling:touch}
 .modal-overlay.open{display:flex}
-.modal-box{background:var(--white);border-radius:16px;padding:28px;width:100%;max-width:500px;max-height:90vh;overflow-y:auto;box-shadow:var(--shadow-lg)}
+.modal-box{background:var(--white);border-radius:16px;padding:28px;width:100%;max-width:500px;max-height:min(90dvh,720px);overflow-y:auto;overflow-x:hidden;box-shadow:var(--shadow-lg);-webkit-overflow-scrolling:touch}
 .modal-box h3{font-size:17px;font-weight:700;color:var(--teal-dark);margin-bottom:18px}
+#settings-modal .settings-modal-box{
+  display:flex;flex-direction:column;max-height:min(92dvh,760px);padding:0;overflow:hidden;
+}
+#settings-modal .settings-modal-head{
+  flex-shrink:0;padding:22px 24px 12px;border-bottom:1px solid var(--grey-5);background:var(--white);
+}
+#settings-modal .settings-modal-head h3{margin:0}
+#settings-modal .settings-modal-body{
+  flex:1 1 auto;overflow-y:auto;overflow-x:hidden;padding:16px 24px 8px;
+  -webkit-overflow-scrolling:touch;overscroll-behavior:contain;
+}
+#settings-modal .settings-modal-footer{
+  flex-shrink:0;display:flex;gap:10px;padding:14px 24px calc(14px + var(--app-safe-bottom));
+  border-top:1px solid var(--grey-5);background:linear-gradient(180deg,#fff 0%,var(--teal-pale) 100%);
+  box-shadow:0 -4px 16px rgba(10,74,74,.06);
+}
 
 /* ─── TOAST ─── */
 .toast{
@@ -542,8 +558,11 @@ tbody td{padding:10px 12px;text-align:center;color:var(--grey-2)}
   .login-card{border-radius:16px}
   #screen-login{padding-top:calc(56px + var(--app-safe-top))}
   #global-lang-btn{font-size:12px;padding:6px 14px}
-  .modal-overlay{padding:12px;padding-bottom:calc(12px + var(--app-safe-bottom))}
+  .modal-overlay{padding:12px;padding-bottom:calc(12px + var(--app-safe-bottom));align-items:flex-start;padding-top:calc(12px + var(--app-safe-top))}
   .modal-box{padding:20px;max-height:calc(92dvh - var(--app-safe-top) - var(--app-safe-bottom))}
+  #settings-modal .settings-modal-head{padding:16px 16px 10px}
+  #settings-modal .settings-modal-body{padding:12px 16px 6px}
+  #settings-modal .settings-modal-footer{padding:12px 16px calc(12px + var(--app-safe-bottom))}
   .compose-send-row .btn-primary,.compose-send-row .compose-wa-btn{min-width:100%;flex:1 1 100%}
   .parent-tabs-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;flex-wrap:nowrap;padding-bottom:2px}
   .parent-tab{min-width:max(88px,22vw);flex:0 0 auto}

@@ -115,7 +115,9 @@ body::before {
 }
 .modal-box {
   position: relative;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* ─── Login & lock screens ─── */

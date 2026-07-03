@@ -55,8 +55,8 @@ window.__splashDeadline = Date.now() + 5000;
   Promise.all(p).then(done).catch(done);
 })();
 </script>
-<link rel="stylesheet" href="css/app.css?v=72">
-<link rel="stylesheet" href="css/uae-theme.css?v=2">
+<link rel="stylesheet" href="css/app.css?v=73">
+<link rel="stylesheet" href="css/uae-theme.css?v=3">
 </head>
 <body>
 
@@ -1151,10 +1151,13 @@ window.__splashDeadline = Date.now() + 5000;
 
 <!-- ═══════════ SETTINGS MODAL ═══════════ -->
 <div class="modal-overlay" id="settings-modal">
-  <div class="modal-box" style="max-width:520px">
-    <h3 id="settings-modal-title">⚙️ الإعدادات</h3>
+  <div class="modal-box settings-modal-box" style="max-width:520px">
+    <div class="settings-modal-head">
+      <h3 id="settings-modal-title">⚙️ الإعدادات</h3>
+    </div>
+    <div class="settings-modal-body">
 
-    <div id="settings-account-section" class="form-group" style="display:none">
+    <div id="settings-account-section" class="form-group" style="display:none;margin-bottom:0">
       <label id="settings-account-lbl">👤 حسابي</label>
       <div id="settings-account-info" style="background:var(--teal-pale);border:1px solid var(--grey-5);border-radius:10px;padding:12px 14px;font-size:13px;line-height:1.8;color:var(--grey-1)"></div>
     </div>
@@ -1204,7 +1207,8 @@ window.__splashDeadline = Date.now() + 5000;
       </div>
     </div>
 
-    <div style="display:flex;gap:10px;margin-top:10px">
+    </div>
+    <div class="settings-modal-footer">
       <button class="btn-primary" id="settings-save-btn" onclick="saveSettings()" style="flex:1">💾 حفظ</button>
       <button type="button" id="settings-cancel-btn" onclick="closeSettings()" style="flex:1;padding:13px;border:1.5px solid var(--grey-5);border-radius:10px;background:none;cursor:pointer;font-family:inherit;font-size:14px">إلغاء</button>
     </div>
@@ -1254,6 +1258,6 @@ window.__splashDeadline = Date.now() + 5000;
 <script src="js/attachments.js?v=7"></script>
 <script src="js/firebase-init.js?v=37"></script>
 <script src="js/msg-delete.js?v=5"></script>
-<script src="js/app.js?v=73"></script>
+<script src="js/app.js?v=74"></script>
 </body>
 </html>
