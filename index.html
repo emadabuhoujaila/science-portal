@@ -55,7 +55,7 @@ window.__splashDeadline = Date.now() + 5000;
   Promise.all(p).then(done).catch(done);
 })();
 </script>
-<link rel="stylesheet" href="css/app.css?v=73">
+<link rel="stylesheet" href="css/app.css?v=74">
 <link rel="stylesheet" href="css/uae-theme.css?v=3">
 </head>
 <body>
@@ -1187,6 +1187,21 @@ window.__splashDeadline = Date.now() + 5000;
       </label>
     </div>
 
+    <div id="settings-tools-section" class="form-group settings-tools-section" style="display:none;border-top:1.5px solid var(--grey-5);padding-top:14px;margin-top:4px">
+      <label id="settings-tools-lbl">🛠️ أدوات سريعة</label>
+      <div class="settings-tools-actions">
+        <button type="button" id="settings-lang-btn" class="settings-tool-btn" onclick="settingsToggleLang()">🌐 English</button>
+        <button type="button" id="settings-copy-parent-link-btn" class="settings-tool-btn" onclick="copyParentPortalLink()">📋 نسخ رابط ولي الأمر</button>
+        <button type="button" id="settings-open-links-btn" class="settings-tool-btn settings-tool-btn-accent" onclick="openSettingsParentLinksTab()">🔗 فتح مشاركة أولياء الأمور</button>
+      </div>
+      <p id="settings-copy-parent-hint" class="settings-tools-hint">الرابط الذي يفتح بوابة ولي الأمر (نفس رابط التطبيق).</p>
+      <div class="settings-col-labels-block">
+        <div id="settings-column-labels-title" class="settings-col-labels-title">📊 أسماء أعمدة Excel المحفوظة</div>
+        <div id="settings-column-labels"></div>
+      </div>
+      <div id="settings-app-version" class="settings-app-version"></div>
+    </div>
+
     <div class="form-group">
       <label id="settings-pw-lbl">🔑 كلمة مرور المعلم الجديدة</label>
       <input type="password" id="new-password" placeholder="اتركه فارغاً للإبقاء" autocomplete="new-password">
@@ -1258,6 +1273,6 @@ window.__splashDeadline = Date.now() + 5000;
 <script src="js/attachments.js?v=7"></script>
 <script src="js/firebase-init.js?v=37"></script>
 <script src="js/msg-delete.js?v=5"></script>
-<script src="js/app.js?v=74"></script>
+<script src="js/app.js?v=75"></script>
 </body>
 </html>

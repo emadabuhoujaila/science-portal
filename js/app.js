@@ -1185,6 +1185,7 @@ function mergeGradeScores(cls, student){
 // ══════════════════════════════════════════════════
 let APP = {
   siteUrl: 'https://emadabuhoujaila.github.io/science-portal/',
+  buildVersion: '75',
   pins:{},      // {cls_name: "1234"}
   messages:[],
   behavior:{},   // {cls|name: {level, academic, conduct}}
@@ -5346,6 +5347,15 @@ const TRANSLATIONS = {
     settingsGradesDeleteConfirm: 'حذف كل درجاتك من التطبيق؟ لا يمكن التراجع.',
     settingsGradesDeleted: '✅ تم حذف الدرجات',
     settingsCancel: 'إلغاء',
+    settingsToolsLabel: '🛠️ أدوات سريعة',
+    settingsLangSwitchEn: '🌐 English',
+    settingsLangSwitchAr: '🌐 العربية',
+    settingsCopyParentLink: '📋 نسخ رابط ولي الأمر',
+    settingsCopyParentHint: 'الرابط الذي يفتح بوابة ولي الأمر (نفس رابط التطبيق).',
+    settingsOpenLinksTab: '🔗 فتح مشاركة أولياء الأمور',
+    settingsColumnLabelsTitle: '📊 أسماء أعمدة Excel المحفوظة',
+    settingsColumnLabelsEmpty: 'لم تُرفَع درجات بعد — ارفع ملف Excel لحفظ أسماء الأعمدة.',
+    settingsAppVersion: 'إصدار التطبيق',
     bvAnalyticsTitle: '📊 تحليل السلوك',
     bvAnalyticsClose: '✕ إغلاق',
     pwaTitle: '📲 أضف البوابة لشاشتك الرئيسية',
@@ -5718,6 +5728,15 @@ const TRANSLATIONS = {
     settingsGradesDeleteConfirm: 'Delete all your grades from the app? This cannot be undone.',
     settingsGradesDeleted: '✅ Grades deleted',
     settingsCancel: 'Cancel',
+    settingsToolsLabel: '🛠️ Quick tools',
+    settingsLangSwitchEn: '🌐 English',
+    settingsLangSwitchAr: '🌐 Arabic',
+    settingsCopyParentLink: '📋 Copy parent portal link',
+    settingsCopyParentHint: 'Link parents use to open the portal (same as app URL).',
+    settingsOpenLinksTab: '🔗 Open parent sharing tab',
+    settingsColumnLabelsTitle: '📊 Saved Excel column names',
+    settingsColumnLabelsEmpty: 'No grades uploaded yet — upload Excel to save column headers.',
+    settingsAppVersion: 'App version',
     bvAnalyticsTitle: '📊 Behavior Analysis',
     bvAnalyticsClose: '✕ Close',
     pwaTitle: '📲 Add Portal to Home Screen',
@@ -6362,8 +6381,17 @@ function applySharedUiLang(){
   if(saveBtn) saveBtn.textContent = t('settingsSave');
   const cancelBtn = document.getElementById('settings-cancel-btn');
   if(cancelBtn) cancelBtn.textContent = t('settingsCancel');
+  setLbl('settings-tools-lbl', 'settingsToolsLabel');
+  setLbl('settings-column-labels-title', 'settingsColumnLabelsTitle');
+  const parentHint = document.getElementById('settings-copy-parent-hint');
+  if(parentHint) parentHint.textContent = t('settingsCopyParentHint');
+  const copyParentBtn = document.getElementById('settings-copy-parent-link-btn');
+  if(copyParentBtn) copyParentBtn.textContent = t('settingsCopyParentLink');
+  const openLinksBtn = document.getElementById('settings-open-links-btn');
+  if(openLinksBtn) openLinksBtn.textContent = t('settingsOpenLinksTab');
   if(typeof populateSettingsAccount === 'function') populateSettingsAccount();
   if(typeof populateSettingsPhase3 === 'function') populateSettingsPhase3();
+  if(typeof populateSettingsTools === 'function') populateSettingsTools();
 
   const alertEl = document.querySelector('#new-msg-alert > span');
   if(alertEl) alertEl.textContent = t('newMsgAlert');
@@ -9188,6 +9216,64 @@ function renderSettingsNotifAction(){
   }
 }
 
+function renderSettingsColumnLabels(){
+  const box = document.getElementById('settings-column-labels');
+  if(!box) return;
+  const labels = getGradeColumnLabels();
+  const hasSaved = !!(TEACHER_SETTINGS?.gradeColumnLabels || window._gradeColumnLabels);
+  if(!hasSaved){
+    box.innerHTML = `<p class="settings-col-labels-empty">${escapeHtml(t('settingsColumnLabelsEmpty'))}</p>`;
+    return;
+  }
+  const chip = (txt) => `<span class="settings-col-chip">${escapeHtml(txt)}</span>`;
+  const weekChips = arr => (arr || []).map(chip).join('');
+  box.innerHTML = `
+    <div class="settings-col-labels-grid">
+      ${chip(labels.diagnostic)} ${chip(labels.t1)} ${chip(labels.t2)}
+      <span class="settings-col-group">${escapeHtml(labels.hwGroup)}:</span> ${weekChips(labels.hwWeeks)}
+      <span class="settings-col-group">${escapeHtml(labels.portalGroup)}:</span> ${weekChips(labels.portalWeeks)}
+      <span class="settings-col-group">${escapeHtml(labels.actGroup)}:</span> ${weekChips(labels.actWeeks)}
+      ${chip(labels.lab)} ${chip(labels.total)} ${chip(labels.final)}
+    </div>`;
+}
+
+function populateSettingsTools(){
+  const wrap = document.getElementById('settings-tools-section');
+  if(!wrap) return;
+  if(!CURRENT_TEACHER || CURRENT_TEACHER.isAdmin){
+    wrap.style.display = 'none';
+    return;
+  }
+  wrap.style.display = '';
+  const langBtn = document.getElementById('settings-lang-btn');
+  if(langBtn){
+    langBtn.textContent = currentLang === 'en' ? t('settingsLangSwitchAr') : t('settingsLangSwitchEn');
+  }
+  renderSettingsColumnLabels();
+  const verEl = document.getElementById('settings-app-version');
+  if(verEl){
+    const when = TEACHER_SETTINGS.lastGradeSync
+      ? formatSettingsSyncTime(TEACHER_SETTINGS.lastGradeSync)
+      : t('settingsLastSyncNever');
+    verEl.textContent = `${t('settingsAppVersion')}: v${APP.buildVersion || '—'} · ${t('settingsLastSync')} ${when}`;
+  }
+}
+
+function settingsToggleLang(){
+  toggleLang();
+  populateSettingsTools();
+}
+
+function copyParentPortalLink(){
+  copySiteUrlFromSettings();
+}
+
+function openSettingsParentLinksTab(){
+  closeSettings();
+  const tabBtn = document.getElementById('ttab-share');
+  showTab('links', tabBtn);
+}
+
 function exportTeacherGradesExcel(){
   if(!window.XLSX){
     showToast(currentLang === 'en' ? '⚠️ Excel library not loaded' : '⚠️ مكتبة Excel لم تُحمَّل');
@@ -9244,6 +9330,7 @@ function openSettings(){
   if(pw2) pw2.value = '';
   populateSettingsAccount();
   populateSettingsPhase3();
+  populateSettingsTools();
   populateSettingsWhatsApp();
   document.getElementById('settings-modal').classList.add('open');
 }
@@ -10754,6 +10841,7 @@ function importExcel(input){
           }
         }
         populateSettingsPhase3();
+        if(typeof populateSettingsTools === 'function') populateSettingsTools();
       }
     } catch(err){
       console.error(err);

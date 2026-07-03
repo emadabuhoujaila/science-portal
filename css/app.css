@@ -406,6 +406,27 @@ tbody td{padding:10px 12px;text-align:center;color:var(--grey-2)}
   border-top:1px solid var(--grey-5);background:linear-gradient(180deg,#fff 0%,var(--teal-pale) 100%);
   box-shadow:0 -4px 16px rgba(10,74,74,.06);
 }
+.settings-tools-actions{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 6px}
+.settings-tool-btn{
+  flex:1 1 calc(50% - 4px);min-width:140px;padding:10px 12px;border:1.5px solid var(--grey-5);
+  border-radius:10px;background:var(--white);color:var(--teal-dark);cursor:pointer;
+  font-family:inherit;font-size:12px;font-weight:600;line-height:1.4;
+}
+.settings-tool-btn:hover{background:var(--teal-pale);border-color:var(--teal-soft)}
+.settings-tool-btn-accent{background:var(--teal-light);border-color:var(--teal-soft)}
+.settings-tools-hint{font-size:11px;color:var(--grey-3);margin:0 0 12px;line-height:1.6}
+.settings-col-labels-block{
+  background:var(--teal-pale);border:1px solid var(--grey-5);border-radius:10px;padding:10px 12px;margin-bottom:10px;
+}
+.settings-col-labels-title{font-size:12px;font-weight:700;color:var(--teal-dark);margin-bottom:8px}
+.settings-col-labels-grid{display:flex;flex-wrap:wrap;gap:6px;align-items:center;line-height:1.6}
+.settings-col-chip{
+  display:inline-block;padding:3px 8px;border-radius:999px;background:#fff;border:1px solid var(--grey-5);
+  font-size:11px;color:var(--grey-2);
+}
+.settings-col-group{font-size:11px;font-weight:700;color:var(--teal-dark);margin-inline-start:4px}
+.settings-col-labels-empty{font-size:12px;color:var(--grey-3);margin:0;line-height:1.6}
+.settings-app-version{font-size:11px;color:var(--grey-3);text-align:center;padding-top:4px}
 
 /* ─── TOAST ─── */
 .toast{
