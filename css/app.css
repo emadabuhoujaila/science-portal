@@ -836,3 +836,36 @@ tbody td{padding:10px 12px;text-align:center;color:var(--grey-2)}
   }
   .nav-tab{padding:12px 14px}
 }
+
+/* Modernization v76 */
+.compose-send-unified{align-items:center;flex-wrap:wrap;gap:10px}
+.compose-wa-optin{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--grey-2);cursor:pointer;user-select:none}
+.parent-quick-return .btn-secondary{width:100%;padding:11px 14px;border:1.5px solid var(--teal-soft);border-radius:10px;background:var(--teal-pale);color:var(--teal-dark);font-family:inherit;font-size:13px;font-weight:600;cursor:pointer}
+.teacher-sync-indicator{display:block;margin-top:4px;font-size:11px;opacity:.9}
+.teacher-sync-indicator.ok{color:#a5d6a7}
+.teacher-sync-indicator.idle{color:rgba(255,255,255,.75)}
+.grade-group-toggles{display:flex;flex-wrap:wrap;gap:8px 14px;padding:10px 14px 0;font-size:12px;color:var(--grey-2)}
+.grade-group-toggles label{display:flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap}
+.grade-group-toggles-lbl{font-weight:600;margin-left:4px}
+.grades-template-table.grades-hide-diag .col-grp-diag,
+.grades-template-table.grades-hide-diag .col-grp-t1,
+.grades-template-table.grades-hide-diag .col-grp-t2{display:none}
+.grades-template-table.grades-hide-hw .col-grp-hw{display:none}
+.grades-template-table.grades-hide-portal .col-grp-portal{display:none}
+.grades-template-table.grades-hide-act .col-grp-act{display:none}
+.grades-template-table.grades-hide-lab .col-grp-lab{display:none}
+.parent-grade-cards{display:none}
+.pgc-row{display:flex;justify-content:space-between;gap:10px;padding:8px 12px;border-bottom:1px solid var(--grey-5);font-size:13px}
+.pgc-lbl{color:var(--grey-3)}
+.pgc-val{font-weight:700;color:var(--teal-dark)}
+.pgc-group{border:1px solid var(--grey-5);border-radius:10px;margin:8px 0;overflow:hidden}
+.pgc-group summary{padding:10px 12px;font-weight:600;font-size:13px;cursor:pointer;background:var(--grey-6)}
+.pgc-group-body{padding:0 0 4px}
+.pwa-update-banner{display:none;position:fixed;bottom:calc(16px + env(safe-area-inset-bottom,0px));left:16px;right:16px;max-width:420px;margin:0 auto;padding:14px 16px;background:var(--teal-dark);color:#fff;border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.25);z-index:850}
+.pwa-update-banner.show{display:block}
+.overview-analysis-section{border-top:1.5px solid var(--grey-5);padding-top:18px}
+
+@media(max-width:768px){
+  .parent-grades-wrap .parent-grades-table{display:none}
+  .parent-grade-cards{display:block;background:#fff;border:1px solid var(--grey-5);border-radius:12px;overflow:hidden;margin-bottom:10px}
+}

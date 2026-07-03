@@ -55,7 +55,7 @@ window.__splashDeadline = Date.now() + 5000;
   Promise.all(p).then(done).catch(done);
 })();
 </script>
-<link rel="stylesheet" href="css/app.css?v=74">
+<link rel="stylesheet" href="css/app.css?v=75">
 <link rel="stylesheet" href="css/uae-theme.css?v=3">
 </head>
 <body>
@@ -185,9 +185,17 @@ window.__splashDeadline = Date.now() + 5000;
       <!-- Step 3: Student name (hidden until section chosen) -->
       <div class="form-group" id="parent-name-group" style="display:none">
         <label id="name-label">اسم الطالب</label>
+        <div id="parent-name-search-wrap" style="display:none;margin-bottom:8px">
+          <input type="search" id="parent-name-search" class="search-input" style="width:100%"
+            placeholder="🔍 ابحث عن اسم الطالب..." oninput="filterParentNameOptions()">
+        </div>
         <select id="parent-name">
           <option value="" id="name-opt-placeholder">— اختر الاسم —</option>
         </select>
+      </div>
+
+      <div id="parent-quick-return" class="parent-quick-return" style="display:none;margin-bottom:12px">
+        <button type="button" class="btn-secondary" id="parent-quick-return-btn" onclick="quickReturnParent()"></button>
       </div>
 
       <!-- Keep hidden class select for backward compat -->
@@ -698,9 +706,9 @@ window.__splashDeadline = Date.now() + 5000;
 
             <textarea id="admin-compose-body" rows="5" placeholder="اكتب رسالتك هنا..." style="width:100%;padding:12px 14px;border:1.5px solid var(--grey-5);border-radius:10px;font-family:inherit;font-size:14px;outline:none;resize:vertical;margin-bottom:12px"></textarea>
             <div id="admin-compose-att-wrap"></div>
-            <div class="compose-send-row">
+            <div class="compose-send-row compose-send-unified">
               <button type="button" class="btn-primary" id="admin-compose-send-btn" onclick="adminSendMessage()">📤 إرسال وحفظ</button>
-              <button type="button" class="action-btn wa compose-wa-btn" id="admin-compose-wa-btn" onclick="adminSendMessage(true)">📱 إرسال عبر واتساب</button>
+              <label class="compose-wa-optin"><input type="checkbox" id="admin-compose-wa-chk"> فتح واتساب أيضاً</label>
             </div>
           </div>
         </div>
@@ -719,7 +727,10 @@ window.__splashDeadline = Date.now() + 5000;
           <h2 id="teacher-school">محمد بن حمد الشرقي للحلقة الثانية -بنين</h2>
           <p class="teacher-meta"><span id="teacher-name-el">—</span></p>
           <p class="teacher-meta teacher-scope-line"><span id="teacher-scope-el">—</span></p>
-          <p class="teacher-fb-line"><span id="fb-status" class="fb-connecting"><span id="fb-status-txt">جارٍ الاتصال...</span></span></p>
+          <p class="teacher-fb-line">
+            <span id="fb-status" class="fb-connecting"><span id="fb-status-txt">جارٍ الاتصال...</span></span>
+            <span id="teacher-sync-indicator" class="teacher-sync-indicator idle"></span>
+          </p>
         </div>
       </div>
     </div>
@@ -731,6 +742,9 @@ window.__splashDeadline = Date.now() + 5000;
         <span class="teacher-tb-ico">📂</span><span class="teacher-tb-lbl" id="teacher-excel-lbl">تحديث الدرجات</span>
       </button>
       <input type="file" id="excel-upload" accept=".xlsx,.xls" style="display:none" onchange="importExcel(this)">
+      <button type="button" class="teacher-tb-btn" id="teacher-onedrive-btn" onclick="importOneDriveGrades()">
+        <span class="teacher-tb-ico">☁️</span><span class="teacher-tb-lbl" id="teacher-onedrive-lbl">OneDrive</span>
+      </button>
       <button type="button" class="teacher-tb-btn" id="teacher-refresh-btn" onclick="refreshDashboard()">
         <span class="teacher-tb-ico">🔄</span><span class="teacher-tb-lbl" id="teacher-refresh-lbl">تحديث</span>
       </button>
@@ -755,7 +769,7 @@ window.__splashDeadline = Date.now() + 5000;
 
   <div class="nav-tabs">
     <button class="nav-tab active" onclick="showTab('overview',this)" id="ttab-overview">📊 نظرة عامة</button>
-    <button class="nav-tab" onclick="showTab('analysis',this)" id="ttab-analysis">📈 تحليل النتائج</button>
+    <button class="nav-tab" onclick="showTab('analysis',this)" id="ttab-analysis" style="display:none" aria-hidden="true">📈 تحليل النتائج</button>
     <button class="nav-tab" onclick="showTab('grades',this)" id="ttab-grades">📝 الدرجات</button>
     <button class="nav-tab" onclick="showTab('pins',this)" id="ttab-pins">🔑 الرموز السرية</button>
     <button class="nav-tab" onclick="showTab('behavior',this)" id="ttab-behavior">🧑‍🎓 السلوك</button>
@@ -809,42 +823,35 @@ window.__splashDeadline = Date.now() + 5000;
           </table>
         </div>
       </div>
+
+      <div class="overview-analysis-section" style="margin-top:20px">
+        <div class="stat-grid" id="analysis-stats"></div>
+        <div class="analysis-charts-grid">
+          <div class="card analysis-chart-card">
+            <h4 id="an-chart-dist-title">📊 توزيع التقديرات</h4>
+            <canvas id="chart-grade-dist" height="220"></canvas>
+          </div>
+          <div class="card analysis-chart-card">
+            <h4 id="an-chart-pass-title">🎯 نسبة النجاح (70%+)</h4>
+            <canvas id="chart-pass-rate" height="220"></canvas>
+          </div>
+          <div class="card analysis-chart-card analysis-chart-wide">
+            <h4 id="an-chart-week-title">📅 متوسط الأداء الأسبوعي</h4>
+            <canvas id="chart-weekly-trend" height="200"></canvas>
+          </div>
+        </div>
+        <div class="card" style="margin-top:16px">
+          <div class="card-header">
+            <h3 id="an-remedial-title">🎯 الطلاب المستهدفون بخطة علاجية</h3>
+            <span id="an-remedial-count" style="font-size:12px;color:var(--grey-3)"></span>
+          </div>
+          <div id="analysis-remedial-list"></div>
+        </div>
+      </div>
     </div>
 
-    <!-- TAB: ANALYSIS -->
-    <div class="tab-content" id="tab-analysis">
-      <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
-        <label id="an-lbl-class" style="font-size:13px;font-weight:600;color:var(--grey-2)">الصف:</label>
-        <select id="analysis-class" onchange="onGradeChange('analysis-class','analysis-sec',renderAnalysisTab)" style="padding:8px 14px;border:1.5px solid var(--grey-5);border-radius:8px;font-family:inherit;font-size:13px;outline:none">
-          <option value="">الكل</option>
-        </select>
-        <select id="analysis-sec" onchange="renderAnalysisTab()" style="padding:8px 14px;border:1.5px solid var(--grey-5);border-radius:8px;font-family:inherit;font-size:13px;outline:none">
-          <option value="">كل الشعب</option>
-        </select>
-      </div>
-      <div class="stat-grid" id="analysis-stats"></div>
-      <div class="analysis-charts-grid">
-        <div class="card analysis-chart-card">
-          <h4 id="an-chart-dist-title">📊 توزيع التقديرات</h4>
-          <canvas id="chart-grade-dist" height="220"></canvas>
-        </div>
-        <div class="card analysis-chart-card">
-          <h4 id="an-chart-pass-title">🎯 نسبة النجاح (70%+)</h4>
-          <canvas id="chart-pass-rate" height="220"></canvas>
-        </div>
-        <div class="card analysis-chart-card analysis-chart-wide">
-          <h4 id="an-chart-week-title">📅 متوسط الأداء الأسبوعي</h4>
-          <canvas id="chart-weekly-trend" height="200"></canvas>
-        </div>
-      </div>
-      <div class="card" style="margin-top:16px">
-        <div class="card-header">
-          <h3 id="an-remedial-title">🎯 الطلاب المستهدفون بخطة علاجية</h3>
-          <span id="an-remedial-count" style="font-size:12px;color:var(--grey-3)"></span>
-        </div>
-        <div id="analysis-remedial-list"></div>
-      </div>
-    </div>
+    <!-- TAB: ANALYSIS (merged into overview — kept for compatibility) -->
+    <div class="tab-content" id="tab-analysis" style="display:none" aria-hidden="true"></div>
 
     <!-- TAB: GRADES -->
     <div class="tab-content" id="tab-grades">
@@ -861,6 +868,14 @@ window.__splashDeadline = Date.now() + 5000;
         <div class="card-header">
           <h3 id="grades-title">📝 درجات الشعبة 1</h3>
           <input class="search-input" type="text" id="gr-search" placeholder="🔍 ابحث..." oninput="filterTable('grades-table',this.value)">
+        </div>
+        <div id="grade-group-toggles" class="grade-group-toggles">
+          <span id="gr-toggles-lbl" class="grade-group-toggles-lbl">إظهار المجموعات:</span>
+          <label><input type="checkbox" checked data-grp="diag"> تشخيص/T</label>
+          <label><input type="checkbox" checked data-grp="hw"> واجبات</label>
+          <label><input type="checkbox" checked data-grp="portal"> بوابة</label>
+          <label><input type="checkbox" checked data-grp="act"> نشاط</label>
+          <label><input type="checkbox" checked data-grp="lab"> LAB</label>
         </div>
         <div class="table-wrap">
           <table id="grades-table" class="grades-template-table">
@@ -944,9 +959,9 @@ window.__splashDeadline = Date.now() + 5000;
               <input type="text" id="bv-conduct-input" id="bv-conduct-ph" placeholder="أي تفاصيل إضافية..." style="width:100%;padding:10px 12px;border:1.5px solid var(--grey-5);border-radius:8px;font-family:inherit;font-size:13px;outline:none">
             </div>
           </div>
-          <div class="compose-send-row" style="margin-top:4px">
+          <div class="compose-send-row compose-send-unified" style="margin-top:4px">
             <button type="button" class="btn-primary" id="bv-save-btn" onclick="saveBehaviorEntry()">📤 إرسال وحفظ</button>
-            <button type="button" class="action-btn wa compose-wa-btn" id="bv-wa-btn" onclick="saveBehaviorEntry(true)">📱 إرسال عبر واتساب</button>
+            <label class="compose-wa-optin"><input type="checkbox" id="bv-wa-chk"> فتح واتساب أيضاً</label>
           </div>
         </div>
       </div>
@@ -1018,9 +1033,9 @@ window.__splashDeadline = Date.now() + 5000;
                 <textarea id="msg-body" rows="5" style="width:100%;padding:11px 14px;border:1.5px solid var(--grey-5);border-radius:10px;font-family:inherit;font-size:14px;outline:none;resize:vertical" placeholder="اكتب الرسالة..."></textarea>
               </div>
               <div id="teacher-msg-att-wrap"></div>
-              <div class="compose-send-row">
+              <div class="compose-send-row compose-send-unified">
                 <button type="button" class="btn-primary" id="msg-save-btn" onclick="saveMessage()">📤 إرسال وحفظ</button>
-                <button type="button" class="action-btn wa compose-wa-btn" id="msg-wa-btn" onclick="saveMessage(true)">📱 إرسال عبر واتساب</button>
+                <label class="compose-wa-optin"><input type="checkbox" id="msg-wa-chk"> فتح واتساب أيضاً</label>
               </div>
             </div>
           </div>
@@ -1067,9 +1082,9 @@ window.__splashDeadline = Date.now() + 5000;
           <textarea id="teacher-school-admin-input" class="parent-msg-textarea" rows="4"
             placeholder="اكتب رسالتك لمسؤول المدرسة..."></textarea>
           <div id="teacher-admin-att-wrap"></div>
-          <div class="compose-send-row" style="margin-top:10px">
+          <div class="compose-send-row compose-send-unified" style="margin-top:10px">
             <button type="button" class="btn-primary" id="teacher-school-send-btn" onclick="submitTeacherMessageToAdmin()">📤 إرسال وحفظ</button>
-            <button type="button" class="action-btn wa compose-wa-btn" id="teacher-school-wa-btn" onclick="submitTeacherMessageToAdmin(true)">📱 إرسال عبر واتساب</button>
+            <label class="compose-wa-optin"><input type="checkbox" id="teacher-school-wa-chk"> فتح واتساب أيضاً</label>
           </div>
           <div id="teacher-admin-sent-list"></div>
         </div>
@@ -1182,9 +1197,14 @@ window.__splashDeadline = Date.now() + 5000;
       <p id="settings-notif-help" style="font-size:12px;color:var(--grey-3);margin:0 0 8px;line-height:1.65"></p>
       <div id="settings-notif-action"></div>
       <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-top:12px;cursor:pointer">
-        <input type="checkbox" id="settings-auto-refresh">
+        <input type="checkbox" id="settings-auto-refresh" checked>
         <span id="settings-auto-refresh-lbl">تحديث البيانات تلقائياً عند فتح اللوحة</span>
       </label>
+      <div class="form-group" style="margin-top:14px;margin-bottom:0">
+        <label id="settings-onedrive-lbl">☁️ رابط OneDrive للدرجات</label>
+        <input type="url" id="settings-onedrive-url" placeholder="https://1drv.ms/x/..." style="width:100%;margin-top:6px">
+        <p id="settings-onedrive-hint" style="font-size:12px;color:var(--grey-3);margin:6px 0 0;line-height:1.6">احفظ رابط ملف Excel على OneDrive ثم استخدم زر OneDrive في شريط الأدوات للاستيراد.</p>
+      </div>
     </div>
 
     <div id="settings-tools-section" class="form-group settings-tools-section" style="display:none;border-top:1.5px solid var(--grey-5);padding-top:14px;margin-top:4px">
@@ -1253,6 +1273,14 @@ window.__splashDeadline = Date.now() + 5000;
 <div class="toast" id="toast"></div>
 
 <!-- PWA Install Banner -->
+<div class="pwa-update-banner" id="pwa-update-banner">
+  <span id="pwa-update-msg">🔄 تحديث جديد للبوابة — اضغط للتطبيق</span>
+  <div class="pwa-banner-actions" style="display:flex;gap:8px;margin-top:8px">
+    <button type="button" onclick="applyPwaUpdate()" style="padding:8px 16px;background:var(--teal-mid);color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:inherit;font-size:13px;font-weight:600">تحديث الآن</button>
+    <button type="button" onclick="document.getElementById('pwa-update-banner').classList.remove('show')" style="padding:8px 16px;background:var(--grey-5);border:none;border-radius:8px;cursor:pointer;font-family:inherit;font-size:13px">لاحقاً</button>
+  </div>
+</div>
+
 <div class="pwa-banner" id="pwa-banner">
   <p><strong>📲 أضف البوابة لشاشتك الرئيسية</strong>احصل على إشعارات فورية عند وجود تحديث على بيانات ابنك</p>
   <div class="pwa-banner-actions" style="display:flex;gap:8px;margin-top:10px">
@@ -1273,6 +1301,6 @@ window.__splashDeadline = Date.now() + 5000;
 <script src="js/attachments.js?v=7"></script>
 <script src="js/firebase-init.js?v=37"></script>
 <script src="js/msg-delete.js?v=5"></script>
-<script src="js/app.js?v=75"></script>
+<script src="js/app.js?v=76"></script>
 </body>
 </html>

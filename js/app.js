@@ -93,7 +93,33 @@
 // ══════════════════════════════════════════════════
 window._splashDone = false;
 window._pendingParentPrefill = null;
-const SPLASH_DURATION_MS = 5000;
+window._pendingLoginTab = null;
+window._parentStudentsCache = [];
+const SPLASH_FIRST_MS = 2200;
+
+function getSplashSeenVersion(){
+  try{ return localStorage.getItem('portal_splash_version') || ''; }catch(e){ return ''; }
+}
+function markSplashSeen(){
+  try{ localStorage.setItem('portal_splash_version', String(APP?.buildVersion || '76')); }catch(e){}
+}
+function parsePortalDeepLink(){
+  try{
+    const q = new URLSearchParams(location.search);
+    const role = (q.get('role') || q.get('p') || '').toLowerCase();
+    if(role === 'parent'){
+      const cls = q.get('g') || q.get('grade') || '';
+      const section = q.get('s') || q.get('sec') || q.get('section') || '';
+      const rawName = q.get('n') || q.get('name') || '';
+      const name = rawName ? decodeURIComponent(String(rawName).replace(/\+/g, ' ')) : '';
+      if(cls && name) window._pendingParentPrefill = { cls, section, name };
+      window._pendingLoginTab = 'parent';
+    } else if(role === 'teacher'){
+      window._pendingLoginTab = 'teacher';
+    }
+  }catch(e){ console.warn('parsePortalDeepLink', e); }
+}
+parsePortalDeepLink();
 
 (function initPage(){
   if(document.readyState === 'loading'){
@@ -106,6 +132,7 @@ const SPLASH_DURATION_MS = 5000;
 function finishSplashScreen(){
   if(window._splashDone) return;
   window._splashDone = true;
+  markSplashSeen();
   const splash = document.getElementById('screen-splash');
   document.documentElement.classList.remove('splash-open');
   if(splash){
@@ -124,10 +151,19 @@ function finishSplashScreen(){
 
 function enterAppAfterSplash(){
   showScreen('login');
+  if(window._pendingLoginTab){
+    const tabSel = window._pendingLoginTab === 'parent'
+      ? '.login-tab[onclick*="parent"]'
+      : '.login-tab[onclick*="teacher"]';
+    const tabEl = document.querySelector(tabSel);
+    if(tabEl) switchTab(window._pendingLoginTab, tabEl);
+    window._pendingLoginTab = null;
+  }
   if(window._pendingParentPrefill){
     setTimeout(()=>prefillParentLoginForm(window._pendingParentPrefill), 150);
     window._pendingParentPrefill = null;
   }
+  if(typeof updateParentQuickReturn === 'function') updateParentQuickReturn();
 }
 
 function prefillParentLoginForm(sp){
@@ -151,6 +187,12 @@ function prefillParentLoginForm(sp){
 }
 
 function startSplashScreen(){
+  const seenVer = getSplashSeenVersion();
+  const curVer = String(APP?.buildVersion || '76');
+  if(seenVer === curVer){
+    finishSplashScreen();
+    return;
+  }
   window._splashDone = false;
   const splash = document.getElementById('screen-splash');
   document.documentElement.classList.add('splash-open');
@@ -167,9 +209,72 @@ function startSplashScreen(){
   }
   const splashTitleEl = document.querySelector('#screen-splash .splash-title');
   if(splashTitleEl && typeof t === 'function') splashTitleEl.textContent = t('splashTitle');
-  const deadline = window.__splashDeadline || (Date.now() + SPLASH_DURATION_MS);
-  const left = Math.max(0, deadline - Date.now());
-  setTimeout(finishSplashScreen, left);
+  setTimeout(finishSplashScreen, SPLASH_FIRST_MS);
+}
+
+function buildParentPortalLink(sp){
+  const base = (APP.siteUrl || (location.origin + location.pathname)).replace(/\/?(\?.*)?$/, '/');
+  const params = new URLSearchParams({
+    role: 'parent',
+    g: String(sp?.cls || ''),
+    s: String(sp?.section || ''),
+    n: String(sp?.name || ''),
+  });
+  return base + '?' + params.toString();
+}
+
+function updateParentQuickReturn(){
+  const box = document.getElementById('parent-quick-return');
+  const btn = document.getElementById('parent-quick-return-btn');
+  if(!box || !btn) return;
+  const sp = APP.savedParent;
+  if(!sp?.cls || !sp?.name){
+    box.style.display = 'none';
+    return;
+  }
+  const isEn = currentLang === 'en';
+  const label = displayStudentName(sp, sp.cls, sp.section, sp.mid);
+  btn.textContent = isEn
+    ? `↩ Continue as ${label} (Grade ${sp.cls})`
+    : `↩ متابعة كـ ${label} (صف ${sp.cls})`;
+  box.style.display = '';
+}
+
+function quickReturnParent(){
+  if(!APP.savedParent?.cls || !APP.savedParent?.name) return;
+  prefillParentLoginForm(APP.savedParent);
+  const nameSel = document.getElementById('parent-name');
+  if(nameSel?.value){
+    const nextBtn = document.getElementById('parent-next-btn');
+    if(nextBtn) nextBtn.style.display = '';
+  }
+}
+
+function filterParentNameOptions(){
+  const q = (document.getElementById('parent-name-search')?.value || '').trim().toLowerCase();
+  const sel = document.getElementById('parent-name');
+  if(!sel) return;
+  const cache = window._parentStudentsCache || [];
+  if(!cache.length) return;
+  const isEn = currentLang === 'en';
+  const grade = document.getElementById('parent-grade')?.value || '';
+  const section = document.getElementById('parent-section')?.value || '';
+  const filtered = !q ? cache : cache.filter(s=>{
+    const display = displayStudentName(s, grade, section).toLowerCase();
+    return display.includes(q) || String(s.name || '').toLowerCase().includes(q);
+  });
+  sel.innerHTML = `<option value="">${isEn ? '— Select Student —' : '— اختر الاسم —'}</option>`
+    + filtered.map(s=>{
+        const display = displayStudentName(s, grade, section);
+        return `<option value="${escapeHtml(s.name)}">${escapeHtml(display)}</option>`;
+      }).join('');
+  sel.onchange = ()=>{
+    document.getElementById('parent-next-btn').style.display = sel.value ? '' : 'none';
+  };
+  if(filtered.length === 1 && q){
+    sel.value = filtered[0].name;
+    document.getElementById('parent-next-btn').style.display = '';
+  }
 }
 
 // ══════════════════════════════════════════════════
@@ -569,18 +674,37 @@ function detectWaFormPrefix(role){
 function applyComposeSendLabels(appId, waId){
   const isEn = currentLang === 'en';
   const appEl = document.getElementById(appId);
-  const waEl = document.getElementById(waId);
   if(appEl) appEl.textContent = isEn ? '📤 Send & save' : '📤 إرسال وحفظ';
-  if(waEl) waEl.textContent = isEn ? '📱 Send via WhatsApp' : '📱 إرسال عبر واتساب';
+  const waEl = document.getElementById(waId);
+  if(waEl && waEl.type === 'checkbox'){
+    const lbl = waEl.closest('.compose-wa-optin');
+    if(lbl){
+      lbl.childNodes.forEach(n=>{
+        if(n.nodeType === 3) n.textContent = isEn ? ' Also open WhatsApp' : ' فتح واتساب أيضاً';
+      });
+    }
+  } else if(waEl){
+    waEl.textContent = isEn ? '📱 Send via WhatsApp' : '📱 إرسال عبر واتساب';
+  }
 }
 
-function composeSendButtonsHtml(appOnclick, waOnclick, appBtnId, waBtnId){
+function isComposeWaChecked(checkboxId){
+  const el = document.getElementById(checkboxId || 'compose-wa-chk');
+  return !!el?.checked;
+}
+
+function resolveViaWhatsApp(explicit, checkboxId){
+  if(explicit === true || explicit === false) return explicit === true;
+  return isComposeWaChecked(checkboxId);
+}
+
+function composeSendButtonsHtml(appOnclick, _waOnclick, appBtnId, waCheckboxId){
   const isEn = currentLang === 'en';
   const appId = appBtnId || 'compose-app-btn';
-  const waId = waBtnId || 'compose-wa-btn';
-  return `<div class="compose-send-row">
+  const chkId = waCheckboxId || 'compose-wa-chk';
+  return `<div class="compose-send-row compose-send-unified">
     <button type="button" class="btn-primary" id="${appId}" onclick="${appOnclick}">${isEn ? '📤 Send & save' : '📤 إرسال وحفظ'}</button>
-    <button type="button" class="action-btn wa compose-wa-btn" id="${waId}" onclick="${waOnclick}">${isEn ? '📱 Send via WhatsApp' : '📱 إرسال عبر واتساب'}</button>
+    <label class="compose-wa-optin"><input type="checkbox" id="${chkId}"> ${isEn ? 'Also open WhatsApp' : 'فتح واتساب أيضاً'}</label>
   </div>`;
 }
 
@@ -1185,7 +1309,7 @@ function mergeGradeScores(cls, student){
 // ══════════════════════════════════════════════════
 let APP = {
   siteUrl: 'https://emadabuhoujaila.github.io/science-portal/',
-  buildVersion: '75',
+  buildVersion: '76',
   pins:{},      // {cls_name: "1234"}
   messages:[],
   behavior:{},   // {cls|name: {level, academic, conduct}}
@@ -1266,6 +1390,7 @@ function showTab(name,el){
   document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
   if(el) el.classList.add('active');
+  if(name==='overview') renderAnalysisTab();
   if(name==='pins') renderPinsTab();
   if(name==='links') renderLinksTab();
   if(name==='grades') renderGradesTab();
@@ -1846,6 +1971,7 @@ function switchTab(tab,el){
   if(adminDiv) adminDiv.style.display=tab==='admin'?'':'none';
   // Load available grades from Firebase when parent tab opens
   if(tab==='parent' && typeof loadParentGrades==='function') loadParentGrades();
+  if(tab==='parent' && typeof updateParentQuickReturn === 'function') updateParentQuickReturn();
 }
 // ══════════════════════════════════════════════════
 //  AUTH — TEACHER
@@ -2981,7 +3107,6 @@ function refreshGradeDropdowns(){
   buildGradeOptions('behavior-class', renderBehaviorTab);
   buildGradeOptions('msg-class',      populateMsgStudents);
   buildGradeOptions('links-class',    renderLinksTab);
-  buildGradeOptions('analysis-class', renderAnalysisTab);
 }
 
 // Build section dropdown for a given grade select
@@ -3244,6 +3369,7 @@ function renderAdminComplaints(){
 }
 
 async function adminSendComplaintReply(complaintId, viaWhatsApp){
+  viaWhatsApp = resolveViaWhatsApp(viaWhatsApp, 'admin-reply-wa-'+complaintId);
   const isEn = currentLang==='en';
   const c = adminComplaintsCache.find(x=>x.id===complaintId);
   const body = (document.getElementById('admin-reply-input-'+complaintId)?.value||'').trim();
@@ -3789,6 +3915,7 @@ async function adminDeleteComplaintAll(complaintId){
 }
 
 async function adminSendMessage(viaWhatsApp){
+  viaWhatsApp = resolveViaWhatsApp(viaWhatsApp, 'admin-compose-wa-chk');
   const isEn = currentLang==='en';
   const body = (document.getElementById('admin-compose-body')?.value||'').trim();
   const attInput = 'admin-compose-att';
@@ -3803,9 +3930,7 @@ async function adminSendMessage(viaWhatsApp){
   const dateStr = now.toLocaleDateString(isEn?'en-AE':'ar-AE')+' '+now.toLocaleTimeString(isEn?'en-AE':'ar-AE',{hour:'2-digit',minute:'2-digit'});
   const ts = now.toISOString();
   const btn = document.getElementById('admin-compose-send-btn');
-  const waBtn = document.getElementById('admin-compose-wa-btn');
   if(btn){ btn.disabled=true; btn.textContent=isEn?'Sending…':'جارٍ الإرسال…'; }
-  if(waBtn) waBtn.disabled = true;
   let waTarget = null;
 
   try{
@@ -3881,7 +4006,6 @@ async function adminSendMessage(viaWhatsApp){
     showToast('⚠️ '+(e.message||(isEn?'Send failed':'فشل الإرسال')));
   }finally{
     if(btn){ btn.disabled=false; btn.textContent=isEn?'📤 Send & save':'📤 إرسال وحفظ'; }
-    if(waBtn) waBtn.disabled = false;
   }
 }
 
@@ -4474,6 +4598,7 @@ function initDashboard(){
   } catch(e){}
   try { updateInboxBadge(); } catch(e){}
   try { updateTeacherComplaintsBadge(); } catch(e){}
+  try { updateTeacherSyncIndicator(); } catch(e){}
 }
 function renderOverview(){
   updateOverviewGradeHeaders();
@@ -4495,6 +4620,7 @@ function renderOverview(){
 
   if(!list.length){
     tbody.innerHTML = gradesUploadEmptyRow(13);
+    try{ renderAnalysisTab(); }catch(e){}
     return;
   }
 
@@ -4514,6 +4640,7 @@ function renderOverview(){
       <td class="col-grp col-grp-final">${formatGradeFinalCell(s)}</td>
       <td class="col-grp col-grp-grade col-grp-sep">${gradeBadge(s.displayScore)}</td>
     </tr>`).join('');
+  try{ renderAnalysisTab(); }catch(e){}
 }
 function renderGradesTableHead(){
   const thead = document.getElementById('grades-thead');
@@ -4531,8 +4658,21 @@ function formatWeekCell(v){
   if(isNaN(n) || n === 0) return '—';
   return n <= 1 ? (n * 100).toFixed(0) : n.toFixed(0);
 }
+function initGradeGroupToggles(){
+  const wrap = document.getElementById('grade-group-toggles');
+  const table = document.getElementById('grades-table');
+  if(!wrap || !table || wrap.dataset.init) return;
+  wrap.dataset.init = '1';
+  wrap.querySelectorAll('input[type=checkbox][data-grp]').forEach(cb=>{
+    cb.addEventListener('change', ()=>{
+      table.classList.toggle('grades-hide-' + cb.dataset.grp, !cb.checked);
+    });
+  });
+}
+
 function renderGradesTab(){
   renderGradesTableHead();
+  initGradeGroupToggles();
   const cls=document.getElementById('grades-class')?.value||'';
   const sec=document.getElementById('grades-sec')?.value||'';
   const isEn = currentLang==='en';
@@ -4756,6 +4896,7 @@ function initAttachmentFields(){
   if(taw && !taw.dataset.init){ taw.innerHTML = _attField('teacher-admin-att','teacher-admin-att-preview'); taw.dataset.init='1'; }
 }
 function saveMessage(viaWhatsApp){
+  viaWhatsApp = resolveViaWhatsApp(viaWhatsApp, 'msg-wa-chk');
   const cls  = document.getElementById('msg-class')?.value||'';
   const sec  = document.getElementById('msg-sec')?.value||'';
   const name = document.getElementById('msg-student')?.value||'';
@@ -4772,10 +4913,8 @@ function saveMessage(viaWhatsApp){
     return;
   }
   const btn = document.getElementById('msg-save-btn');
-  const waBtn = document.getElementById('msg-wa-btn');
   const btnLabel = btn ? btn.textContent : '';
   if(btn){ btn.disabled=true; btn.textContent=currentLang==='en'?'Sending…':'جارٍ الإرسال…'; }
-  if(waBtn) waBtn.disabled = true;
 
   (async ()=>{
     try{
@@ -4810,7 +4949,6 @@ function saveMessage(viaWhatsApp){
       showToast('⚠️ '+(e.message||(currentLang==='en'?'Send failed':'فشل الإرسال')));
     }finally{
       if(btn){ btn.disabled=false; btn.textContent=btnLabel||'📤 إرسال وحفظ'; }
-      if(waBtn) waBtn.disabled = false;
     }
   })();
 }
@@ -6053,7 +6191,7 @@ function applyBehaviorLang(){
   setText('bv-lbl-violation', isAr?'نوع المخالفة السلوكية':'Violation Type');
   setText('bv-lbl-conduct', isAr?'ملاحظة سلوكية إضافية (اختياري)':'Behavioral Note (optional)');
   setPH('bv-conduct-ph', isAr?'أي تفاصيل إضافية...':'Any additional details...');
-  applyComposeSendLabels('bv-save-btn', 'bv-wa-btn');
+  applyComposeSendLabels('bv-save-btn', 'bv-wa-chk');
 
   // Log section
   setText('bv-log-title', isAr?'📋 سجل الملاحظات':'📋 Behavior Log');
@@ -6126,7 +6264,7 @@ function applyMessagesLang(){
   setText('msg-lbl-body', isAr?'نص الرسالة':'Message Text');
   const msgBodyEl = document.getElementById('msg-body');
   if(msgBodyEl) msgBodyEl.placeholder = isAr?'اكتب الرسالة...':'Write message...';
-  applyComposeSendLabels('msg-save-btn', 'msg-wa-btn');
+  applyComposeSendLabels('msg-save-btn', 'msg-wa-chk');
 
   // Saved messages
   setText('msg-saved-title',  isAr?'📬 الرسائل المحفوظة':'📬 Saved Messages');
@@ -6240,7 +6378,7 @@ function applyAdminLang(){
   setText('admin-compose-lbl-p-sec', 'adminComposePickSec');
   setText('admin-compose-lbl-p-student', 'adminComposePickStudent');
   setText('admin-compose-broadcast-note', 'adminComposeBroadcastNote');
-  applyComposeSendLabels('admin-compose-send-btn', 'admin-compose-wa-btn');
+  applyComposeSendLabels('admin-compose-send-btn', 'admin-compose-wa-chk');
   const composeBody = document.getElementById('admin-compose-body');
   if(composeBody) composeBody.placeholder = t('adminComposeBodyPH');
   setText('admin-upload-title', 'adminUploadTitle');
@@ -6449,7 +6587,7 @@ function applyTeacherLang(){
   setText('teacher-school-admin-desc', 'teacherSchoolAdminDesc');
   setText('teacher-school-send-title', 'teacherSchoolSendTitle');
   setText('teacher-school-send-desc', 'teacherSchoolSendDesc');
-  applyComposeSendLabels('teacher-school-send-btn', 'teacher-school-wa-btn');
+  applyComposeSendLabels('teacher-school-send-btn', 'teacher-school-wa-chk');
   setText('teacher-school-complaints-title', 'teacherSchoolComplaintsTitle');
   setText('teacher-school-complaints-desc', 'teacherSchoolComplaintsDesc');
   setText('teacher-complaints-empty', 'teacherComplaintsEmpty');
@@ -6945,6 +7083,36 @@ async function fetchTeacherGradeRecord(teacherKey, cls, section, mid, studentNam
   return null;
 }
 
+function buildParentGradeMobileCards(g, labels, isEn){
+  if(!g) return '';
+  const periodCount = labels.periodCount || getGradePeriodCount();
+  const fmt = v=>{
+    if(v == null || v === '') return '—';
+    const n = parseFloat(v);
+    if(isNaN(n) || n === 0) return '—';
+    return n <= 1 ? (n * 100).toFixed(0) : n.toFixed(0);
+  };
+  const scalarRow = (lbl, val)=>`<div class="pgc-row"><span class="pgc-lbl">${escapeHtml(lbl)}</span><span class="pgc-val">${fmt(val)}</span></div>`;
+  const weekBlock = (title, arr, weeks)=>{
+    if(!weeks?.length) return '';
+    return `<details class="pgc-group" open>
+      <summary>${escapeHtml(title)}</summary>
+      <div class="pgc-group-body">${weeks.map((lbl,i)=>scalarRow(lbl, arr?.[i])).join('')}</div>
+    </details>`;
+  };
+  return `<div class="parent-grade-cards">
+    ${scalarRow(labels.diagnostic, g.diagnostic)}
+    ${scalarRow(labels.t1, g.t1)}
+    ${scalarRow(labels.t2, g.t2)}
+    ${weekBlock(labels.hwGroup, g.hwWeeks, labels.hwWeeks)}
+    ${weekBlock(labels.portalGroup, g.portalWeeks, labels.portalWeeks)}
+    ${weekBlock(labels.actGroup, g.actWeeks, labels.actWeeks)}
+    ${scalarRow(labels.lab, g.lab)}
+    ${scalarRow(labels.total, g.computedTotal != null ? g.computedTotal : g.total)}
+    ${scalarRow(labels.final, g.final != null && g.final !== '' ? g.final : null)}
+  </div>`;
+}
+
 function buildParentWeeklyGradeTable(gd, isEn, teacherKey){
   if(!gd) return '';
   const g = enrichGradeRecord(gd);
@@ -6959,6 +7127,7 @@ function buildParentWeeklyGradeTable(gd, isEn, teacherKey){
     return `<td class="col-grp col-grp-${grp}">${txt}</td>`;
   }).join('');
   return `<div class="table-wrap parent-grades-wrap" style="margin-bottom:14px">
+    ${buildParentGradeMobileCards(g, labels, isEn)}
     <table class="grades-template-table parent-grades-table">
       <thead>
         ${buildGradeTableHeadHtml(labels, { showGrade: false })}
@@ -7471,6 +7640,7 @@ function toggleParentSchoolComplaintForm(){
 }
 
 async function submitParentSchoolComplaint(mid, viaWhatsApp){
+  viaWhatsApp = resolveViaWhatsApp(viaWhatsApp, 'parent-complaint-wa-btn');
   const isEn = currentLang === 'en';
   const body = (document.getElementById('parent-school-complaint-input')?.value || '').trim();
   if(!body){
@@ -7536,6 +7706,7 @@ async function submitParentComplaintCore(idx, teacherKey, cls, studentName, mid,
 }
 
 async function submitParentMessageToAdmin(viaWhatsApp){
+  viaWhatsApp = resolveViaWhatsApp(viaWhatsApp, 'parent-admin-wa-btn');
   const isEn = currentLang === 'en';
   const ctx = window._parentSubjectContext || {};
   const mid = ctx.mid || window._currentParent?.mid;
@@ -7591,6 +7762,7 @@ async function submitParentMessageToAdmin(viaWhatsApp){
 }
 
 async function submitParentComplaintFollowUp(complaintId, viaWhatsApp){
+  viaWhatsApp = resolveViaWhatsApp(viaWhatsApp, 'parent-followup-wa-'+complaintId);
   const isEn = currentLang === 'en';
   const ctx = window._parentSubjectContext || {};
   const mid = ctx.mid || window._currentParent?.mid;
@@ -8210,6 +8382,7 @@ function selectQuickSubj(btn, key, idx, firstName){
 
 
 async function sendParentMsgToTeacher(idx, teacherKey, cls, studentName, viaWhatsApp){
+  viaWhatsApp = resolveViaWhatsApp(viaWhatsApp, 'parent-msg-wa-'+idx);
   const body = (
     document.getElementById('subj-msg-input-'+idx)?.value ||
     document.getElementById('parent-msg-input-'+idx)?.value || ''
@@ -8243,9 +8416,7 @@ async function sendParentMsgToTeacher(idx, teacherKey, cls, studentName, viaWhat
   };
 
   const sendBtn = document.getElementById('parent-msg-send-'+idx);
-  const waBtn = document.getElementById('parent-msg-wa-'+idx);
   if(sendBtn){ sendBtn.disabled = true; sendBtn.textContent = isEn ? 'Sending…' : 'جارٍ الإرسال…'; }
-  if(waBtn) waBtn.disabled = true;
 
   try{
     if(PortalAttachments?.getPending(attInput)){
@@ -8273,7 +8444,6 @@ async function sendParentMsgToTeacher(idx, teacherKey, cls, studentName, viaWhat
     showToast(isEn ? '❌ Send failed' : '❌ فشل الإرسال');
   }finally{
     if(sendBtn){ sendBtn.disabled = false; sendBtn.textContent = isEn ? '📤 Send & save' : '📤 إرسال وحفظ'; }
-    if(waBtn) waBtn.disabled = false;
   }
 }
 
@@ -8778,6 +8948,7 @@ function calcBehaviorLevel(cls, name){
 }
 
 function saveBehaviorEntry(viaWhatsApp){
+  viaWhatsApp = resolveViaWhatsApp(viaWhatsApp, 'bv-wa-chk');
   const cls     = document.getElementById('behavior-class')?.value||'';
   const sec     = document.getElementById('behavior-sec')?.value||'';
   const name    = document.getElementById('bv-student-sel')?.value||'';
@@ -9196,6 +9367,9 @@ function populateSettingsPhase3(){
     syncEl.textContent = `${t('settingsLastSync')} ${when}`;
   }
   if(autoCb) autoCb.checked = TEACHER_SETTINGS.autoRefresh !== false;
+  const odInput = document.getElementById('settings-onedrive-url');
+  if(odInput) odInput.value = TEACHER_SETTINGS.oneDriveUrl || '';
+  updateTeacherSyncIndicator();
   renderSettingsNotifAction();
 }
 
@@ -9265,7 +9439,83 @@ function settingsToggleLang(){
 }
 
 function copyParentPortalLink(){
+  const grade = document.getElementById('parent-grade')?.value;
+  const section = document.getElementById('parent-section')?.value;
+  const name = document.getElementById('parent-name')?.value;
+  const isEn = currentLang === 'en';
+  let url = '';
+  if(grade && name) url = buildParentPortalLink({ cls: grade, section, name });
+  else if(APP.savedParent?.cls && APP.savedParent?.name) url = buildParentPortalLink(APP.savedParent);
+  if(url){
+    navigator.clipboard.writeText(url).then(()=>{
+      showToast(isEn ? '✅ Parent link copied' : '✅ تم نسخ رابط ولي الأمر');
+    }).catch(()=> showToast(isEn ? '⚠️ Copy failed' : '⚠️ فشل النسخ'));
+    return;
+  }
   copySiteUrlFromSettings();
+}
+
+function updateTeacherSyncIndicator(iso){
+  const el = document.getElementById('teacher-sync-indicator');
+  if(!el) return;
+  const when = iso || TEACHER_SETTINGS?.lastGradeSync || '';
+  const isEn = currentLang === 'en';
+  if(!when){
+    el.textContent = isEn ? 'Grades: not synced yet' : 'الدرجات: لم تُحدَّث بعد';
+    el.className = 'teacher-sync-indicator idle';
+    return;
+  }
+  el.textContent = (isEn ? 'Updated ' : 'آخر تحديث ') + formatSettingsSyncTime(when);
+  el.className = 'teacher-sync-indicator ok';
+}
+
+async function importOneDriveGrades(){
+  const isEn = currentLang === 'en';
+  if(!window.XLSX){
+    showToast(isEn ? '⚠️ Excel library not loaded' : '⚠️ مكتبة Excel لم تُحمَّل');
+    return;
+  }
+  const fns = getCloudFunctions();
+  if(!fns){
+    showToast(isEn ? '⚠️ Not connected' : '⚠️ غير متصل');
+    return;
+  }
+  const btn = document.getElementById('teacher-onedrive-btn');
+  if(btn){ btn.disabled = true; }
+  showToast(isEn ? '⏳ Fetching from OneDrive...' : '⏳ جارٍ الجلب من OneDrive...');
+  try{
+    const url = (document.getElementById('settings-onedrive-url')?.value || TEACHER_SETTINGS.oneDriveUrl || '').trim();
+    const res = await fns.httpsCallable('fetchOneDriveExcel')(url ? { url } : {});
+    const base64 = res?.data?.base64;
+    if(!base64) throw new Error(isEn ? 'Empty file from OneDrive' : 'ملف فارغ من OneDrive');
+    const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+    const wb = XLSX.read(bytes, { type: 'array' });
+    const ok = await processGradesWorkbook(wb);
+    if(ok){
+      const ts = new Date().toISOString();
+      TEACHER_SETTINGS.lastGradeSync = ts;
+      if(url) TEACHER_SETTINGS.oneDriveUrl = url;
+      const tKey = getTeacherKey();
+      if(tKey && typeof db !== 'undefined'){
+        try{
+          await db.ref('teacherData/'+tKey+'/settings').update({
+            lastGradeSync: ts,
+            ...(url ? { oneDriveUrl: url } : {}),
+          });
+        }catch(e){ console.warn('oneDrive sync meta', e); }
+      }
+      populateSettingsPhase3();
+      if(typeof populateSettingsTools === 'function') populateSettingsTools();
+      updateTeacherSyncIndicator(ts);
+      showToast(isEn ? '✅ Grades imported from OneDrive' : '✅ تم استيراد الدرجات من OneDrive');
+    }
+  }catch(e){
+    console.error('importOneDriveGrades', e);
+    const msg = e?.message || String(e);
+    showToast('❌ ' + (isEn ? 'OneDrive import failed: ' : 'فشل استيراد OneDrive: ') + msg);
+  }finally{
+    if(btn) btn.disabled = false;
+  }
 }
 
 function openSettingsParentLinksTab(){
@@ -9406,11 +9656,14 @@ async function saveSettings(){
   if(CURRENT_TEACHER && !CURRENT_TEACHER.isAdmin){
     const autoRefresh = document.getElementById('settings-auto-refresh')?.checked !== false;
     TEACHER_SETTINGS.autoRefresh = autoRefresh;
+    const oneDriveUrl = document.getElementById('settings-onedrive-url')?.value?.trim() || '';
+    if(oneDriveUrl) TEACHER_SETTINGS.oneDriveUrl = oneDriveUrl;
     if(typeof db !== 'undefined'){
       const tKey = getTeacherKey();
       if(tKey){
         try{
           await db.ref('teacherData/'+tKey+'/settings/autoRefresh').set(autoRefresh);
+          if(oneDriveUrl) await db.ref('teacherData/'+tKey+'/settings/oneDriveUrl').set(oneDriveUrl);
         }catch(e){ console.warn('save autoRefresh', e); }
       }
     }
@@ -10146,6 +10399,7 @@ function renderTeacherSentToAdmin(){
 }
 
 async function submitTeacherMessageToAdmin(viaWhatsApp){
+  viaWhatsApp = resolveViaWhatsApp(viaWhatsApp, 'teacher-school-wa-chk');
   const isEn = currentLang==='en';
   const key = getTeacherKey();
   const body = (document.getElementById('teacher-school-admin-input')?.value||'').trim();
@@ -10165,9 +10419,7 @@ async function submitTeacherMessageToAdmin(viaWhatsApp){
   const subjLabel = subj ? (isEn?subj.en:subj.ar) : (CURRENT_TEACHER?.subject||'');
   const msgBody = body || (isEn ? '📎 Attachment' : '📎 مرفق');
   const btn = document.getElementById('teacher-school-send-btn');
-  const waBtn = document.getElementById('teacher-school-wa-btn');
   if(btn){ btn.disabled=true; btn.textContent=isEn?'Sending…':'جارٍ الإرسال…'; }
-  if(waBtn) waBtn.disabled = true;
   try{
     let attachment = null;
     if(PortalAttachments?.getPending(attInput)){
@@ -10197,7 +10449,6 @@ async function submitTeacherMessageToAdmin(viaWhatsApp){
     showToast('⚠️ '+(isEn?'Send failed':'فشل الإرسال'));
   }finally{
     if(btn){ btn.disabled=false; btn.textContent=isEn?'📤 Send & save':'📤 إرسال وحفظ'; }
-    if(waBtn) waBtn.disabled = false;
   }
 }
 
@@ -10842,6 +11093,7 @@ function importExcel(input){
         }
         populateSettingsPhase3();
         if(typeof populateSettingsTools === 'function') populateSettingsTools();
+        updateTeacherSyncIndicator(ts);
       }
     } catch(err){
       console.error(err);
@@ -10880,8 +11132,10 @@ function renderAnalysisTab(){
   if(!statsEl || !listEl) return;
 
   const isEn = currentLang==='en';
-  const cls  = document.getElementById('analysis-class')?.value || '';
-  const sec  = document.getElementById('analysis-sec')?.value || '';
+  const cls  = document.getElementById('analysis-class')?.value
+    || document.getElementById('class-filter')?.value || '';
+  const sec  = document.getElementById('analysis-sec')?.value
+    || document.getElementById('sec-filter')?.value || '';
   const students = allStudents(cls, sec).map(enrichGradeRecord);
   const scoreOf = s => s.displayScore ?? s.computedTotal;
   const withGrades = students.filter(hasAnyGradeData);
@@ -11039,7 +11293,21 @@ function renderAllTabs(){
 // ══════════════════════════════════════════════════
 let swRegistration = null;
 let deferredPrompt  = null;
-const SW_SCRIPT_URL = 'sw.js?v=9';
+const SW_SCRIPT_URL = 'sw.js?v=10';
+
+function showPwaUpdateBanner(){
+  const el = document.getElementById('pwa-update-banner');
+  if(el) el.classList.add('show');
+}
+
+function applyPwaUpdate(){
+  window._pwaReloadPending = true;
+  if(swRegistration?.waiting){
+    swRegistration.waiting.postMessage({ type: 'SKIP_WAITING' });
+    return;
+  }
+  location.reload();
+}
 
 // ─── SW Registration ───
 async function registerSW(){
@@ -11048,6 +11316,24 @@ async function registerSW(){
   if(location.hostname === 'localhost' || location.hostname === '127.0.0.1') return;
   try {
     swRegistration = await navigator.serviceWorker.register(SW_SCRIPT_URL);
+    if(swRegistration.waiting && navigator.serviceWorker.controller){
+      showPwaUpdateBanner();
+    }
+    swRegistration.addEventListener('updatefound', ()=>{
+      const worker = swRegistration.installing;
+      if(!worker) return;
+      worker.addEventListener('statechange', ()=>{
+        if(worker.state === 'installed' && navigator.serviceWorker.controller){
+          showPwaUpdateBanner();
+        }
+      });
+    });
+    navigator.serviceWorker.addEventListener('controllerchange', ()=>{
+      if(window._pwaReloadPending){
+        window._pwaReloadPending = false;
+        location.reload();
+      }
+    });
     navigator.serviceWorker.addEventListener('message', e => {
       if(e.data?.type === 'NOTIFICATION_CLICK') openInboxFromAlert();
     });
@@ -11505,6 +11791,11 @@ function populateParentNames(){
   if(!grade || !section){ sel.innerHTML=`<option value="">${isEn?'— Select Grade & Section —':'— اختر الصف والشعبة —'}</option>`; return; }
 
   const renderStudentOptions = (students)=>{
+    window._parentStudentsCache = students.slice();
+    const searchWrap = document.getElementById('parent-name-search-wrap');
+    const searchInput = document.getElementById('parent-name-search');
+    if(searchWrap) searchWrap.style.display = students.length > 8 ? '' : 'none';
+    if(searchInput) searchInput.value = '';
     if(!students.length){
       sel.innerHTML = `<option value="">${isEn?'— No students found —':'— لا يوجد طلاب —'}</option>`;
       if(errEl){

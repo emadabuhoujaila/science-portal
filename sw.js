@@ -3,7 +3,7 @@
 //  Cache + push notifications (بدون Firebase SDK في SW)
 // ══════════════════════════════════════════════════
 const APP_URL = 'https://emadabuhoujaila.github.io/science-portal/';
-const CACHE_VER = 'portal-v9';
+const CACHE_VER = 'portal-v10';
 
 function parsePushPayload(event) {
   if (!event.data) {
@@ -41,6 +41,12 @@ function showPortalNotification(title, body, url, opts) {
     data: { url: url || APP_URL },
   });
 }
+
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

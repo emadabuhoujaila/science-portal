@@ -24,6 +24,22 @@
       "purpose": "any maskable"
     }
   ],
+  "shortcuts": [
+    {
+      "name": "دخول ولي الأمر",
+      "short_name": "ولي الأمر",
+      "description": "فتح بوابة ولي الأمر مباشرة",
+      "url": "/science-portal/?role=parent",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "دخول المعلم",
+      "short_name": "المعلم",
+      "description": "فتح لوحة المعلم",
+      "url": "/science-portal/?role=teacher",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ],
   "categories": [
     "education"
   ],
