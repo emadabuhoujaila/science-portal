@@ -869,3 +869,16 @@ tbody td{padding:10px 12px;text-align:center;color:var(--grey-2)}
   .parent-grades-wrap .parent-grades-table{display:none}
   .parent-grade-cards{display:block;background:#fff;border:1px solid var(--grey-5);border-radius:12px;overflow:hidden;margin-bottom:10px}
 }
+
+/* Parent quick login v77 */
+.parent-login-hint{font-size:12px;color:var(--grey-3);margin:0 0 10px;line-height:1.65}
+.parent-confirm-card{max-width:420px;margin:0 auto 24px}
+.parent-confirm-details{background:var(--teal-pale);border-radius:12px;padding:14px 16px;margin:14px 0}
+.parent-confirm-row{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid rgba(13,110,110,.12);font-size:14px}
+.parent-confirm-row:last-child{border-bottom:none}
+.parent-confirm-row span{color:var(--grey-3)}
+.parent-confirm-row strong{color:var(--teal-dark);font-weight:700}
+.parent-confirm-msg{font-size:13px;color:var(--grey-2);line-height:1.7;margin:0}
+.parent-confirm-no-btn{width:100%;margin-top:10px;padding:12px;border:1.5px solid var(--grey-5);border-radius:10px;background:#fff;font-family:inherit;font-size:14px;cursor:pointer}
+.parent-remember-device{display:flex;align-items:flex-start;gap:8px;margin-top:14px;font-size:13px;color:var(--grey-2);cursor:pointer;line-height:1.5}
+.parent-remember-device input{margin-top:3px;flex-shrink:0}

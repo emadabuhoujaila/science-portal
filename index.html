@@ -55,7 +55,7 @@ window.__splashDeadline = Date.now() + 5000;
   Promise.all(p).then(done).catch(done);
 })();
 </script>
-<link rel="stylesheet" href="css/app.css?v=75">
+<link rel="stylesheet" href="css/app.css?v=76">
 <link rel="stylesheet" href="css/uae-theme.css?v=3">
 </head>
 <body>
@@ -158,51 +158,25 @@ window.__splashDeadline = Date.now() + 5000;
         <button onclick="showTeacherLogin()" id="reg-back-btn" style="width:100%;margin-top:10px;background:transparent;border:none;color:var(--grey-3);padding:8px;font-family:inherit;font-size:13px;cursor:pointer">← العودة للدخول</button>
       </div>
     </div>
-    <!-- PARENT -->
+    <!-- PARENT — دخول برقم الطالب الوزاري -->
     <div id="login-parent" style="display:none">
-      <div class="error-msg" id="cls-error-msg">الصف أو الشعبة أو الاسم غير صحيح</div>
-
-      <!-- Step 1: Grade -->
+      <div class="error-msg" id="parent-mid-error-msg" style="display:none"></div>
       <div class="form-group">
-        <label id="parent-lbl-grade">الصف</label>
-        <select id="parent-grade" onchange="populateParentSections()">
-          <option value="">— اختر الصف —</option>
-          <option value="5">الصف 5</option>
-          <option value="6">الصف 6</option>
-          <option value="7">الصف 7</option>
-          <option value="8">الصف 8</option>
-        </select>
+        <label id="parent-mid-lbl">رقم الطالب الوزاري</label>
+        <p id="parent-mid-hint" class="parent-login-hint">أدخل الرقم الوزاري لابنك كما ورد في رسالة المعلم</p>
+        <input type="text" id="parent-mid-input" inputmode="numeric" maxlength="12" autocomplete="off"
+          placeholder="مثال: 123456789012"
+          onkeydown="if(event.key==='Enter')submitParentMidLookup()"
+          style="width:100%;padding:14px;border:2px solid var(--grey-5);border-radius:12px;font-family:monospace;font-size:18px;font-weight:700;text-align:center;letter-spacing:1px">
       </div>
-
-      <!-- Step 2: Section (hidden until grade chosen) -->
-      <div class="form-group" id="parent-sec-group" style="display:none">
-        <label id="parent-lbl-section">الشعبة</label>
-        <select id="parent-section" onchange="populateParentNames()">
-          <option value="">— اختر الشعبة —</option>
-        </select>
-      </div>
-
-      <!-- Step 3: Student name (hidden until section chosen) -->
-      <div class="form-group" id="parent-name-group" style="display:none">
-        <label id="name-label">اسم الطالب</label>
-        <div id="parent-name-search-wrap" style="display:none;margin-bottom:8px">
-          <input type="search" id="parent-name-search" class="search-input" style="width:100%"
-            placeholder="🔍 ابحث عن اسم الطالب..." oninput="filterParentNameOptions()">
-        </div>
-        <select id="parent-name">
-          <option value="" id="name-opt-placeholder">— اختر الاسم —</option>
-        </select>
-      </div>
-
-      <div id="parent-quick-return" class="parent-quick-return" style="display:none;margin-bottom:12px">
-        <button type="button" class="btn-secondary" id="parent-quick-return-btn" onclick="quickReturnParent()"></button>
-      </div>
-
-      <!-- Keep hidden class select for backward compat -->
+      <button class="btn-primary" id="parent-mid-submit-btn" onclick="submitParentMidLookup()">متابعة ←</button>
+      <!-- حقول قديمة مخفية للتوافق -->
+      <select id="parent-grade" style="display:none" onchange="populateParentSections()"><option value=""></option></select>
+      <div id="parent-sec-group" style="display:none"><select id="parent-section"></select></div>
+      <div id="parent-name-group" style="display:none"><select id="parent-name"></select></div>
       <select id="parent-class" style="display:none"></select>
-
-      <button class="btn-primary" onclick="goToPin()" id="parent-next-btn"
-        style="display:none">التالي ←</button>
+      <div id="parent-quick-return" style="display:none"></div>
+      <button id="parent-next-btn" style="display:none" onclick="goToPin()"></button>
     </div>
 
     <!-- ADMIN LOGIN -->
@@ -229,6 +203,29 @@ window.__splashDeadline = Date.now() + 5000;
       <button type="button" id="admin-forgot-pw-btn" onclick="adminForgotPassword()"
         style="width:100%;margin-top:10px;background:transparent;border:none;color:var(--teal-dark);padding:6px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;text-decoration:underline">نسيت كلمة المرور؟</button>
     </div>
+  </div>
+</div>
+
+<!-- ═══════════ SCREEN: PARENT CONFIRM IDENTITY ═══════════ -->
+<div id="screen-parent-confirm" class="screen">
+  <div class="portal-hero-block portal-hero-block--auth">
+    <div class="portal-hero-sep portal-hero-sep--top" aria-hidden="true"></div>
+    <div class="portal-hero-frame">
+      <img src="img/portal-hero-banner.png?v=3" alt="بوابة المتابعة الرقمية" class="portal-hero-banner">
+    </div>
+    <div class="portal-hero-sep portal-hero-sep--bottom" aria-hidden="true"></div>
+  </div>
+  <div class="lock-card parent-confirm-card">
+    <div class="lock-icon">👤</div>
+    <h2 id="parent-confirm-title">تأكيد بيانات الطالب</h2>
+    <div class="parent-confirm-details">
+      <div class="parent-confirm-row"><span id="parent-confirm-lbl-name">الاسم</span><strong id="parent-confirm-name">—</strong></div>
+      <div class="parent-confirm-row"><span id="parent-confirm-lbl-grade">الصف</span><strong id="parent-confirm-grade">—</strong></div>
+      <div class="parent-confirm-row"><span id="parent-confirm-lbl-section">الشعبة</span><strong id="parent-confirm-section">—</strong></div>
+    </div>
+    <p id="parent-confirm-msg" class="parent-confirm-msg">إذا كنت متأكداً أن هذه بيانات ابنك، انقر للمتابعة وتعيين رمز دخول خاص بك.</p>
+    <button type="button" class="btn-primary" id="parent-confirm-yes-btn" onclick="confirmParentIdentity()" style="width:100%;margin-top:14px">نعم — متابعة ←</button>
+    <button type="button" class="btn-secondary parent-confirm-no-btn" id="parent-confirm-no-btn" onclick="rejectParentIdentity()">لا — هذا ليس ابني</button>
   </div>
 </div>
 
@@ -260,6 +257,10 @@ window.__splashDeadline = Date.now() + 5000;
         onmouseout="this.style.background='var(--teal-mid)'" id="pin-login-btn">
         دخول ←
       </button>
+      <label class="parent-remember-device" id="parent-remember-pin-wrap">
+        <input type="checkbox" id="parent-remember-device-pin" checked>
+        <span id="parent-remember-device-pin-lbl">حفظ هذا الجهاز — افتح لوحة ابنك مباشرة</span>
+      </label>
     </div>
     <div class="lock-attempts" id="lock-attempts"></div>
     <button type="button" id="pin-forgot-btn" onclick="startParentPinReset()"
@@ -302,6 +303,10 @@ window.__splashDeadline = Date.now() + 5000;
     <button class="btn-primary" id="pin-setup-submit-btn" onclick="submitParentPinSetup()" style="width:100%;margin-top:8px">
       حفظ الرمز والدخول ←
     </button>
+    <label class="parent-remember-device" id="parent-remember-setup-wrap">
+      <input type="checkbox" id="parent-remember-device" checked>
+      <span id="parent-remember-device-lbl">حفظ هذا الجهاز — افتح لوحة ابنك مباشرة</span>
+    </label>
     <p id="pin-setup-hint" style="font-size:12px;color:var(--grey-3);margin-top:12px;line-height:1.6">
       ⚠️ لا تشارك الرمز السري مع أحد. الرقم الوزاري لن يُطلب بعد الآن.
     </p>
@@ -1301,6 +1306,6 @@ window.__splashDeadline = Date.now() + 5000;
 <script src="js/attachments.js?v=7"></script>
 <script src="js/firebase-init.js?v=37"></script>
 <script src="js/msg-delete.js?v=5"></script>
-<script src="js/app.js?v=76"></script>
+<script src="js/app.js?v=77"></script>
 </body>
 </html>

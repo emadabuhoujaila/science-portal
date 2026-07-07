@@ -101,12 +101,18 @@ function getSplashSeenVersion(){
   try{ return localStorage.getItem('portal_splash_version') || ''; }catch(e){ return ''; }
 }
 function markSplashSeen(){
-  try{ localStorage.setItem('portal_splash_version', String(APP?.buildVersion || '76')); }catch(e){}
+  try{ localStorage.setItem('portal_splash_version', String(APP?.buildVersion || '77')); }catch(e){}
 }
 function parsePortalDeepLink(){
   try{
     const q = new URLSearchParams(location.search);
     const role = (q.get('role') || q.get('p') || '').toLowerCase();
+    const rawMid = q.get('mid') || q.get('m') || '';
+    if(rawMid){
+      window._pendingParentMid = String(rawMid).replace(/\s/g, '');
+      window._pendingLoginTab = 'parent';
+      return;
+    }
     if(role === 'parent'){
       const cls = q.get('g') || q.get('grade') || '';
       const section = q.get('s') || q.get('sec') || q.get('section') || '';
@@ -140,17 +146,34 @@ function finishSplashScreen(){
     setTimeout(()=>{
       splash.classList.remove('splash-active', 'splash-exit');
       splash.setAttribute('aria-hidden', 'true');
-      enterAppAfterSplash();
+      enterAppAfterSplashAsync();
       document.dispatchEvent(new Event('splashDone'));
     }, 750);
     return;
   }
-  enterAppAfterSplash();
+  enterAppAfterSplashAsync();
   document.dispatchEvent(new Event('splashDone'));
 }
 
-function enterAppAfterSplash(){
+async function enterAppAfterSplashAsync(){
+  const resumed = await tryParentAutoResume();
+  if(resumed) return;
+
   showScreen('login');
+
+  if(window._pendingParentMid){
+    const mid = window._pendingParentMid;
+    window._pendingParentMid = null;
+    const tabEl = document.querySelector('.login-tab[onclick*="parent"]');
+    if(tabEl) switchTab('parent', tabEl);
+    const input = document.getElementById('parent-mid-input');
+    if(input){
+      input.value = mid;
+      submitParentMidLookup();
+    }
+    return;
+  }
+
   if(window._pendingLoginTab){
     const tabSel = window._pendingLoginTab === 'parent'
       ? '.login-tab[onclick*="parent"]'
@@ -159,11 +182,162 @@ function enterAppAfterSplash(){
     if(tabEl) switchTab(window._pendingLoginTab, tabEl);
     window._pendingLoginTab = null;
   }
-  if(window._pendingParentPrefill){
-    setTimeout(()=>prefillParentLoginForm(window._pendingParentPrefill), 150);
+
+  if(window._pendingParentPrefill?.mid){
+    const mid = window._pendingParentPrefill.mid;
     window._pendingParentPrefill = null;
+    const input = document.getElementById('parent-mid-input');
+    if(input){ input.value = mid; submitParentMidLookup(); }
   }
-  if(typeof updateParentQuickReturn === 'function') updateParentQuickReturn();
+}
+
+async function tryParentAutoResume(){
+  try{
+    const token = APP.savedParent?.sessionToken;
+    if(!token || !APP.parentTrustedDevice) return false;
+    const fns = getCloudFunctions();
+    if(!fns) return false;
+    const res = await fns.httpsCallable('resumeParentSession')({ sessionToken: token });
+    const d = res?.data;
+    if(!d?.ok) throw new Error('session invalid');
+    await finishParentLogin(d.cls, d.name, d.mid, d.section || '', d.sessionToken || token, true);
+    return true;
+  }catch(e){
+    console.warn('tryParentAutoResume', e);
+    if(APP.savedParent?.mid && APP.parentTrustedDevice){
+      showScreen('login');
+      const tabEl = document.querySelector('.login-tab[onclick*="parent"]');
+      if(tabEl) switchTab('parent', tabEl);
+      showSavedParentQuickPin();
+      return true;
+    }
+    return false;
+  }
+}
+
+function showSavedParentQuickPin(){
+  if(!APP.savedParent?.mid) return;
+  pendingLogin = {
+    mid: APP.savedParent.mid,
+    cls: APP.savedParent.cls,
+    section: APP.savedParent.section || '',
+    name: APP.savedParent.name,
+    registered: true,
+    mode: 'pin',
+  };
+  configurePinEntryScreen('pin', displayStudentName(APP.savedParent));
+  clearPin();
+  showScreen('locked');
+  setTimeout(()=>document.getElementById('p0')?.focus(), 200);
+}
+
+async function finishParentLogin(cls, name, mid, section, sessionToken, trusted){
+  APP.parentTrustedDevice = !!trusted;
+  pendingLogin = null;
+  pinAttempts = 0;
+  await enterParentDashboard(cls, name, mid, section || '', sessionToken || '');
+  saveState();
+}
+
+async function submitParentMidLookup(){
+  const isEn = currentLang === 'en';
+  const mid = (document.getElementById('parent-mid-input')?.value || '').replace(/\s/g, '');
+  const errEl = document.getElementById('parent-mid-error-msg');
+  if(errEl) errEl.style.display = 'none';
+  if(!mid || mid.length < 3){
+    if(errEl){
+      errEl.textContent = isEn ? 'Enter your child\'s ministry number' : 'أدخل الرقم الوزاري لابنك';
+      errEl.style.display = 'block';
+    }
+    return;
+  }
+  const btn = document.getElementById('parent-mid-submit-btn');
+  const btnLabel = btn ? btn.textContent : '';
+  if(btn){
+    btn.disabled = true;
+    btn.textContent = isEn ? '⏳ Checking…' : '⏳ جارٍ التحقق…';
+  }
+  try{
+    const fns = getCloudFunctions();
+    if(!fns) throw new Error(isEn ? 'Not connected' : 'غير متصل');
+    const res = await fns.httpsCallable('lookupParentByMid')({ mid });
+    const d = res?.data;
+    if(!d?.ok) throw new Error(isEn ? 'Student not found' : 'الرقم غير مسجّل');
+    pendingLogin = {
+      mid: d.mid,
+      cls: d.cls,
+      section: d.section || '',
+      name: d.name,
+      nameEn: d.nameEn || '',
+      registered: !!d.registered,
+      mode: d.registered ? 'pin' : 'setup',
+    };
+    renderParentConfirmScreen();
+    showScreen('parent-confirm');
+  }catch(e){
+    console.warn('submitParentMidLookup', e);
+    const generic = isEn
+      ? 'Student number not found. Check the number or contact the school.'
+      : 'رقم الطالب غير مسجّل — تحقق من الرقم أو تواصل مع المدرسة.';
+    const msg = (e?.code === 'functions/not-found') ? generic : parentAuthErrorMessage(e, isEn);
+    if(errEl){ errEl.textContent = msg; errEl.style.display = 'block'; }
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = btnLabel || (isEn ? 'Continue ←' : 'متابعة ←'); }
+  }
+}
+
+function renderParentConfirmScreen(){
+  if(!pendingLogin) return;
+  const isEn = currentLang === 'en';
+  const pl = pendingLogin;
+  const display = (isEn && pl.nameEn) ? pl.nameEn : pl.name;
+  const set = (id, txt)=>{ const el = document.getElementById(id); if(el) el.textContent = txt; };
+  set('parent-confirm-title', isEn ? 'Confirm student details' : 'تأكيد بيانات الطالب');
+  set('parent-confirm-lbl-name', isEn ? 'Name' : 'الاسم');
+  set('parent-confirm-lbl-grade', isEn ? 'Grade' : 'الصف');
+  set('parent-confirm-lbl-section', isEn ? 'Section' : 'الشعبة');
+  set('parent-confirm-name', display || '—');
+  set('parent-confirm-grade', pl.cls ? (isEn ? 'Grade ' + pl.cls : 'الصف ' + pl.cls) : '—');
+  set('parent-confirm-section', pl.section || '—');
+  set('parent-confirm-msg', pl.registered
+    ? (isEn
+      ? 'If you are sure this is your child, enter your private PIN on the next screen.'
+      : 'إذا كنت متأكداً أن هذا ابنك، أدخل الرمز السري في الشاشة التالية.')
+    : (isEn
+      ? 'If you are sure this is your child, set a private PIN (4–6 digits) for future visits.'
+      : 'إذا كنت متأكداً أن هذه بيانات ابنك، انقر لتعيين رمز دخول خاص بك (4–6 أرقام).'));
+  set('parent-confirm-yes-btn', pl.registered
+    ? (isEn ? 'Yes — enter PIN ←' : 'نعم — إدخال الرمز ←')
+    : (isEn ? 'Yes — set my PIN ←' : 'نعم — تعيين رمز الدخول ←'));
+  set('parent-confirm-no-btn', isEn ? 'No — not my child' : 'لا — هذا ليس ابني');
+}
+
+function confirmParentIdentity(){
+  if(!pendingLogin) return;
+  const display = displayStudentName(
+    { name: pendingLogin.name, nameEn: pendingLogin.nameEn },
+    pendingLogin.cls,
+    pendingLogin.section,
+    pendingLogin.mid
+  );
+  if(pendingLogin.registered){
+    pendingLogin.mode = 'pin';
+    configurePinEntryScreen('pin', display);
+    clearPin();
+    showScreen('locked');
+    setTimeout(()=>document.getElementById('p0')?.focus(), 200);
+  } else {
+    showParentPinSetupScreen(false);
+  }
+}
+
+function rejectParentIdentity(){
+  pendingLogin = null;
+  const input = document.getElementById('parent-mid-input');
+  if(input) input.value = '';
+  showScreen('login');
+  const tabEl = document.querySelector('.login-tab[onclick*="parent"]');
+  if(tabEl) switchTab('parent', tabEl);
 }
 
 function prefillParentLoginForm(sp){
@@ -188,7 +362,7 @@ function prefillParentLoginForm(sp){
 
 function startSplashScreen(){
   const seenVer = getSplashSeenVersion();
-  const curVer = String(APP?.buildVersion || '76');
+  const curVer = String(APP?.buildVersion || '77');
   if(seenVer === curVer){
     finishSplashScreen();
     return;
@@ -214,6 +388,9 @@ function startSplashScreen(){
 
 function buildParentPortalLink(sp){
   const base = (APP.siteUrl || (location.origin + location.pathname)).replace(/\/?(\?.*)?$/, '/');
+  if(sp?.mid){
+    return base + '?role=parent&mid=' + encodeURIComponent(String(sp.mid));
+  }
   const params = new URLSearchParams({
     role: 'parent',
     g: String(sp?.cls || ''),
@@ -1309,7 +1486,8 @@ function mergeGradeScores(cls, student){
 // ══════════════════════════════════════════════════
 let APP = {
   siteUrl: 'https://emadabuhoujaila.github.io/science-portal/',
-  buildVersion: '76',
+  buildVersion: '77',
+  parentTrustedDevice: false,
   pins:{},      // {cls_name: "1234"}
   messages:[],
   behavior:{},   // {cls|name: {level, academic, conduct}}
@@ -1970,8 +2148,12 @@ function switchTab(tab,el){
   const adminDiv = document.getElementById('login-admin');
   if(adminDiv) adminDiv.style.display=tab==='admin'?'':'none';
   // Load available grades from Firebase when parent tab opens
-  if(tab==='parent' && typeof loadParentGrades==='function') loadParentGrades();
-  if(tab==='parent' && typeof updateParentQuickReturn === 'function') updateParentQuickReturn();
+  if(tab==='parent'){
+    const input = document.getElementById('parent-mid-input');
+    if(input && APP.savedParent?.mid && !input.value){
+      input.value = APP.savedParent.mid;
+    }
+  }
 }
 // ══════════════════════════════════════════════════
 //  AUTH — TEACHER
@@ -2628,7 +2810,14 @@ function configurePinEntryScreen(mode, studentDisplayName){
 }
 
 function startParentPinReset(){
-  if(!pendingLogin || pendingLogin.mode !== 'pin') return;
+  if(!pendingLogin) return;
+  if(pendingLogin.mid){
+    pendingLogin.pinReset = true;
+    pinAttempts = 0;
+    showParentPinSetupScreen(true);
+    return;
+  }
+  if(pendingLogin.mode !== 'pin') return;
   pendingLogin.mode = 'reset-mid';
   pendingLogin.pinReset = true;
   pinAttempts = 0;
@@ -2702,19 +2891,12 @@ async function submitParentPinSetupAsync(){
   try{
     const fns = getCloudFunctions();
     if(!fns) throw new Error(isEn ? 'Service unavailable' : 'الخدمة غير متاحة');
+    const rememberDevice = !!document.getElementById('parent-remember-device')?.checked;
     const { cls, name, section, mid } = pendingLogin;
     const fnName = pendingLogin.pinReset ? 'resetParentPin' : 'setupParentPin';
     const wasReset = !!pendingLogin.pinReset;
-    const res = await fns.httpsCallable(fnName)({ cls, section, name, mid, pin, pinConfirm });
-    const login = { ...pendingLogin };
-    pendingLogin = null;
-    await enterParentDashboard(
-      login.cls,
-      login.name,
-      login.mid,
-      login.section || '',
-      res?.data?.sessionToken || ''
-    );
+    const res = await fns.httpsCallable(fnName)({ cls, section, name, mid, pin, pinConfirm, rememberDevice });
+    await finishParentLogin(cls, name, mid, section || '', res?.data?.sessionToken || '', rememberDevice);
     showToast('✅ ' + (wasReset
       ? (isEn ? 'PIN reset — welcome!' : 'تم تعيين الرمز الجديد — أهلاً بك!')
       : (isEn ? 'PIN saved — welcome!' : 'تم حفظ الرمز — أهلاً بك!')));
@@ -2730,6 +2912,7 @@ async function submitParentPinSetupAsync(){
 function parentAuthErrorMessage(err, isEn){
   const code = err?.code || '';
   const msg = err?.message || '';
+  if(code === 'functions/not-found') return isEn ? 'Student number not found' : 'رقم الطالب غير مسجّل';
   if(code === 'functions/permission-denied') return isEn ? 'Incorrect PIN or ministry ID' : 'الرمز أو الرقم الوزاري غير صحيح';
   if(code === 'functions/resource-exhausted') return isEn ? 'Too many attempts — try again in 15 minutes' : 'محاولات كثيرة — حاول بعد 15 دقيقة';
   if(code === 'functions/invalid-argument') return msg || (isEn ? 'Invalid input' : 'إدخال غير صالح');
@@ -2822,22 +3005,37 @@ async function checkPinAsync(){
     try{
       const fns = getCloudFunctions();
       if(!fns) throw new Error(isEn ? 'Service unavailable' : 'الخدمة غير متاحة');
-      const res = await fns.httpsCallable('verifyParentPin')({
-        cls: pendingLogin.cls,
-        section: pendingLogin.section || '',
-        name: pendingLogin.name,
-        pin: entered,
-      });
+      const rememberDevice = !!document.getElementById('parent-remember-device-pin')?.checked;
+      let res;
+      if(pendingLogin.mid){
+        res = await fns.httpsCallable('verifyParentPinByMid')({
+          mid: pendingLogin.mid,
+          pin: entered,
+          rememberDevice,
+        });
+      } else {
+        res = await fns.httpsCallable('verifyParentPin')({
+          cls: pendingLogin.cls,
+          section: pendingLogin.section || '',
+          name: pendingLogin.name,
+          pin: entered,
+          rememberDevice,
+        });
+      }
       if(res?.data?.ok){
-        const login = { ...pendingLogin, mid: res.data.mid || pendingLogin.mid };
-        pendingLogin = null;
-        pinAttempts = 0;
-        await enterParentDashboard(
+        const login = {
+          cls: res.data.cls || pendingLogin.cls,
+          name: res.data.name || pendingLogin.name,
+          mid: res.data.mid || pendingLogin.mid,
+          section: res.data.section || pendingLogin.section || '',
+        };
+        await finishParentLogin(
           login.cls,
           login.name,
           login.mid,
-          login.section || '',
-          res?.data?.sessionToken || ''
+          login.section,
+          res?.data?.sessionToken || '',
+          rememberDevice
         );
         return;
       }
@@ -4809,13 +5007,13 @@ function renderLinksTab(){
     </tr>`;
   }).join('');
 }
-function buildWAMsg(cls, name, pin){
-  const url = APP.siteUrl;
-  return `السلام عليكم ولي أمر الطالب ${name} 👋\n\nيمكنكم الاطلاع على التقرير الأكاديمي لابنكم عبر الرابط:\n${url}\n\nطريقة الدخول:\n1️⃣ اختر (ولي الأمر)\n2️⃣ اختر الصف والشعبة\n3️⃣ اختر اسم ابنك\n4️⃣ أول مرة: الرقم الوزاري ${pin} ثم اختيار رمز سري\n5️⃣ بعد ذلك: الرمز السري فقط\n\n— بوابة المتابعة`;
+function buildWAMsg(cls, name, pin, section){
+  const link = buildParentPortalLink({ cls, section: section || '', name, mid: pin });
+  return `السلام عليكم ولي أمر الطالب ${name} 👋\n\n📱 رابط البوابة:\n${link}\n\n🔢 رقم ابنك الوزاري: ${pin}\n\nطريقة الدخول:\n1️⃣ افتح الرابط أو اختر (ولي الأمر)\n2️⃣ أدخل الرقم الوزاري\n3️⃣ تأكّد من الاسم والشعبة\n4️⃣ اختر رمزاً سرياً (4–6 أرقام) وفعّل «حفظ هذا الجهاز»\n5️⃣ المرات التالية: افتح التطبيق مباشرة ✅\n\n— بوابة المتابعة`;
 }
 function sendWA(cls,name,pin,sec){
   const phone = getStudentParentPhone(cls, name, pin, sec);
-  const url = buildWhatsAppUrl(phone, buildWAMsg(cls, name, pin));
+  const url = buildWhatsAppUrl(phone, buildWAMsg(cls, name, pin, sec));
   if(url) window.open(url, '_blank');
 }
 function copyWAMsg(cls,name,pin){
@@ -5318,6 +5516,10 @@ const TRANSLATIONS = {
     regSubApproved: 'التسجيل متاح فقط للمعلّمين الذين أضاف مسؤول المدرسة بريدهم مسبقاً',
     parentSecPH: '— اختر الشعبة —',
     parentGradePH: '— اختر الصف —',
+    parentMidLbl: 'رقم الطالب الوزاري',
+    parentMidHint: 'أدخل الرقم الوزاري لابنك كما ورد في رسالة المعلم',
+    parentMidContinue: 'متابعة ←',
+    parentRememberDevice: 'حفظ هذا الجهاز — افتح لوحة ابنك مباشرة',
     clsErrorMsg: 'الصف أو الشعبة أو الاسم غير صحيح',
     pinPH: 'أدخل الرقم الوزاري (حتى 12 رقم)',
     pinBack: '← العودة',
@@ -5699,6 +5901,10 @@ const TRANSLATIONS = {
     regSubApproved: 'Registration is only available for teachers whose email was added by the school admin',
     parentSecPH: '— Select Section —',
     parentGradePH: '— Select Grade —',
+    parentMidLbl: 'Student ministry number',
+    parentMidHint: 'Enter your child\'s ministry number from the teacher\'s message',
+    parentMidContinue: 'Continue ←',
+    parentRememberDevice: 'Save this device — open dashboard directly',
     clsErrorMsg: 'Incorrect grade, section, or name',
     pinPH: 'Enter Ministry ID (up to 12 digits)',
     pinBack: '← Back',
@@ -6003,6 +6209,11 @@ function applyGlobalLang(){
   });
   const clsErr = document.getElementById('cls-error-msg');
   if(clsErr) clsErr.textContent = t('clsErrorMsg');
+  setText('parent-mid-lbl', 'parentMidLbl');
+  setText('parent-mid-hint', 'parentMidHint');
+  setText('parent-mid-submit-btn', 'parentMidContinue');
+  setText('parent-remember-device-lbl', 'parentRememberDevice');
+  setText('parent-remember-device-pin-lbl', 'parentRememberDevice');
   const pwErr = document.getElementById('pw-error-msg');
   if(pwErr) pwErr.textContent = isAr ? 'كلمة المرور غير صحيحة' : 'Incorrect password';
   const nameEl = document.getElementById('parent-name');
@@ -9439,13 +9650,12 @@ function settingsToggleLang(){
 }
 
 function copyParentPortalLink(){
-  const grade = document.getElementById('parent-grade')?.value;
-  const section = document.getElementById('parent-section')?.value;
-  const name = document.getElementById('parent-name')?.value;
   const isEn = currentLang === 'en';
   let url = '';
-  if(grade && name) url = buildParentPortalLink({ cls: grade, section, name });
+  if(APP.savedParent?.mid) url = buildParentPortalLink(APP.savedParent);
   else if(APP.savedParent?.cls && APP.savedParent?.name) url = buildParentPortalLink(APP.savedParent);
+  const mid = (document.getElementById('parent-mid-input')?.value || '').replace(/\s/g, '');
+  if(!url && mid) url = buildParentPortalLink({ mid });
   if(url){
     navigator.clipboard.writeText(url).then(()=>{
       showToast(isEn ? '✅ Parent link copied' : '✅ تم نسخ رابط ولي الأمر');
@@ -9893,6 +10103,7 @@ function openInboxFromAlert(){
 function parentLogout(){
   clearParentGradesPoll();
   window._parentSessionToken = '';
+  APP.parentTrustedDevice = false;
   APP.savedParent = null;
   saveState();
   window._currentParent = null;
