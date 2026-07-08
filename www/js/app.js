@@ -101,7 +101,7 @@ function getSplashSeenVersion(){
   try{ return localStorage.getItem('portal_splash_version') || ''; }catch(e){ return ''; }
 }
 function markSplashSeen(){
-  try{ localStorage.setItem('portal_splash_version', String(APP?.buildVersion || '78')); }catch(e){}
+  try{ localStorage.setItem('portal_splash_version', String(APP?.buildVersion || '79')); }catch(e){}
 }
 function parsePortalDeepLink(){
   try{
@@ -362,7 +362,7 @@ function prefillParentLoginForm(sp){
 
 function startSplashScreen(){
   const seenVer = getSplashSeenVersion();
-  const curVer = String(APP?.buildVersion || '78');
+  const curVer = String(APP?.buildVersion || '79');
   if(seenVer === curVer){
     finishSplashScreen();
     return;
@@ -980,7 +980,11 @@ async function waDeleteNumber(role, prefix){
       if(typeof db === 'undefined' || !auth?.currentUser) throw new Error('no auth');
       await db.ref('adminWhatsApp/' + auth.currentUser.uid).remove();
       window._adminWaProfile = { phone: '', optIn: false };
-      renderWaProfileSlot('admin', 'admin-wa-profile-host');
+      if(document.getElementById('admin-settings-modal')?.classList.contains('open')){
+        renderWaProfileSlot('admin', 'admin-settings-wa-host');
+      } else {
+        renderWaProfileSlot('admin', 'admin-wa-profile-host');
+      }
     } else {
       const key = getTeacherKey();
       if(!key || typeof db === 'undefined') throw new Error('no key');
@@ -1053,7 +1057,11 @@ async function saveStaffWhatsAppProfile(){
         ts: new Date().toISOString(),
       });
       window._adminWaProfile = { phone, optIn };
-      renderWaProfileSlot('admin', 'admin-wa-profile-host');
+      if(document.getElementById('admin-settings-modal')?.classList.contains('open')){
+        renderWaProfileSlot('admin', 'admin-settings-wa-host');
+      } else {
+        renderWaProfileSlot('admin', 'admin-wa-profile-host');
+      }
     } else {
       const key = getTeacherKey();
       if(!key) throw new Error('no teacher key');
@@ -1486,7 +1494,7 @@ function mergeGradeScores(cls, student){
 // ══════════════════════════════════════════════════
 let APP = {
   siteUrl: 'https://emadabuhoujaila.github.io/science-portal/',
-  buildVersion: '78',
+  buildVersion: '79',
   parentTrustedDevice: false,
   pins:{},      // {cls_name: "1234"}
   messages:[],
@@ -3386,7 +3394,7 @@ function _enterAdminDashboard(){
   adminLoadStudents();
   startAdminComplaintsListener();
   startAdminMessagesListener();
-  loadAdminWhatsAppProfile().then(renderAdminWhatsAppBar);
+  loadPortalPublicConfig().catch(()=>{});
   schedulePushRegistration('admin');
   initAttachmentFields();
 }
@@ -5582,6 +5590,41 @@ const TRANSLATIONS = {
     adminSchoolName: 'لوحة المسؤول — بوابة المتابعة',
     adminSub: 'إدارة بيانات الطلاب',
     adminLogout: 'خروج',
+    adminSettingsBtn: '⚙️ إعدادات',
+    adminSettingsTitle: '⚙️ إعدادات المسؤول',
+    adminSettingsAccountLbl: '👤 حسابي',
+    adminSettingsSecurityLbl: '🔒 الأمان',
+    adminSettingsSecurityHint: 'لتغيير البريد أو كلمة المرور أدخل كلمة المرور الحالية أولاً.',
+    adminSettingsCurrentPw: 'كلمة المرور الحالية',
+    adminSettingsNewPw: 'كلمة مرور جديدة',
+    adminSettingsNewPwPH: 'اتركه فارغاً للإبقاء',
+    adminSettingsNewPw2: 'تأكيد كلمة المرور',
+    adminSettingsNewPw2PH: 'أعد إدخال كلمة المرور',
+    adminSettingsNewEmail: 'البريد الإلكتروني الجديد',
+    adminSettingsResetPwBtn: '📧 إرسال رابط إعادة التعيين إلى بريدي',
+    adminSettingsWaLbl: '📱 واتساب',
+    adminSettingsNotifLbl: '🔔 الإشعارات',
+    adminSettingsNotifHelp: 'فعّل الإشعارات لتلقي تنبيهات الشكاوى والرسائل.',
+    adminSettingsPortalLbl: '🌐 رابط البوابة',
+    adminSettingsCopyParent: '📋 نسخ رابط ولي الأمر',
+    adminSettingsSchoolLbl: '🏫 اسم المدرسة',
+    adminSettingsSchoolHint: 'يظهر في شاشة الدخول وبوابة ولي الأمر.',
+    adminSettingsSchoolAr: 'الاسم بالعربية',
+    adminSettingsSchoolEn: 'الاسم بالإنجليزية',
+    adminSettingsSave: '💾 حفظ',
+    adminSettingsCancel: 'إلغاء',
+    adminSettingsCopyUrl: '📋 نسخ',
+    adminSettingsSaved: '✅ تم حفظ الإعدادات',
+    adminSettingsEmailChanged: '✅ تم تغيير البريد',
+    adminSettingsPwChanged: '✅ تم تغيير كلمة المرور',
+    adminSettingsNeedPw: '⚠️ أدخل كلمة المرور الحالية للتأكيد',
+    adminSettingsEmailInvalid: '⚠️ أدخل بريداً صحيحاً',
+    adminSettingsEmailSame: '⚠️ البريد الجديد مطابق للحالي',
+    adminSettingsReauthFailed: '⚠️ كلمة المرور الحالية غير صحيحة',
+    adminSettingsResetSent: '✅ تم إرسال رابط إعادة التعيين — تحقق من بريدك',
+    adminSettingsPwTooShort: '⚠️ كلمة المرور 8 أحرف على الأقل',
+    adminSettingsPwMismatch: '⚠️ كلمتا المرور غير متطابقتين',
+    adminSettingsNeedLogin: '⚠️ سجّل الدخول مجدداً ثم حاول',
     adminTabUpload: '📋 رفع قوائم الطلبة',
     adminTabMonitor: '📊 المتابعة',
     adminUploadTitle: '📤 رفع قائمة الطلاب',
@@ -5973,6 +6016,41 @@ const TRANSLATIONS = {
     adminSchoolName: 'Admin Dashboard — Follow-up Portal',
     adminSub: 'Student data management',
     adminLogout: 'Exit',
+    adminSettingsBtn: '⚙️ Settings',
+    adminSettingsTitle: '⚙️ Admin Settings',
+    adminSettingsAccountLbl: '👤 My Account',
+    adminSettingsSecurityLbl: '🔒 Security',
+    adminSettingsSecurityHint: 'Enter your current password to change email or password.',
+    adminSettingsCurrentPw: 'Current password',
+    adminSettingsNewPw: 'New password',
+    adminSettingsNewPwPH: 'Leave blank to keep current',
+    adminSettingsNewPw2: 'Confirm password',
+    adminSettingsNewPw2PH: 'Re-enter password',
+    adminSettingsNewEmail: 'New email address',
+    adminSettingsResetPwBtn: '📧 Send reset link to my email',
+    adminSettingsWaLbl: '📱 WhatsApp',
+    adminSettingsNotifLbl: '🔔 Notifications',
+    adminSettingsNotifHelp: 'Enable alerts for complaints and messages.',
+    adminSettingsPortalLbl: '🌐 Portal URL',
+    adminSettingsCopyParent: '📋 Copy parent portal link',
+    adminSettingsSchoolLbl: '🏫 School name',
+    adminSettingsSchoolHint: 'Shown on login and parent portal screens.',
+    adminSettingsSchoolAr: 'Name in Arabic',
+    adminSettingsSchoolEn: 'Name in English',
+    adminSettingsSave: '💾 Save',
+    adminSettingsCancel: 'Cancel',
+    adminSettingsCopyUrl: '📋 Copy',
+    adminSettingsSaved: '✅ Settings saved',
+    adminSettingsEmailChanged: '✅ Email updated',
+    adminSettingsPwChanged: '✅ Password updated',
+    adminSettingsNeedPw: '⚠️ Enter current password to confirm',
+    adminSettingsEmailInvalid: '⚠️ Enter a valid email',
+    adminSettingsEmailSame: '⚠️ New email matches current email',
+    adminSettingsReauthFailed: '⚠️ Current password is incorrect',
+    adminSettingsResetSent: '✅ Reset link sent — check your inbox',
+    adminSettingsPwTooShort: '⚠️ Password must be 8+ characters',
+    adminSettingsPwMismatch: '⚠️ Passwords do not match',
+    adminSettingsNeedLogin: '⚠️ Sign in again and retry',
     adminTabUpload: '📋 Upload Student Lists',
     adminTabMonitor: '📊 Monitoring',
     adminUploadTitle: '📤 Upload Student List',
@@ -6621,6 +6699,8 @@ function applyAdminLang(){
   setText('admin-school-name', 'adminSchoolName');
   setText('admin-sub', 'adminSub');
   setText('admin-logout-btn', 'adminLogout');
+  setText('admin-settings-btn', 'adminSettingsBtn');
+  populateAdminSettingsLabels();
   setText('admin-tab-btn-upload', 'adminTabUpload');
   setText('admin-tab-btn-monitor', 'adminTabMonitor');
   setText('admin-tab-btn-complaints', 'tabComplaints');
@@ -9854,6 +9934,268 @@ function closeSettings(){
   document.getElementById('settings-modal').classList.remove('open');
 }
 
+async function loadPortalPublicConfig(){
+  if(typeof db === 'undefined') return window._portalSchoolConfig || {};
+  try{
+    const snap = await db.ref('publicConfig/school').once('value');
+    const v = snap.val() || {};
+    window._portalSchoolConfig = v;
+    applySchoolNamesFromConfig(v);
+    return v;
+  }catch(e){
+    console.warn('loadPortalPublicConfig', e);
+    return window._portalSchoolConfig || {};
+  }
+}
+
+function applySchoolNamesFromConfig(cfg){
+  if(!cfg) return;
+  if(cfg.nameAr) TRANSLATIONS.ar.schoolName = cfg.nameAr;
+  if(cfg.nameEn) TRANSLATIONS.en.schoolName = cfg.nameEn;
+  ['login-school', 'parent-school'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.textContent = t('schoolName');
+  });
+}
+
+function populateAdminSettingsLabels(){
+  const setText = (id, key)=>{ const el = document.getElementById(id); if(el) el.textContent = t(key); };
+  setText('admin-settings-modal-title', 'adminSettingsTitle');
+  setText('admin-settings-account-lbl', 'adminSettingsAccountLbl');
+  setText('admin-settings-security-lbl', 'adminSettingsSecurityLbl');
+  setText('admin-settings-security-hint', 'adminSettingsSecurityHint');
+  setText('admin-settings-current-pw-lbl', 'adminSettingsCurrentPw');
+  setText('admin-settings-new-pw-lbl', 'adminSettingsNewPw');
+  setText('admin-settings-new-pw2-lbl', 'adminSettingsNewPw2');
+  setText('admin-settings-new-email-lbl', 'adminSettingsNewEmail');
+  setText('admin-settings-reset-pw-btn', 'adminSettingsResetPwBtn');
+  setText('admin-settings-wa-lbl', 'adminSettingsWaLbl');
+  setText('admin-settings-notif-lbl', 'adminSettingsNotifLbl');
+  setText('admin-settings-notif-help', 'adminSettingsNotifHelp');
+  setText('admin-settings-portal-lbl', 'adminSettingsPortalLbl');
+  setText('admin-settings-copy-parent-btn', 'adminSettingsCopyParent');
+  setText('admin-settings-school-lbl', 'adminSettingsSchoolLbl');
+  setText('admin-settings-school-hint', 'adminSettingsSchoolHint');
+  setText('admin-settings-school-ar-lbl', 'adminSettingsSchoolAr');
+  setText('admin-settings-school-en-lbl', 'adminSettingsSchoolEn');
+  setText('admin-settings-save-btn', 'adminSettingsSave');
+  setText('admin-settings-cancel-btn', 'adminSettingsCancel');
+  setText('admin-settings-copy-url-btn', 'adminSettingsCopyUrl');
+  const npw = document.getElementById('admin-new-pw');
+  const npw2 = document.getElementById('admin-new-pw2');
+  if(npw) npw.placeholder = t('adminSettingsNewPwPH');
+  if(npw2) npw2.placeholder = t('adminSettingsNewPw2PH');
+}
+
+function populateAdminSettingsAccount(){
+  const box = document.getElementById('admin-settings-account-info');
+  if(!box) return;
+  const isEn = currentLang === 'en';
+  const email = (typeof auth !== 'undefined' && auth?.currentUser?.email) || '—';
+  box.innerHTML = `<strong>${isEn ? 'Email' : 'البريد'}:</strong> ${escapeHtml(email)}`;
+}
+
+function populateAdminSettingsVersion(){
+  const verEl = document.getElementById('admin-settings-version');
+  if(!verEl) return;
+  verEl.textContent = `${t('settingsAppVersion')}: v${APP.buildVersion || '—'}`;
+}
+
+function renderAdminSettingsNotifAction(){
+  const wrap = document.getElementById('admin-settings-notif-action');
+  if(!wrap) return;
+  if(!('Notification' in window)){
+    wrap.innerHTML = '';
+    return;
+  }
+  const perm = Notification.permission;
+  if(perm === 'granted'){
+    wrap.innerHTML = '<div class="notif-allowed">'+t('notifEnabled')+'</div>';
+  } else if(perm === 'denied'){
+    wrap.innerHTML = '<div class="notif-denied">'+t('notifDenied')+'</div>';
+  } else {
+    wrap.innerHTML = '<button type="button" onclick="requestAndSubscribe()" style="width:100%;padding:10px 12px;background:var(--teal-mid);color:#fff;border:none;border-radius:10px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer">'+t('notifBtn')+'</button>';
+  }
+}
+
+function openAdminSettings(){
+  if(!IS_ADMIN) return;
+  populateAdminSettingsLabels();
+  populateAdminSettingsAccount();
+  populateAdminSettingsVersion();
+  const urlIn = document.getElementById('admin-site-url-input');
+  if(urlIn) urlIn.value = APP.siteUrl || '';
+  const cfg = window._portalSchoolConfig || {};
+  const arIn = document.getElementById('admin-school-name-ar-input');
+  const enIn = document.getElementById('admin-school-name-en-input');
+  if(arIn) arIn.value = cfg.nameAr || TRANSLATIONS.ar.schoolName || '';
+  if(enIn) enIn.value = cfg.nameEn || TRANSLATIONS.en.schoolName || '';
+  ['admin-current-pw', 'admin-new-pw', 'admin-new-pw2', 'admin-new-email'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.value = '';
+  });
+  loadAdminWhatsAppProfile().then(()=>{
+    renderWaProfileSlot('admin', 'admin-settings-wa-host');
+  });
+  renderAdminSettingsNotifAction();
+  document.getElementById('admin-settings-modal')?.classList.add('open');
+}
+
+function closeAdminSettings(){
+  document.getElementById('admin-settings-modal')?.classList.remove('open');
+}
+
+async function adminReauthenticateWithPassword(password){
+  if(typeof auth === 'undefined' || !auth?.currentUser?.email){
+    throw new Error('no auth');
+  }
+  const cred = firebase.auth.EmailAuthProvider.credential(auth.currentUser.email, password);
+  await auth.currentUser.reauthenticateWithCredential(cred);
+}
+
+async function adminSendPasswordResetFromSettings(){
+  const isEn = currentLang === 'en';
+  const email = auth?.currentUser?.email;
+  if(!email || typeof auth === 'undefined'){
+    showToast(isEn ? '⚠️ Not signed in' : '⚠️ غير مسجّل الدخول');
+    return;
+  }
+  const btn = document.getElementById('admin-settings-reset-pw-btn');
+  if(btn){ btn.disabled = true; }
+  try{
+    await auth.sendPasswordResetEmail(email);
+    showToast(t('adminSettingsResetSent'));
+  }catch(e){
+    console.warn('adminSendPasswordResetFromSettings', e);
+    showToast(isEn ? '⚠️ Could not send reset email' : '⚠️ تعذّر إرسال رابط إعادة التعيين');
+  }finally{
+    if(btn){ btn.disabled = false; }
+  }
+}
+
+async function copyAdminSiteUrlFromSettings(){
+  const url = (document.getElementById('admin-site-url-input')?.value || APP.siteUrl || '').trim();
+  if(!url){
+    showToast(currentLang === 'en' ? '⚠️ No URL to copy' : '⚠️ لا يوجد رابط للنسخ');
+    return;
+  }
+  try{
+    if(navigator.clipboard?.writeText){
+      await navigator.clipboard.writeText(url);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = url;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    showToast(t('settingsUrlCopied'));
+  }catch(e){
+    showToast(t('settingsUrlCopyFail'));
+  }
+}
+
+async function saveAdminSettings(){
+  const isEn = currentLang === 'en';
+  if(!IS_ADMIN || typeof auth === 'undefined' || !auth.currentUser){
+    showToast(isEn ? '⚠️ Not signed in' : '⚠️ غير مسجّل الدخول');
+    return;
+  }
+  const currentPw = document.getElementById('admin-current-pw')?.value || '';
+  const newPw = document.getElementById('admin-new-pw')?.value || '';
+  const newPw2 = document.getElementById('admin-new-pw2')?.value || '';
+  const newEmailRaw = (document.getElementById('admin-new-email')?.value || '').trim().toLowerCase();
+  const currentEmail = (auth.currentUser.email || '').toLowerCase();
+  const wantsEmail = newEmailRaw && newEmailRaw !== currentEmail;
+  const wantsPw = !!(newPw || newPw2);
+
+  if(wantsEmail && (!newEmailRaw.includes('@') || newEmailRaw.length < 5)){
+    showToast(t('adminSettingsEmailInvalid'));
+    return;
+  }
+  if(wantsPw){
+    if(newPw.length < 8){
+      showToast(t('adminSettingsPwTooShort'));
+      return;
+    }
+    if(newPw !== newPw2){
+      showToast(t('adminSettingsPwMismatch'));
+      return;
+    }
+  }
+  if((wantsEmail || wantsPw) && !currentPw){
+    showToast(t('adminSettingsNeedPw'));
+    return;
+  }
+
+  const btn = document.getElementById('admin-settings-save-btn');
+  if(btn){ btn.disabled = true; btn.textContent = isEn ? 'Saving…' : 'جارٍ الحفظ…'; }
+
+  let reauthed = false;
+  const ensureReauth = async ()=>{
+    if(reauthed) return;
+    await adminReauthenticateWithPassword(currentPw);
+    reauthed = true;
+  };
+
+  try{
+    if(wantsEmail || wantsPw) await ensureReauth();
+
+    if(wantsEmail){
+      await auth.currentUser.updateEmail(newEmailRaw);
+      populateAdminSettingsAccount();
+      showToast(t('adminSettingsEmailChanged'));
+    }
+    if(wantsPw){
+      await auth.currentUser.updatePassword(newPw);
+      document.getElementById('admin-new-pw').value = '';
+      document.getElementById('admin-new-pw2').value = '';
+      document.getElementById('admin-current-pw').value = '';
+      showToast(t('adminSettingsPwChanged'));
+    }
+
+    const urlVal = (document.getElementById('admin-site-url-input')?.value || '').trim();
+    if(urlVal) APP.siteUrl = urlVal;
+
+    const nameAr = (document.getElementById('admin-school-name-ar-input')?.value || '').trim();
+    const nameEn = (document.getElementById('admin-school-name-en-input')?.value || '').trim();
+    if(typeof db !== 'undefined' && (nameAr || nameEn)){
+      const schoolPayload = {
+        nameAr: nameAr || window._portalSchoolConfig?.nameAr || TRANSLATIONS.ar.schoolName,
+        nameEn: nameEn || window._portalSchoolConfig?.nameEn || TRANSLATIONS.en.schoolName,
+        updatedAt: new Date().toISOString(),
+      };
+      await db.ref('publicConfig/school').update(schoolPayload);
+      window._portalSchoolConfig = { ...(window._portalSchoolConfig || {}), ...schoolPayload };
+      applySchoolNamesFromConfig(window._portalSchoolConfig);
+    }
+
+    saveState();
+    closeAdminSettings();
+    showToast(t('adminSettingsSaved'));
+  }catch(e){
+    console.warn('saveAdminSettings', e);
+    const code = e?.code || '';
+    if(code === 'auth/wrong-password' || code === 'auth/invalid-credential'){
+      showToast(t('adminSettingsReauthFailed'));
+    } else if(code === 'auth/requires-recent-login'){
+      showToast(t('adminSettingsNeedLogin'));
+    } else if(code === 'auth/email-already-in-use'){
+      showToast(isEn ? '⚠️ Email already in use' : '⚠️ البريد مستخدم مسبقاً');
+    } else {
+      showToast('❌ ' + (e?.message || (isEn ? 'Save failed' : 'فشل الحفظ')));
+    }
+  }finally{
+    if(btn){
+      btn.disabled = false;
+      btn.textContent = t('adminSettingsSave');
+    }
+  }
+}
+
 async function copySiteUrlFromSettings(){
   const url = (document.getElementById('site-url-input')?.value || APP.siteUrl || '').trim();
   if(!url){
@@ -11620,7 +11962,7 @@ async function registerSW(){
 }
 if('serviceWorker' in navigator) window.addEventListener('load', registerSW);
 // تطبيق اللغة المحفوظة عند التحميل
-document.addEventListener('DOMContentLoaded', ()=>{ applyGlobalLang(); });
+document.addEventListener('DOMContentLoaded', ()=>{ applyGlobalLang(); loadPortalPublicConfig().catch(()=>{}); });
 
 // ─── Install prompt ───
 window.addEventListener('beforeinstallprompt', e => {
@@ -11801,6 +12143,7 @@ async function requestAndSubscribe(){
   }
   renderNotifButton();
   renderSettingsNotifAction();
+  renderAdminSettingsNotifAction();
 }
 
 async function sendLocalNotif(title, body){

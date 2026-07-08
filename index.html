@@ -345,6 +345,7 @@ window.__splashDeadline = Date.now() + 5000;
     </div>
     <div class="topbar-actions">
       <button class="btn-icon" id="admin-lang-btn" onclick="toggleLang()">🌐 EN</button>
+      <button class="btn-icon" id="admin-settings-btn" onclick="openAdminSettings()">⚙️ إعدادات</button>
       <button class="btn-icon" onclick="adminLogout()" id="admin-logout-btn">خروج</button>
     </div>
   </div>
@@ -358,7 +359,7 @@ window.__splashDeadline = Date.now() + 5000;
   </div>
 
   <div class="main-content">
-    <div id="admin-wa-profile-host" class="card" style="margin-bottom:16px;padding:16px 18px;display:none"></div>
+    <div id="admin-wa-profile-host" class="card" style="margin-bottom:16px;padding:16px 18px;display:none !important"></div>
     <div class="admin-tabs-wrap" style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
       <button type="button" class="nav-tab admin-main-tab active" id="admin-tab-btn-upload" onclick="showAdminTab('upload',this)">📋 رفع قوائم الطلبة</button>
       <button type="button" class="nav-tab admin-main-tab" id="admin-tab-btn-monitor" onclick="showAdminTab('monitor',this)">📊 المتابعة</button>
@@ -1275,6 +1276,77 @@ window.__splashDeadline = Date.now() + 5000;
   </div>
 </div>
 
+<!-- ═══════════ ADMIN SETTINGS MODAL ═══════════ -->
+<div class="modal-overlay" id="admin-settings-modal">
+  <div class="modal-box settings-modal-box" style="max-width:520px">
+    <div class="settings-modal-head">
+      <h3 id="admin-settings-modal-title">⚙️ إعدادات المسؤول</h3>
+    </div>
+    <div class="settings-modal-body">
+
+      <div class="form-group" style="margin-bottom:0">
+        <label id="admin-settings-account-lbl">👤 حسابي</label>
+        <div id="admin-settings-account-info" style="background:var(--teal-pale);border:1px solid var(--grey-5);border-radius:10px;padding:12px 14px;font-size:13px;line-height:1.8;color:var(--grey-1)"></div>
+      </div>
+
+      <div class="form-group" style="border-top:1.5px solid var(--grey-5);padding-top:14px;margin-top:14px;margin-bottom:0">
+        <label id="admin-settings-security-lbl">🔒 الأمان</label>
+        <p id="admin-settings-security-hint" style="font-size:12px;color:var(--grey-3);margin:0 0 10px;line-height:1.65">لتغيير البريد أو كلمة المرور أدخل كلمة المرور الحالية أولاً.</p>
+        <label id="admin-settings-current-pw-lbl" style="font-size:12px;font-weight:600;color:var(--grey-2);display:block;margin-bottom:5px">كلمة المرور الحالية</label>
+        <input type="password" id="admin-current-pw" autocomplete="current-password" placeholder="••••••••">
+        <label id="admin-settings-new-pw-lbl" style="font-size:12px;font-weight:600;color:var(--grey-2);display:block;margin:12px 0 5px">كلمة مرور جديدة</label>
+        <input type="password" id="admin-new-pw" autocomplete="new-password" placeholder="اتركه فارغاً للإبقاء">
+        <label id="admin-settings-new-pw2-lbl" style="font-size:12px;font-weight:600;color:var(--grey-2);display:block;margin:12px 0 5px">تأكيد كلمة المرور</label>
+        <input type="password" id="admin-new-pw2" autocomplete="new-password" placeholder="أعد إدخال كلمة المرور">
+        <label id="admin-settings-new-email-lbl" style="font-size:12px;font-weight:600;color:var(--grey-2);display:block;margin:12px 0 5px">البريد الإلكتروني الجديد</label>
+        <input type="email" id="admin-new-email" autocomplete="email" placeholder="admin@school.ae" dir="ltr">
+        <button type="button" id="admin-settings-reset-pw-btn" onclick="adminSendPasswordResetFromSettings()"
+          style="width:100%;margin-top:12px;padding:10px 12px;border:1.5px solid var(--grey-5);border-radius:10px;background:var(--white);cursor:pointer;font-family:inherit;font-size:13px;font-weight:600;color:var(--teal-dark)">
+          📧 إرسال رابط إعادة التعيين إلى بريدي
+        </button>
+      </div>
+
+      <div id="admin-settings-wa-section" class="form-group" style="border-top:1.5px solid var(--grey-5);padding-top:14px;margin-top:14px;margin-bottom:0">
+        <label id="admin-settings-wa-lbl">📱 واتساب</label>
+        <div id="admin-settings-wa-host"></div>
+      </div>
+
+      <div class="form-group" style="border-top:1.5px solid var(--grey-5);padding-top:14px;margin-top:14px;margin-bottom:0">
+        <label id="admin-settings-notif-lbl">🔔 الإشعارات</label>
+        <p id="admin-settings-notif-help" style="font-size:12px;color:var(--grey-3);margin:0 0 8px;line-height:1.65">فعّل الإشعارات لتلقي تنبيهات الشكاوى والرسائل.</p>
+        <div id="admin-settings-notif-action"></div>
+      </div>
+
+      <div class="form-group" style="border-top:1.5px solid var(--grey-5);padding-top:14px;margin-top:14px;margin-bottom:0">
+        <label id="admin-settings-portal-lbl">🌐 رابط البوابة</label>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+          <input type="text" id="admin-site-url-input" placeholder="https://yourusername.github.io/portal" style="flex:1" dir="ltr">
+          <button type="button" id="admin-settings-copy-url-btn" onclick="copyAdminSiteUrlFromSettings()"
+            style="white-space:nowrap;padding:10px 12px;border:1.5px solid var(--grey-5);border-radius:10px;background:var(--white);cursor:pointer;font-family:inherit;font-size:13px">📋 نسخ</button>
+        </div>
+        <button type="button" id="admin-settings-copy-parent-btn" onclick="copyParentPortalLink()"
+          style="width:100%;padding:10px 12px;border:1.5px solid var(--grey-5);border-radius:10px;background:var(--teal-pale);cursor:pointer;font-family:inherit;font-size:13px;font-weight:600;color:var(--teal-dark)">📋 نسخ رابط ولي الأمر</button>
+      </div>
+
+      <div class="form-group" style="border-top:1.5px solid var(--grey-5);padding-top:14px;margin-top:14px;margin-bottom:0">
+        <label id="admin-settings-school-lbl">🏫 اسم المدرسة</label>
+        <p id="admin-settings-school-hint" style="font-size:12px;color:var(--grey-3);margin:0 0 10px;line-height:1.65">يظهر في شاشة الدخول وبوابة ولي الأمر.</p>
+        <label id="admin-settings-school-ar-lbl" style="font-size:12px;font-weight:600;color:var(--grey-2);display:block;margin-bottom:5px">الاسم بالعربية</label>
+        <input type="text" id="admin-school-name-ar-input" placeholder="مدرسة …">
+        <label id="admin-settings-school-en-lbl" style="font-size:12px;font-weight:600;color:var(--grey-2);display:block;margin:12px 0 5px">الاسم بالإنجليزية</label>
+        <input type="text" id="admin-school-name-en-input" placeholder="School name…" dir="ltr">
+      </div>
+
+      <div id="admin-settings-version" class="settings-app-version" style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--grey-5)"></div>
+
+    </div>
+    <div class="settings-modal-footer">
+      <button class="btn-primary" id="admin-settings-save-btn" onclick="saveAdminSettings()" style="flex:1">💾 حفظ</button>
+      <button type="button" id="admin-settings-cancel-btn" onclick="closeAdminSettings()" style="flex:1;padding:13px;border:1.5px solid var(--grey-5);border-radius:10px;background:none;cursor:pointer;font-family:inherit;font-size:14px">إلغاء</button>
+    </div>
+  </div>
+</div>
+
 <!-- New Message Alert Banner -->
 <div class="new-msg-alert" id="new-msg-alert">
   <span>📩 وصلت رسالة جديدة من المعلم!</span>
@@ -1326,6 +1398,6 @@ window.__splashDeadline = Date.now() + 5000;
 <script src="js/attachments.js?v=7"></script>
 <script src="js/firebase-init.js?v=37"></script>
 <script src="js/msg-delete.js?v=5"></script>
-<script src="js/app.js?v=78"></script>
+<script src="js/app.js?v=79"></script>
 </body>
 </html>
