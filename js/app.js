@@ -101,7 +101,7 @@ function getSplashSeenVersion(){
   try{ return localStorage.getItem('portal_splash_version') || ''; }catch(e){ return ''; }
 }
 function markSplashSeen(){
-  try{ localStorage.setItem('portal_splash_version', String(APP?.buildVersion || '77')); }catch(e){}
+  try{ localStorage.setItem('portal_splash_version', String(APP?.buildVersion || '78')); }catch(e){}
 }
 function parsePortalDeepLink(){
   try{
@@ -362,7 +362,7 @@ function prefillParentLoginForm(sp){
 
 function startSplashScreen(){
   const seenVer = getSplashSeenVersion();
-  const curVer = String(APP?.buildVersion || '77');
+  const curVer = String(APP?.buildVersion || '78');
   if(seenVer === curVer){
     finishSplashScreen();
     return;
@@ -1486,7 +1486,7 @@ function mergeGradeScores(cls, student){
 // ══════════════════════════════════════════════════
 let APP = {
   siteUrl: 'https://emadabuhoujaila.github.io/science-portal/',
-  buildVersion: '77',
+  buildVersion: '78',
   parentTrustedDevice: false,
   pins:{},      // {cls_name: "1234"}
   messages:[],
@@ -2429,6 +2429,9 @@ async function submitTeacherRegAsync(){
   const subject = document.getElementById('reg-subject')?.value||'';
   const pw      = document.getElementById('reg-pw')?.value||'';
   const pw2     = document.getElementById('reg-pw2')?.value||'';
+  const waPhoneRaw = document.getElementById('reg-wa-phone')?.value||'';
+  const waOptIn = !!document.getElementById('reg-wa-optin')?.checked;
+  const waPhone = normalizeParentPhone(waPhoneRaw);
 
   // Build gradeMap from new per-grade checkboxes
   const gradeMap = {};
@@ -2448,6 +2451,8 @@ async function submitTeacherRegAsync(){
   if(!subject)                      return showRegErr(isEn?'Select a subject':'اختر المادة الدراسية');
   if(pw.length<8)                   return showRegErr(isEn?'Password must be 8+ characters':'كلمة المرور 8 أحرف على الأقل');
   if(pw!==pw2)                      return showRegErr(isEn?'Passwords do not match':'كلمة المرور غير متطابقة');
+  if(!waPhone)                      return showRegErr(isEn?'Enter a valid WhatsApp number':'أدخل رقم واتساب صحيحاً');
+  if(!waOptIn)                      return showRegErr(isEn?'Enable WhatsApp to receive messages':'فعّل واتساب لتلقي الرسائل');
   if(!checkedGrades.length)         return showRegErr(isEn?'Select at least one grade':'اختر صفاً واحداً على الأقل');
 
   // Check each selected grade has at least one section
@@ -2464,6 +2469,8 @@ async function submitTeacherRegAsync(){
     grades: checkedGrades,
     sections: allSections,
     gradeMap,
+    whatsappPhone: waPhone,
+    waOptIn: true,
     _key: key,
     createdAt: new Date().toISOString()
   };
@@ -2474,8 +2481,8 @@ async function submitTeacherRegAsync(){
     suc.style.display='block';
     btn.disabled=false;
     btn.textContent=isEn?'✅ Create Account':'✅ إنشاء الحساب';
-    document.querySelectorAll('#t-reg-panel input[type="text"],#t-reg-panel input[type="email"],#t-reg-panel input[type="password"]').forEach(el=>el.value='');
-    document.querySelectorAll('#t-reg-panel input[type="checkbox"]').forEach(c=>c.checked=false);
+    document.querySelectorAll('#t-reg-panel input[type="text"],#t-reg-panel input[type="email"],#t-reg-panel input[type="password"],#t-reg-panel input[type="tel"]').forEach(el=>el.value='');
+    document.querySelectorAll('#t-reg-panel input[type="checkbox"]').forEach(c=>{ c.checked = c.id === 'reg-wa-optin'; });
     document.querySelectorAll('[id^="reg-sec-"]').forEach(d=>d.style.display='none');
     setTimeout(()=>{suc.style.display='none'; showTeacherLogin();},2500);
   };
@@ -2851,12 +2858,21 @@ function showParentPinSetupScreen(isReset){
   if(errEl){ errEl.style.display = 'none'; errEl.textContent = ''; }
   const np = document.getElementById('parent-new-pin');
   const cp = document.getElementById('parent-confirm-pin');
+  const waPhone = document.getElementById('pin-setup-wa-phone');
+  const waOpt = document.getElementById('pin-setup-wa-optin');
   if(np) np.value = '';
   if(cp) cp.value = '';
+  if(waPhone) waPhone.value = '';
+  if(waOpt) waOpt.checked = true;
+  const waBlock = document.getElementById('pin-setup-wa-block');
+  if(waBlock) waBlock.style.display = isReset ? 'none' : 'block';
   const setEl = (id, key)=>{ const el = document.getElementById(id); if(el) el.textContent = t(key); };
   setEl('pin-setup-desc', isReset ? 'pinSetupDescReset' : 'pinSetupDesc');
   setEl('pin-setup-lbl-new', 'pinSetupLblNew');
   setEl('pin-setup-lbl-confirm', 'pinSetupLblConfirm');
+  setEl('pin-setup-lbl-wa', 'pinSetupLblWa');
+  setEl('pin-setup-wa-hint', 'pinSetupWaHint');
+  setEl('pin-setup-wa-optin-lbl', 'pinSetupWaOptIn');
   setEl('pin-setup-hint', isReset ? 'pinSetupHintReset' : 'pinSetupHint');
   const btn = document.getElementById('pin-setup-submit-btn');
   if(btn) btn.textContent = isEn
@@ -2886,6 +2902,18 @@ async function submitParentPinSetupAsync(){
   if(pin !== pinConfirm){
     return showErr(isEn ? 'PIN confirmation does not match' : 'تأكيد الرمز غير متطابق');
   }
+  const isFirstSetup = !pendingLogin.pinReset;
+  let setupWaPhone = '';
+  if(isFirstSetup){
+    setupWaPhone = normalizeParentPhone(document.getElementById('pin-setup-wa-phone')?.value || '');
+    const setupWaOptIn = !!document.getElementById('pin-setup-wa-optin')?.checked;
+    if(!setupWaPhone){
+      return showErr(isEn ? 'Enter a valid WhatsApp number' : 'أدخل رقم واتساب صحيحاً');
+    }
+    if(!setupWaOptIn){
+      return showErr(isEn ? 'Enable WhatsApp to receive messages' : 'فعّل واتساب لتلقي الرسائل');
+    }
+  }
   const btn = document.getElementById('pin-setup-submit-btn');
   if(btn){ btn.disabled = true; btn.textContent = isEn ? 'Saving…' : 'جارٍ الحفظ…'; }
   try{
@@ -2896,7 +2924,15 @@ async function submitParentPinSetupAsync(){
     const fnName = pendingLogin.pinReset ? 'resetParentPin' : 'setupParentPin';
     const wasReset = !!pendingLogin.pinReset;
     const res = await fns.httpsCallable(fnName)({ cls, section, name, mid, pin, pinConfirm, rememberDevice });
-    await finishParentLogin(cls, name, mid, section || '', res?.data?.sessionToken || '', rememberDevice);
+    const sessionToken = res?.data?.sessionToken || '';
+    if(isFirstSetup && setupWaPhone && sessionToken){
+      await fns.httpsCallable('updateParentWhatsApp')({
+        sessionToken,
+        phone: setupWaPhone,
+        optIn: true,
+      });
+    }
+    await finishParentLogin(cls, name, mid, section || '', sessionToken, rememberDevice);
     showToast('✅ ' + (wasReset
       ? (isEn ? 'PIN reset — welcome!' : 'تم تعيين الرمز الجديد — أهلاً بك!')
       : (isEn ? 'PIN saved — welcome!' : 'تم حفظ الرمز — أهلاً بك!')));
@@ -5513,6 +5549,9 @@ const TRANSLATIONS = {
     regPwPH: '8 أحرف على الأقل',
     regPw2PH: 'أعد إدخال كلمة المرور',
     regGradesSections: 'الصفوف والشعب (اختر شعب كل صف على حدى)',
+    regLblWa: 'رقم واتساب',
+    regWaHint: 'يُستخدم لربط زر «إرسال عبر واتساب» برقمك',
+    regWaOptIn: 'السماح بتلقي رسائل واتساب على رقمي',
     regSubApproved: 'التسجيل متاح فقط للمعلّمين الذين أضاف مسؤول المدرسة بريدهم مسبقاً',
     parentSecPH: '— اختر الشعبة —',
     parentGradePH: '— اختر الصف —',
@@ -5530,6 +5569,9 @@ const TRANSLATIONS = {
     pinSetupDesc: 'اختر رمزاً سرياً (4–6 أرقام) لاستخدامه في كل دخول لاحق',
     pinSetupLblNew: 'الرمز السري الجديد',
     pinSetupLblConfirm: 'تأكيد الرمز السري',
+    pinSetupLblWa: 'رقم واتساب',
+    pinSetupWaHint: 'يُستخدم لربط زر «إرسال عبر واتساب» برقمك',
+    pinSetupWaOptIn: 'السماح بتلقي رسائل واتساب على رقمي',
     pinSetupHint: '⚠️ لا تشارك الرمز السري مع أحد. الرقم الوزاري لن يُطلب بعد الآن.',
     pinSetupDescReset: 'اختر رمزاً سرياً جديداً (4–6 أرقام)',
     pinSetupHintReset: '⚠️ احفظ الرمز الجديد في مكان آمن ولا تشاركه مع أحد.',
@@ -5898,6 +5940,9 @@ const TRANSLATIONS = {
     regPwPH: 'At least 8 characters',
     regPw2PH: 'Re-enter password',
     regGradesSections: 'Grades & sections (select sections per grade)',
+    regLblWa: 'WhatsApp number',
+    regWaHint: 'Links the WhatsApp send button to your number',
+    regWaOptIn: 'Allow receiving WhatsApp messages on my number',
     regSubApproved: 'Registration is only available for teachers whose email was added by the school admin',
     parentSecPH: '— Select Section —',
     parentGradePH: '— Select Grade —',
@@ -5915,6 +5960,9 @@ const TRANSLATIONS = {
     pinSetupDesc: 'Choose a personal PIN (4–6 digits) for future sign-in',
     pinSetupLblNew: 'New PIN',
     pinSetupLblConfirm: 'Confirm PIN',
+    pinSetupLblWa: 'WhatsApp number',
+    pinSetupWaHint: 'Links the WhatsApp send button to your number',
+    pinSetupWaOptIn: 'Allow receiving WhatsApp messages on my number',
     pinSetupHint: '⚠️ Do not share your PIN. Ministry ID will not be required again.',
     pinSetupDescReset: 'Choose a new PIN (4–6 digits)',
     pinSetupHintReset: '⚠️ Keep your new PIN safe and do not share it.',
@@ -6174,6 +6222,12 @@ function applyGlobalLang(){
   if(rpEl) rpEl.textContent = isArL?'كلمة المرور':'Password';
   const rp2El = document.getElementById('reg-lbl-pw2');
   if(rp2El) rp2El.textContent = isArL?'تأكيد كلمة المرور':'Confirm Password';
+  const rwEl = document.getElementById('reg-lbl-wa');
+  if(rwEl) rwEl.textContent = t('regLblWa');
+  const rwhEl = document.getElementById('reg-wa-hint');
+  if(rwhEl) rwhEl.textContent = t('regWaHint');
+  const rwoEl = document.getElementById('reg-wa-optin-lbl');
+  if(rwoEl) rwoEl.textContent = t('regWaOptIn');
   const rgEl = document.getElementById('reg-lbl-grades');
   if(rgEl) rgEl.textContent = t('regGradesSections');
   const rscEl = document.getElementById('reg-lbl-sections');
@@ -6185,6 +6239,7 @@ function applyGlobalLang(){
   setPH('reg-name', t('regNamePH'));
   setPH('reg-pw', t('regPwPH'));
   setPH('reg-pw2', t('regPw2PH'));
+  setPH('reg-wa-phone', isArL ? '05xxxxxxxx' : '05xxxxxxxx');
   const regPnl = document.getElementById('t-reg-panel');
   if(regPnl && regPnl.style.display!=='none') buildRegGrids();
   if(CURRENT_TEACHER) applyTeacherProfile();
