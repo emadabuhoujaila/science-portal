@@ -9825,12 +9825,17 @@ async function importOneDriveGrades(){
     showToast(isEn ? '⚠️ Not connected' : '⚠️ غير متصل');
     return;
   }
+  const url = (document.getElementById('settings-onedrive-url')?.value || TEACHER_SETTINGS.oneDriveUrl || '').trim();
+  if(!url){
+    showToast(isEn ? '⚠️ Add OneDrive link in Settings first, then Save' : '⚠️ أضف رابط OneDrive من الإعدادات واحفظه أولاً');
+    openSettings();
+    return;
+  }
   const btn = document.getElementById('teacher-onedrive-btn');
   if(btn){ btn.disabled = true; }
   showToast(isEn ? '⏳ Fetching from OneDrive...' : '⏳ جارٍ الجلب من OneDrive...');
   try{
-    const url = (document.getElementById('settings-onedrive-url')?.value || TEACHER_SETTINGS.oneDriveUrl || '').trim();
-    const res = await fns.httpsCallable('fetchOneDriveExcel')(url ? { url } : {});
+    const res = await fns.httpsCallable('fetchOneDriveExcel')({ url });
     const base64 = res?.data?.base64;
     if(!base64) throw new Error(isEn ? 'Empty file from OneDrive' : 'ملف فارغ من OneDrive');
     const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
@@ -9839,13 +9844,13 @@ async function importOneDriveGrades(){
     if(ok){
       const ts = new Date().toISOString();
       TEACHER_SETTINGS.lastGradeSync = ts;
-      if(url) TEACHER_SETTINGS.oneDriveUrl = url;
+      TEACHER_SETTINGS.oneDriveUrl = url;
       const tKey = getTeacherKey();
       if(tKey && typeof db !== 'undefined'){
         try{
           await db.ref('teacherData/'+tKey+'/settings').update({
             lastGradeSync: ts,
-            ...(url ? { oneDriveUrl: url } : {}),
+            oneDriveUrl: url,
           });
         }catch(e){ console.warn('oneDrive sync meta', e); }
       }
@@ -9856,11 +9861,29 @@ async function importOneDriveGrades(){
     }
   }catch(e){
     console.error('importOneDriveGrades', e);
-    const msg = e?.message || String(e);
-    showToast('❌ ' + (isEn ? 'OneDrive import failed: ' : 'فشل استيراد OneDrive: ') + msg);
+    showToast('❌ ' + formatOneDriveImportError(e, isEn));
   }finally{
     if(btn) btn.disabled = false;
   }
+}
+
+function formatOneDriveImportError(err, isEn){
+  const raw = String(err?.message || err?.details || err || '');
+  if(/ONEDRIVE_ACCESS_DENIED|denied access/i.test(raw)){
+    return isEn
+      ? 'OneDrive blocked access — Share → Anyone with the link → View, then copy the new link'
+      : 'رفض OneDrive الوصول — من الملف: مشاركة ← أي شخص لديه الرابط ← عرض، ثم انسخ الرابط من جديد';
+  }
+  if(/not configured|URL not configured/i.test(raw)){
+    return isEn ? 'Add OneDrive link in Settings first' : 'أضف رابط OneDrive من الإعدادات أولاً';
+  }
+  if(/Invalid OneDrive/i.test(raw)){
+    return isEn ? 'Invalid link — use 1drv.ms or onedrive.live.com share URL' : 'رابط غير صالح — استخدم رابط مشاركة من 1drv.ms أو onedrive.live.com';
+  }
+  if(/not a valid Excel/i.test(raw)){
+    return isEn ? 'File is not Excel (.xlsx)' : 'الملف ليس Excel (.xlsx)';
+  }
+  return raw.replace(/^(failed-precondition|functions\/failed-precondition):\s*/i, '').trim();
 }
 
 function openSettingsParentLinksTab(){
