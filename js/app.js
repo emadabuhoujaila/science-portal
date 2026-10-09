@@ -1577,7 +1577,8 @@ function showTab(name,el){
   document.getElementById('tab-'+name).classList.add('active');
   if(el) el.classList.add('active');
   if(name==='exams' && window.ExamPlatform?.onTeacherEnter) window.ExamPlatform.onTeacherEnter();
-  if(name==='overview') renderAnalysisTab();
+  if(name==='daily') dfRenderDaily();
+  if(name==='overview') renderOverview();
   if(name==='pins') renderPinsTab();
   if(name==='links') renderLinksTab();
   if(name==='grades') renderGradesTab();
@@ -2866,6 +2867,7 @@ function _enterDashboard(teacher){
   window._teacherAdminMsgsReady = false;
   // ALWAYS reset teacher students on new login
   window.TEACHER_STUDENTS = {};
+  dfReset();
   // Store in session
   try{ sessionStorage.setItem('ct', JSON.stringify(teacher)); }catch(e){}
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
@@ -2915,6 +2917,7 @@ function _enterDashboard(teacher){
       } catch(e){ console.warn('teacherData settings load error:', e); }
       await loadTeacherWhatsAppProfile(key);
       renderTeacherWhatsAppBar();
+      try{ await dfLoad(key, true); }catch(e){ console.warn('daily follow-up load error:', e); }
     }
 
     // Step 3: Start Firebase listeners for this teacher's data
@@ -2983,6 +2986,7 @@ function applyTeacherProfile(){
 
 async function logout(){
   try{ if(typeof auth!=='undefined' && auth) await auth.signOut(); }catch(e){}
+  dfReset();
   // Detach all Firebase listeners
   if(window._teacherListeners){
     window._teacherListeners.forEach(ref=>ref.off());
@@ -5081,6 +5085,7 @@ async function adminDeleteTeacherDbOnly(teacherKey, teacherUid){
 
 function initDashboard(){
   try { refreshGradeDropdowns(); } catch(e){ console.error('refreshGradeDropdowns:',e); }
+  try { dfRenderDaily(); }       catch(e){ console.error('dfRenderDaily:',e); }
   try { renderOverview(); }      catch(e){ console.error('renderOverview:',e); }
   try { renderAnalysisTab(); }   catch(e){ console.error('renderAnalysisTab:',e); }
   try { renderGradesTab(); }     catch(e){ console.error('renderGradesTab:',e); }
@@ -5100,6 +5105,7 @@ function initDashboard(){
   try { updateTeacherSyncIndicator(); } catch(e){}
 }
 function renderOverview(){
+  if(document.getElementById('df-overview')) return dfRenderOverview();
   updateOverviewGradeHeaders();
   const cls=document.getElementById('class-filter')?.value||'';
   const sec=document.getElementById('sec-filter')?.value||'';
@@ -7293,6 +7299,7 @@ function toggleLang(){
 
     const screenId = (document.querySelector('.screen.active')||{}).id || '';
     if(screenId === 'screen-teacher'){
+      try{ dfRenderDaily(); }catch(e){}
       try{ renderOverview(); }catch(e){}
       try{ renderGradesTab(); }catch(e){}
       try{ renderAnalysisTab(); }catch(e){}
@@ -7415,7 +7422,10 @@ async function loadParentSubjectTabs(cls, studentName, mid){
 
     // Sort by subject name
   teachersList.sort((a,b)=>a.subjLabel.localeCompare(b.subjLabel));
-  await preloadTeacherWhatsAppProfiles(teachersList.map(t => t.key));
+  await Promise.all([
+    preloadTeacherWhatsAppProfiles(teachersList.map(t => t.key)),
+    pdfLoad(teachersList).catch(e=>console.warn('pdfLoad', e)),
+  ]);
 
   // Start Firebase listeners for all teachers found
   if(typeof window._startListenersForTeacher === 'function'){
@@ -7590,151 +7600,6 @@ function _setBadge(btnId, count){
 // Active Firebase listeners for parent view
 window._parentListeners = [];
 
-function _refreshParentGradeViews(cls, studentName, mid, teachersList){
-  const ctx = window._parentSubjectContext;
-  if(!ctx || ctx.cls !== cls || (ctx.name || '').trim() !== (studentName || '').trim()) return;
-
-  if(document.getElementById('parent-academic-content')){
-    renderParentAcademic(cls, studentName, mid, teachersList);
-  }
-
-  (teachersList || []).forEach((tc, i)=>{
-    if(_isParentTabVisible('tab-subj-'+i)){
-      loadSubjectTabContent(i, cls, studentName, mid, teachersList);
-    }
-  });
-}
-
-function parentGradeBuckets(cls, section){
-  const sec = normalizeSectionCell(section);
-  const buckets = [];
-  if(sec) buckets.push(String(cls) + sec);
-  buckets.push(String(cls));
-  return [...new Set(buckets)];
-}
-
-function pickStudentGradeRecord(store, mid, studentName){
-  if(!store || typeof store !== 'object') return null;
-  const sName = String(studentName || '').trim();
-  const m = String(mid || '').trim();
-  if(m && store[m] && typeof store[m] === 'object') return store[m];
-  const arr = Array.isArray(store) ? store : Object.values(store);
-  return arr.find(x => x && typeof x === 'object' && (
-    (m && String(x.mid).trim() === m) ||
-    (sName && String(x.name).trim() === sName)
-  )) || null;
-}
-
-async function fetchTeacherGradeRecord(teacherKey, cls, section, mid, studentName){
-  if(!teacherKey) return null;
-
-  const sessionToken = getParentSessionToken();
-  if(sessionToken){
-    try{
-      const data = await callParentPublicFn('getParentGrades', { sessionToken, teacherKey });
-      if(data?.columnLabels) cacheParentTeacherColumnLabels(teacherKey, data.columnLabels);
-      if(data && Object.prototype.hasOwnProperty.call(data, 'grade')) return data.grade;
-    }catch(e){
-      console.warn('getParentGrades', e);
-    }
-  }
-
-  if(typeof db === 'undefined') return null;
-  for(const bucket of parentGradeBuckets(cls, section)){
-    try{
-      const snap = await db.ref(`teacherData/${teacherKey}/grades/${bucket}`).once('value');
-      if(!snap.exists()) continue;
-      const hit = pickStudentGradeRecord(snap.val(), mid, studentName);
-      if(hit) return hit;
-    }catch(e){}
-  }
-  const m = String(mid || '').trim();
-  if(m){
-    for(const bucket of parentGradeBuckets(cls, section)){
-      try{
-        const snap = await db.ref(`teacherData/${teacherKey}/grades/${bucket}/${m}`).once('value');
-        if(snap.exists()) return snap.val();
-      }catch(e){}
-    }
-  }
-  // Fallback: scan all grade buckets for this class (handles section format differences)
-  try{
-    const snap = await db.ref(`teacherData/${teacherKey}/grades`).once('value');
-    if(snap.exists()){
-      for(const [bucket, store] of Object.entries(snap.val() || {})){
-        if(!String(bucket).startsWith(String(cls))) continue;
-        const hit = pickStudentGradeRecord(store, mid, studentName);
-        if(hit) return hit;
-      }
-    }
-  }catch(e){}
-  return null;
-}
-
-function buildParentGradeMobileCards(g, labels, isEn){
-  if(!g) return '';
-  const periodCount = labels.periodCount || getGradePeriodCount();
-  const fmt = v=>{
-    if(v == null || v === '') return '—';
-    const n = parseFloat(v);
-    if(isNaN(n) || n === 0) return '—';
-    return n <= 1 ? (n * 100).toFixed(0) : n.toFixed(0);
-  };
-  const scalarRow = (lbl, val)=>`<div class="pgc-row"><span class="pgc-lbl">${escapeHtml(lbl)}</span><span class="pgc-val">${fmt(val)}</span></div>`;
-  const weekBlock = (title, arr, weeks)=>{
-    if(!weeks?.length) return '';
-    return `<details class="pgc-group" open>
-      <summary>${escapeHtml(title)}</summary>
-      <div class="pgc-group-body">${weeks.map((lbl,i)=>scalarRow(lbl, arr?.[i])).join('')}</div>
-    </details>`;
-  };
-  return `<div class="parent-grade-cards">
-    ${scalarRow(labels.diagnostic, g.diagnostic)}
-    ${scalarRow(labels.t1, g.t1)}
-    ${scalarRow(labels.t2, g.t2)}
-    ${weekBlock(labels.hwGroup, g.hwWeeks, labels.hwWeeks)}
-    ${weekBlock(labels.portalGroup, g.portalWeeks, labels.portalWeeks)}
-    ${weekBlock(labels.actGroup, g.actWeeks, labels.actWeeks)}
-    ${scalarRow(labels.lab, g.lab)}
-    ${scalarRow(labels.total, g.computedTotal != null ? g.computedTotal : g.total)}
-    ${scalarRow(labels.final, g.final != null && g.final !== '' ? g.final : null)}
-  </div>`;
-}
-
-function buildParentWeeklyGradeTable(gd, isEn, teacherKey){
-  if(!gd) return '';
-  const g = enrichGradeRecord(gd);
-  const labels = getGradeColumnLabels({ teacherKey });
-  const periodCount = labels.periodCount || getGradePeriodCount();
-  const weekCells = (arr, grp)=> Array.from({length:periodCount}, (_,i)=>{
-    const v = arr?.[i];
-    if(v == null || v === '') return `<td class="col-grp col-grp-${grp}">—</td>`;
-    const n = parseFloat(v);
-    if(isNaN(n) || n === 0) return `<td class="col-grp col-grp-${grp}">—</td>`;
-    const txt = n <= 1 ? (n * 100).toFixed(0) : n.toFixed(0);
-    return `<td class="col-grp col-grp-${grp}">${txt}</td>`;
-  }).join('');
-  return `<div class="table-wrap parent-grades-wrap" style="margin-bottom:14px">
-    ${buildParentGradeMobileCards(g, labels, isEn)}
-    <table class="grades-template-table parent-grades-table">
-      <thead>
-        ${buildGradeTableHeadHtml(labels, { showGrade: false })}
-      </thead>
-      <tbody><tr>
-        <td class="col-grp col-grp-diag">${formatScalarGradeCell(g.diagnostic)}</td>
-        <td class="col-grp col-grp-t1">${formatScalarGradeCell(g.t1)}</td>
-        <td class="col-grp col-grp-t2">${formatScalarGradeCell(g.t2)}</td>
-        ${weekCells(g.hwWeeks, 'hw')}
-        ${weekCells(g.portalWeeks, 'portal')}
-        ${weekCells(g.actWeeks, 'act')}
-        <td class="col-grp col-grp-lab col-grp-sep">${g.lab != null && g.lab !== 0 ? g.lab : '—'}</td>
-        <td class="col-grp col-grp-total">${formatGradeTotalCell(g, { suffix: '%' })}</td>
-        <td class="col-grp col-grp-final">${formatGradeFinalCell(g)}</td>
-      </tr></tbody>
-    </table>
-  </div>`;
-}
-
 function syncParentTeacherMessages(tc, cls, sName, snap){
   const tag = tc.key + '|msg';
   const entries = snap.exists() ? Object.entries(snap.val() || {}) : [];
@@ -7833,7 +7698,7 @@ async function refreshParentTeacherDataFromServer(cls, sName, teachersList){
 
 function _refreshParentLiveData(cls, studentName, mid, teachersList){
   const sName = (studentName || '').trim();
-  _refreshParentGradeViews(cls, studentName, mid, teachersList);
+  pdfReload(teachersList);
   refreshParentTeacherDataFromServer(cls, sName, teachersList).catch(e=>{
     console.warn('refreshParentTeacherDataFromServer', e);
   });
@@ -8429,7 +8294,7 @@ function renderParentSubjectTabs(cls, studentName, mid, teachersList, section){
 
   // Tabs: Academic + one per subject
   const fixedTabs = [
-    {id:'tab-academic', icon:'📊', label:t('parentAcademicTab')},
+    {id:'tab-academic', icon:'📅', label:isEn?'Daily follow-up':'المتابعة اليومية'},
     {id:'tab-parent-school', icon:'🏫', label:t('parentSchoolTab')}
   ];
   const subjectTabs = teachersList.map((tc,i)=>({
@@ -8573,108 +8438,8 @@ function switchMsgTab(tab, el){
 async function renderParentAcademic(cls, studentName, mid, teachersList){
   const div  = document.getElementById('parent-academic-content');
   if(!div) return;
-  const isEnL = currentLang==='en';
-  const section = window._currentParent?.section || window._parentSubjectContext?.section || '';
-
-  let allGrades = [];
-
-  if(typeof db !== 'undefined'){
-    const sessionToken = getParentSessionToken();
-    let gradeMap = null;
-    if(sessionToken && teachersList?.length){
-      try{
-        const batch = await callParentPublicFn('getParentGradesBatch', {
-          sessionToken,
-          teacherKeys: teachersList.map(tc => tc.key).filter(Boolean),
-        });
-        if(batch?.grades) gradeMap = batch.grades;
-        if(batch?.columnLabels){
-          Object.entries(batch.columnLabels).forEach(([key, labels]) => cacheParentTeacherColumnLabels(key, labels));
-        }
-      }catch(e){
-        console.warn('getParentGradesBatch', e);
-      }
-    }
-
-    const results = await Promise.all(
-      (teachersList || []).map(async tc=>{
-        const s = gradeMap
-          ? (gradeMap[tc.key] || null)
-          : await fetchTeacherGradeRecord(tc.key, cls, section, mid, studentName);
-        if(!s) return null;
-        return {...s, subject:tc.subject, subjLabel:tc.subjLabel, teacherName:tc.name};
-      })
-    );
-    allGrades = results.filter(Boolean).map(enrichGradeRecord);
-  }
-
-  const tableRows = (teachersList || []).map(tc=>{
-    const g = allGrades.find(x=>x.subject===tc.subject);
-    const totalCell = g && hasAnyGradeData(g)
-      ? formatGradeTotalCell(g, { suffix: '%' })
-      : `<span style="color:var(--grey-3);font-size:12px">${isEnL?'Not entered':'لم يُدخل'}</span>`;
-    const finalCell = g ? formatGradeFinalCell(g) : '—';
-    return `<tr>
-      <td class="col-meta col-meta-subject" style="font-weight:600">${tc.subjLabel}</td>
-      <td class="col-meta col-meta-teacher" style="font-size:12px;color:var(--grey-3)">${tc.name}</td>
-      <td class="col-grp col-grp-diag">${g ? formatScalarGradeCell(g.diagnostic) : '—'}</td>
-      <td class="col-grp col-grp-t1">${g ? formatScalarGradeCell(g.t1) : '—'}</td>
-      <td class="col-grp col-grp-t2">${g ? formatScalarGradeCell(g.t2) : '—'}</td>
-      <td class="col-grp col-grp-hw">${g && g.hw != null ? g.hw.toFixed(1)+'%' : '—'}</td>
-      <td class="col-grp col-grp-portal">${g && g.portal != null ? g.portal.toFixed(1)+'%' : '—'}</td>
-      <td class="col-grp col-grp-act">${g && g.activity != null ? g.activity+'%' : '—'}</td>
-      <td class="col-grp col-grp-lab col-grp-sep">${g && g.lab != null && g.lab !== 0 ? g.lab : '—'}</td>
-      <td class="col-grp col-grp-total">${totalCell}</td>
-      <td class="col-grp col-grp-final">${finalCell}</td>
-    </tr>`;
-  }).join('');
-
-  const enteredGrades = allGrades.filter(g => g.displayScore != null || g.computedTotal != null);
-  const overallAvg = enteredGrades.length
-    ? (enteredGrades.reduce((s,g)=>s+(g.displayScore ?? g.computedTotal),0)/enteredGrades.length).toFixed(1)
-    : null;
-
-  const sorted = [...enteredGrades].sort((a,b)=>(b.displayScore ?? b.computedTotal ?? 0)-(a.displayScore ?? a.computedTotal ?? 0));
-  const best   = sorted[0];
-  const weak   = sorted[sorted.length-1];
-  const academicLabels = getGradeColumnLabels({ teacherKey: teachersList?.[0]?.key });
-
-  div.innerHTML = `
-    ${overallAvg ? `<div style="background:var(--teal-pale);border-radius:12px;padding:16px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center">
-      <div>
-        <div style="font-size:13px;color:var(--grey-3)">${isEnL?'Overall Average':'المتوسط العام'}</div>
-        <div style="font-size:28px;font-weight:800;color:var(--teal-dark)">${overallAvg}%</div>
-      </div>
-      <div style="text-align:${isEnL?'left':'right'}">
-        ${best?`<div style="font-size:12px;color:var(--green-soft)">🌟 ${isEnL?'Best:':'الأفضل:'} ${best.subjLabel}</div>`:''}
-        ${weak&&weak!==best?`<div style="font-size:12px;color:var(--gold)">⚠️ ${isEnL?'Needs work:':'يحتاج تحسين:'} ${weak.subjLabel}</div>`:''}
-      </div>
-    </div>` : ''}
-
-    <div class="card-header" style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
-      <h4>${isEnL?'📊 Academic Record':'📊 السجل الأكاديمي'}</h4>
-      <span style="font-size:11px;color:var(--grey-3)">🔄 ${isEnL?'Live sync':'تحديث فوري'}</span>
-    </div>
-    <div class="table-wrap">
-      <table class="grades-template-table parent-academic-table">
-        <thead><tr>
-          <th class="col-meta col-meta-subject">${isEnL?'Subject':'المادة'}</th>
-          <th class="col-meta col-meta-teacher">${isEnL?'Teacher':'المعلم'}</th>
-          <th class="col-grp col-grp-diag">${escapeHtml(academicLabels.diagnostic)}</th>
-          <th class="col-grp col-grp-t1">${escapeHtml(academicLabels.t1)}</th>
-          <th class="col-grp col-grp-t2">${escapeHtml(academicLabels.t2)}</th>
-          <th class="col-grp col-grp-hw">${escapeHtml(academicLabels.hwGroup)}</th>
-          <th class="col-grp col-grp-portal">${escapeHtml(academicLabels.portalGroup)}</th>
-          <th class="col-grp col-grp-act">${escapeHtml(academicLabels.actGroup)}</th>
-          <th class="col-grp col-grp-lab col-grp-sep">${escapeHtml(academicLabels.lab)}</th>
-          <th class="col-grp col-grp-total">${escapeHtml(academicLabels.total)}</th>
-          <th class="col-grp col-grp-final">${escapeHtml(academicLabels.final)}</th>
-        </tr></thead>
-        <tbody>${tableRows||`<tr><td colspan="11" style="text-align:center;color:var(--grey-3);padding:20px">
-          ${isEnL?'No grades yet — teacher will upload via Excel':'لا توجد درجات بعد — سيحدّثها المعلم من ملف Excel'}</td></tr>`}
-        </tbody>
-      </table>
-    </div>`;
+  const ctx = window._parentSubjectContext || {cls, name:studentName, mid, teachers:teachersList};
+  div.innerHTML = `<div id="pdf-overview">${pdfOverviewHtml({...ctx, teachers: teachersList || ctx.teachers})}</div>`;
 }
 
 // ── BEHAVIOR TAB ──
@@ -8842,14 +8607,13 @@ async function loadSubjectTabContent(idx, cls, studentName, mid, teachersList){
   const isEn = currentLang==='en';
   const sName   = studentName.trim();
 
-  let gradeData=null, messages=[], behaviorLog=[];
+  let messages=[], behaviorLog=[];
 
   const msgTag = tc.key + '|msg';
   const bvTag = tc.key + '|bv';
 
   if(typeof db!=='undefined'){
     try{
-      gradeData = await fetchTeacherGradeRecord(tc.key, cls, section, mid, sName);
       messages = (APP.messages || [])
         .filter(m => m._src === msgTag)
         .filter(m => !isParentMsgHidden('received', tc.key, m));
@@ -8862,33 +8626,7 @@ async function loadSubjectTabContent(idx, cls, studentName, mid, teachersList){
   APP.behaviorLog = (APP.behaviorLog || []).filter(e => e._src !== bvTag);
   behaviorLog.forEach(e => APP.behaviorLog.push({ ...e, _src: bvTag }));
 
-  const violations = behaviorLog.filter(e=>e.violationId&&e.violationId!=='v0').length;
-  const bvLevel = violations===0?5:violations<=2?4:violations<=4?3:violations<=7?2:1;
-  const bvInfo  = getBehaviorLevel(bvLevel);
-  const color   = violations===0?'#2e7d32':violations<=2?'#1a9a9a':violations<=4?'#e65100':'#c62828';
-  const bg      = violations===0?'#e8f5e9':violations<=2?'#e0f7f7':violations<=4?'#fff3e0':'#ffebee';
-
-  const gd = gradeData ? enrichGradeRecord(gradeData) : null;
-  const gradeHtml = gd ? `
-    <div class="parent-subject-panel">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <div class="section-title" style="margin:0">📊 ${isEn?'Subject Grades':'سجل المادة'}</div>
-      <span style="font-size:11px;color:var(--grey-3)">🔄 ${isEn?'Live sync':'تحديث فوري'}</span>
-    </div>
-    ${buildParentWeeklyGradeTable(gd, isEn, tc.key)}
-    <div style="text-align:center;background:var(--teal-pale);border-radius:8px;padding:10px;margin-bottom:14px">
-      <span style="font-size:22px;font-weight:800;color:${gradeScoreColor(gd.displayScore)}">${gd.displayScore != null ? gd.displayScore.toFixed(1)+'%' : '—'}</span>
-      <span style="margin-right:8px">${gradeBadge(gd.displayScore)}</span>
-    </div></div>` : `<div class="empty-state" style="padding:20px;margin-bottom:14px">
-      <div class="ico">📊</div>
-      <p style="font-size:13px">${isEn?'No grades yet — teacher will upload via Excel':'لا توجد درجات بعد — سيحدّثها المعلم من ملف Excel'}</p>
-    </div>`;
-
-  const bvHtml = `<div style="background:${bg};border-right:3px solid ${color};border-radius:8px;
-    padding:10px 14px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center">
-    <span style="font-size:13px;font-weight:600;color:${color}">${bvInfo.icon} ${bvInfo.label}</span>
-    ${violations?`<span style="font-size:12px;color:${color}">${violations} ${isEn?'violation(s)':'مخالفة'}</span>`:''}
-  </div>`;
+  const dailyHtml = `<div class="pdf-subject" data-idx="${idx}">${pdfSubjectHtml(idx, window._parentSubjectContext)}</div>`;
 
   const mi={praise:'🌟',warning:'⚠️',info:'📘'};
   const msgsSeen = _getSeenTime('msgs', cls, sName);
@@ -8927,7 +8665,7 @@ async function loadSubjectTabContent(idx, cls, studentName, mid, teachersList){
       font-family:inherit;margin:3px">${lbl}</button>`;
   }).join('');
 
-  container.innerHTML = gradeHtml + bvHtml + msgsHtml + `
+  container.innerHTML = dailyHtml + msgsHtml + `
     <div class="parent-msg-box" style="margin-top:14px">
       <h4 style="font-size:14px;font-weight:700;color:var(--teal-dark);margin-bottom:10px">
         ✉️ ${isEn?'Send Message to':'أرسل رسالة إلى'} ${tc.name}
@@ -9744,6 +9482,7 @@ function refreshDashboard(){
     if(window.fbReloadAll){
       await window.fbReloadAll();
     }
+    try{ await dfLoad('', true); }catch(e){ console.warn('dfLoad', e); }
     initDashboard();
     finish(currentLang==='en' ? '✅ Data updated' : '✅ تم تحديث البيانات');
   };
