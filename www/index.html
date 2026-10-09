@@ -55,7 +55,7 @@ window.__splashDeadline = Date.now() + 5000;
   Promise.all(p).then(done).catch(done);
 })();
 </script>
-<link rel="stylesheet" href="css/app.css?v=81">
+<link rel="stylesheet" href="css/app.css?v=82">
 <link rel="stylesheet" href="css/uae-theme.css?v=3">
 </head>
 <body>
@@ -90,7 +90,6 @@ window.__splashDeadline = Date.now() + 5000;
     </div>
     <div class="login-tabs">
       <button class="login-tab active" onclick="switchTab('teacher',this)" id="tab-teacher">👨‍🏫 المعلم</button>
-      <button class="login-tab" onclick="switchTab('student',this)" id="tab-student">👨‍🎓 الطالب</button>
       <button class="login-tab" onclick="switchTab('parent',this)" id="tab-parent">👨‍👦 ولي الأمر</button>
       <button class="login-tab" onclick="switchTab('admin',this)" id="tab-admin">⚙️ المسؤول</button>
     </div>
@@ -170,18 +169,6 @@ window.__splashDeadline = Date.now() + 5000;
         <button class="btn-primary" id="reg-submit-btn" onclick="submitTeacherReg()">✅ إنشاء الحساب</button>
         <button onclick="showTeacherLogin()" id="reg-back-btn" style="width:100%;margin-top:10px;background:transparent;border:none;color:var(--grey-3);padding:8px;font-family:inherit;font-size:13px;cursor:pointer">← العودة للدخول</button>
       </div>
-    </div>
-    <!-- STUDENT — diagnostic exam login -->
-    <div id="login-student" style="display:none">
-      <div class="error-msg" id="exam-student-error" style="display:none"></div>
-      <div class="form-group">
-        <label id="exam-student-mid-lbl">الرقم الوزاري</label>
-        <p id="exam-student-mid-hint" class="parent-login-hint">أدخل رقمك الوزاري للدخول إلى الاختبار التشخيصي في الفيزياء</p>
-        <input type="text" id="exam-student-mid-input" inputmode="numeric" maxlength="14" autocomplete="off"
-          placeholder="مثال: 123456789012"
-          onkeydown="if(event.key==='Enter')examStudentLogin()">
-      </div>
-      <button class="btn-primary" id="exam-student-login-btn" onclick="examStudentLogin()">دخول الاختبار</button>
     </div>
     <!-- PARENT — دخول برقم الطالب الوزاري -->
     <div id="login-parent" style="display:none">

@@ -930,7 +930,7 @@ tbody td{padding:10px 12px;text-align:center;color:var(--grey-2)}
 .exam-grade-actions{display:flex;flex-direction:column;gap:8px}
 .exam-action-btn{width:100%;padding:10px 12px;border:1.5px solid var(--grey-5);border-radius:10px;background:var(--grey-6,#f4f6f6);font-family:inherit;font-size:13px;font-weight:600;color:var(--grey-3);cursor:not-allowed}
 @media(max-width:720px){
-  .login-tab{flex:1 1 46%;font-size:12px}
+  .login-tab{flex:1 1 30%;font-size:12px}
   .exam-grade-grid{grid-template-columns:1fr}
 }
 
