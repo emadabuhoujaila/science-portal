@@ -14,6 +14,64 @@ function encodeOneDriveShareUrl(shareUrl) {
   return 'u!' + base64;
 }
 
+const FETCH_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (compatible; SciencePortal/1.0)',
+  Accept: '*/*',
+};
+
+function extractOneDriveResAuth(url) {
+  const text = String(url || '');
+  const resid = text.match(/[?&]resid=([^&]+)/i)?.[1]
+    || text.match(/resid%3D([^&%]+)/i)?.[1];
+  const authkey = text.match(/[?&]authkey=([^&]+)/i)?.[1]
+    || text.match(/authkey%3D([^&%]+)/i)?.[1];
+  if (!resid || !authkey) return null;
+  return {
+    resid: decodeURIComponent(resid),
+    authkey: decodeURIComponent(authkey),
+  };
+}
+
+function buildOneDriveUrlCandidates(shareUrl) {
+  const trimmed = String(shareUrl || '').trim();
+  const out = new Set();
+  if (!trimmed) return [];
+  out.add(trimmed);
+
+  const noHash = trimmed.split('#')[0];
+  out.add(noHash);
+
+  const ra = extractOneDriveResAuth(trimmed) || extractOneDriveResAuth(noHash);
+  if (ra) {
+    const q = `resid=${encodeURIComponent(ra.resid)}&authkey=${encodeURIComponent(ra.authkey)}`;
+    out.add(`https://onedrive.live.com/download.aspx?${q}`);
+    out.add(`https://onedrive.live.com/download?${q}`);
+    out.add(`https://onedrive.live.com/embed?${q}&em=2`);
+  }
+
+  if (/1drv\.ms/i.test(trimmed)) {
+    out.add(trimmed.replace(/[?#].*$/, ''));
+  }
+
+  return [...out];
+}
+
+async function resolveOneDriveShareUrl(shareUrl) {
+  const trimmed = String(shareUrl || '').trim();
+  if (!trimmed) return trimmed;
+  try {
+    const res = await fetch(trimmed, {
+      method: 'GET',
+      redirect: 'follow',
+      headers: FETCH_HEADERS,
+    });
+    if (res.url && res.url !== trimmed) return res.url;
+  } catch (e) {
+    console.warn('resolveOneDriveShareUrl', e?.message || e);
+  }
+  return trimmed;
+}
+
 function validateExcelBuffer(buf) {
   if (buf.length < 4 || buf[0] !== 0x50 || buf[1] !== 0x4b) {
     throw new functions.https.HttpsError(
@@ -25,14 +83,30 @@ function validateExcelBuffer(buf) {
 }
 
 async function fetchShareBuffer(url, headers = {}) {
-  const res = await fetch(url, { redirect: 'follow', headers });
+  const res = await fetch(url, {
+    redirect: 'follow',
+    headers: { ...FETCH_HEADERS, ...headers },
+  });
   if (!res.ok) return { ok: false, status: res.status };
   const buf = Buffer.from(await res.arrayBuffer());
   return { ok: true, buf };
 }
 
+async function tryDirectOneDriveDownload(url) {
+  const direct = await fetchShareBuffer(url);
+  if (direct.ok) {
+    try {
+      return validateExcelBuffer(direct.buf);
+    } catch (e) {
+      return { status: 415, detail: e.message };
+    }
+  }
+  return { status: direct.status || 404 };
+}
+
 async function downloadViaGraphShareId(shareId) {
   const graphHeaders = {
+    ...FETCH_HEADERS,
     Accept: 'application/json',
     Prefer: 'redeemSharingLink',
   };
@@ -73,16 +147,28 @@ async function downloadOneDriveShare(shareUrl) {
     throw new functions.https.HttpsError('invalid-argument', 'Invalid OneDrive link');
   }
 
-  const shareId = encodeOneDriveShareUrl(trimmed);
-  const result = await downloadViaGraphShareId(shareId);
-  if (typeof result === 'string') return result;
+  const resolved = await resolveOneDriveShareUrl(trimmed);
+  const candidates = buildOneDriveUrlCandidates(resolved);
+  if (!candidates.includes(trimmed)) candidates.unshift(trimmed);
 
-  const status = result?.status || 401;
+  let lastStatus = 401;
+  for (const candidate of candidates) {
+    const direct = await tryDirectOneDriveDownload(candidate);
+    if (typeof direct === 'string') return direct;
+    if (direct?.status) lastStatus = direct.status;
+
+    const shareId = encodeOneDriveShareUrl(candidate);
+    const result = await downloadViaGraphShareId(shareId);
+    if (typeof result === 'string') return result;
+    if (result?.status) lastStatus = result.status;
+  }
+
+  const status = lastStatus || 401;
   let detail;
   if (status === 404) {
     detail = 'File not found — check the link and sharing settings';
   } else if (status === 401 || status === 403) {
-    detail = 'OneDrive denied access — open sharing and choose "Anyone with the link can view" (not Edit-only or Sign-in required)';
+    detail = 'ONEDRIVE_ACCESS_DENIED';
   } else {
     detail = `OneDrive download failed (${status})`;
   }
@@ -264,3 +350,4 @@ Object.assign(exports, require('./push-notifications'));
 Object.assign(exports, require('./upload-attachment'));
 Object.assign(exports, require('./parent-auth'));
 Object.assign(exports, require('./parent-public-data'));
+Object.assign(exports, require('./exam-auth'));
