@@ -61,6 +61,11 @@ function inputSplitList(val){
   return String(val ?? '').split(/[،,;\/+\n]|\s+و\s+/).map(s => s.trim()).filter(Boolean);
 }
 
+// Subject names may contain "و" or "/", so only split on list separators.
+function inputSplitSubjects(val){
+  return String(val ?? '').split(/[،,؛;+\n]/).map(s => s.trim()).filter(Boolean);
+}
+
 // ── Subjects ──
 
 function inputNormName(s){
@@ -262,6 +267,7 @@ function inputReadWorkbook(input){
 function inputSheetRows(wb, spec, requiredFields){
   const out = [];
   (wb.SheetNames || []).forEach(name => {
+    if(/تعليمات|instructions/i.test(name)) return;
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: '' });
     for(let i = 0; i < Math.min(rows.length, 15); i++){
       const cells = (rows[i] || []).map(c => String(c || '').trim().toLowerCase());
@@ -309,19 +315,39 @@ function inputDownloadTemplate(kind){
       rows: [
         ['اسم المعلم', 'البريد الإلكتروني', 'المادة', 'الصف', 'الشعبة'],
         ['أحمد محمد علي', 'ahmed.ali@school.ae', 'الفيزياء', '9', 'عام 1، عام 2، عام 3'],
+        ['أحمد محمد علي', 'ahmed.ali@school.ae', 'الكيمياء', '9', 'عام 4، عام 5'],
         ['أحمد محمد علي', 'ahmed.ali@school.ae', 'الفيزياء', '10', 'متقدم 1'],
         ['سارة خالد', 'sara.k@school.ae', 'الرياضيات', '11', 'عام'],
-        ['سارة خالد', 'sara.k@school.ae', 'الرياضيات', '12', 'الكل'],
+        ['سارة خالد', 'sara.k@school.ae', 'الإحصاء', '12', 'متقدم 1، متقدم 2'],
+        ['منى سعيد', 'mona.s@school.ae', 'الأحياء، علوم البيئة', '10', 'عام 1، عام 2'],
+        ['خالد عمر', 'khaled.o@school.ae', 'اللغة العربية', '12', 'الكل'],
+      ],
+      help: [
+        ['تعليمات تعبئة نموذج التكليفات'],
+        [''],
+        ['1', 'كل سطر = معلّم واحد + مادة (أو أكثر) + صف واحد + شعبة أو أكثر.'],
+        ['2', 'المعلّم الذي يدرّس أكثر من مادة: اكتب سطراً لكل مادة مع شعبها (مثل أحمد: الفيزياء لشعب، والكيمياء لشعب أخرى).'],
+        ['3', 'المعلّم الذي يدرّس نفس المادة لأكثر من صف: اكتب سطراً لكل صف.'],
+        ['4', 'إن كان يدرّس مادتين لنفس الشعب، اكتبهما في خانة المادة مفصولتين بفاصلة (مثل: الأحياء، علوم البيئة).'],
+        ['5', 'الشعبة: اكتب «عام 1» أو «متقدم 2»، أو عدة شعب مفصولة بفاصلة، أو «عام» لكل الشعب العامة، أو «متقدم» لكل الشعب المتقدمة، أو «الكل» لكل شعب الصف.'],
+        ['6', 'البريد الإلكتروني ضروري — هو ما يسجّل به المعلّم ويُربط به حسابه. اكتب نفس البريد في كل أسطر المعلّم.'],
+        ['7', 'أسماء المواد تُكتب بالعربية أو الإنجليزية، ويتعرّف التطبيق على المواد الموجودة مسبقاً ويضيف الجديدة تلقائياً.'],
+        ['8', 'احذف الأسطر المثال قبل الرفع.'],
       ],
     },
   };
   const t = templates[kind];
   if(!t) return;
   const ws = XLSX.utils.aoa_to_sheet(t.rows);
-  ws['!cols'] = t.rows[0].map(() => ({ wch: 24 }));
+  ws['!cols'] = t.rows[0].map(() => ({ wch: 26 }));
   const wb = XLSX.utils.book_new();
-  wb.Workbook = { Views: [{ RTL: true }] };
-  XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+  wb.Workbook = { Views: [{ RTL: true }, { RTL: true }] };
+  XLSX.utils.book_append_sheet(wb, ws, kind === 'assignments' ? 'التكليفات' : 'Sheet1');
+  if(t.help){
+    const hs = XLSX.utils.aoa_to_sheet(t.help);
+    hs['!cols'] = [{ wch: 6 }, { wch: 110 }];
+    XLSX.utils.book_append_sheet(wb, hs, 'تعليمات');
+  }
   XLSX.writeFile(wb, t.file);
 }
 
@@ -461,12 +487,15 @@ function inputRenderTeachers(){
   }).sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email, 'ar'));
   tbody.innerHTML = rows.map(r => {
     const subjects = r.sum ? Object.keys(r.sum.subjects).map(inputSubjectLabel).join('، ') : '—';
-    const classes = r.sum ? Object.values(r.sum.subjects).map(inputFormatClasses).join(' | ') : '—';
+    const classes = r.sum
+      ? Object.entries(r.sum.subjects).map(([subj, gs]) =>
+          `<div><strong>${escapeHtml(inputSubjectLabel(subj))}:</strong> ${escapeHtml(inputFormatClasses(gs))}</div>`).join('')
+      : '—';
     return `<tr>
       <td style="font-weight:600">${escapeHtml(r.name || '—')}</td>
       <td style="font-size:12px;direction:ltr;text-align:left">${escapeHtml(r.email)}</td>
       <td>${escapeHtml(subjects)}</td>
-      <td style="font-size:12px">${escapeHtml(classes)}</td>
+      <td style="font-size:12px;line-height:1.7">${classes}</td>
       <td style="font-size:12px">${r.registered ? (isEn ? '✅ Registered' : '✅ مسجّل') : (isEn ? '⏳ Not registered yet' : '⏳ لم يسجّل بعد')}</td>
       <td>${r.registered ? '' : `<button type="button" class="action-btn danger" style="font-size:12px;padding:4px 10px" onclick="inputRemoveTeacher('${escapeHtml(r.key)}')">🗑️</button>`}</td>
     </tr>`;
@@ -677,12 +706,14 @@ async function inputImportAssignments(input){
       const { classes, warn } = inputExpandClasses(r.grade, r.section, r.track);
       if(warn) badClass.add(`${r.grade} ${r.section}`.trim());
       if(!classes.length) return;
-      const subject = inputEnsureSubject(r.subject, '', subjectUpdates);
-      classes.forEach(c => {
-        const a = { email: teacher.email, name: teacher.name || '', subject, grade: c.grade, section: c.section };
-        const id = inputAssignmentId(a);
-        if(!next[id]) added++;
-        next[id] = a;
+      inputSplitSubjects(r.subject).forEach(subjName => {
+        const subject = inputEnsureSubject(subjName, '', subjectUpdates);
+        classes.forEach(c => {
+          const a = { email: teacher.email, name: teacher.name || '', subject, grade: c.grade, section: c.section };
+          const id = inputAssignmentId(a);
+          if(!next[id]) added++;
+          next[id] = a;
+        });
       });
     });
     INPUT_DATA.assignments = next;
@@ -715,15 +746,19 @@ async function inputAddAssignmentManual(){
   if(!classes.length) return showToast(isEn ? '⚠️ No sections in this grade' : '⚠️ لا توجد شعب في هذا الصف');
   try{
     const updates = {};
-    const subject = inputEnsureSubject(subjectText, '', updates);
-    classes.forEach(c => {
-      const a = { email: teacher.email, name: teacher.name || '', subject, grade: c.grade, section: c.section };
-      INPUT_DATA.assignments[inputAssignmentId(a)] = a;
+    const subjects = inputSplitSubjects(subjectText);
+    subjects.forEach(subjName => {
+      const subject = inputEnsureSubject(subjName, '', updates);
+      classes.forEach(c => {
+        const a = { email: teacher.email, name: teacher.name || '', subject, grade: c.grade, section: c.section };
+        INPUT_DATA.assignments[inputAssignmentId(a)] = a;
+      });
     });
     await inputSaveAssignments(updates);
     const subjEl = document.getElementById('input-assign-subject');
     if(subjEl) subjEl.value = '';
-    showToast(isEn ? `✅ ${classes.length} assignment(s) added` : `✅ أُضيف ${classes.length} تكليف`);
+    const n = subjects.length * classes.length;
+    showToast(isEn ? `✅ ${n} assignment(s) added` : `✅ أُضيف ${n} تكليف`);
   }catch(e){
     console.error('inputAddAssignmentManual', e);
     showToast(isEn ? '❌ Save failed' : '❌ فشل الحفظ');
@@ -761,17 +796,23 @@ async function inputSaveAssignments(extraUpdates){
     const counts = Object.entries(s.subjects).map(([subj, gs]) =>
       [subj, Object.values(gs).reduce((n, set) => n + set.size, 0)]).sort((a, b) => b[1] - a[1]);
     const gradeMap = {};
-    Object.values(s.subjects).forEach(gs => Object.entries(gs).forEach(([g, set]) => {
-      gradeMap[g] = sortSectionKeys([...(gradeMap[g] || []), ...set]);
-    }));
+    const subjectMap = {};
+    Object.entries(s.subjects).forEach(([subj, gs]) => {
+      subjectMap[subj] = {};
+      Object.entries(gs).forEach(([g, set]) => {
+        subjectMap[subj][g] = sortSectionKeys([...set]);
+        gradeMap[g] = sortSectionKeys([...(gradeMap[g] || []), ...set]);
+      });
+    });
     const derived = {
       subject: counts[0][0],
       subjects: Object.fromEntries(counts.map(([k]) => [k, true])),
+      subjectMap,
       gradeMap,
       grades: sortGradeKeys(Object.keys(gradeMap)),
       sections: sortSectionKeys(Object.values(gradeMap).flat()),
     };
-    ['subject', 'subjects', 'gradeMap'].forEach(f => { updates[`teacherAllowlist/${key}/${f}`] = derived[f]; });
+    ['subject', 'subjects', 'subjectMap', 'gradeMap'].forEach(f => { updates[`teacherAllowlist/${key}/${f}`] = derived[f]; });
     updates[`teacherAllowlist/${key}/assignedAt`] = now;
     Object.assign(INPUT_DATA.allowlist[key], derived, { assignedAt: now });
     const teacher = INPUT_DATA.teachers?.[key];
@@ -783,7 +824,7 @@ async function inputSaveAssignments(extraUpdates){
 
   Object.entries(INPUT_DATA.allowlist).forEach(([key, t]) => {
     if(summaries[key] || !t?.assignedAt) return;
-    ['subject', 'subjects', 'gradeMap', 'assignedAt'].forEach(f => { updates[`teacherAllowlist/${key}/${f}`] = null; delete t[f]; });
+    ['subject', 'subjects', 'subjectMap', 'gradeMap', 'assignedAt'].forEach(f => { updates[`teacherAllowlist/${key}/${f}`] = null; delete t[f]; });
   });
 
   await db.ref().update(updates);

@@ -630,7 +630,8 @@ window.__splashDeadline = Date.now() + 5000;
       <div class="card input-help-card">
         <h4>🗂️ إدخال التكليفات (من يدرّس ماذا ولمن)</h4>
         <ol>
-          <li>كل سطر = <strong>معلّم + مادة + صف + شعبة</strong>. أعمدة النموذج: <strong>اسم المعلم | البريد الإلكتروني | المادة | الصف | الشعبة</strong>.</li>
+          <li>كل سطر = <strong>معلّم + مادة + صف + شعبة</strong>. أعمدة النموذج: <strong>اسم المعلم | البريد الإلكتروني | المادة | الصف | الشعبة</strong> (في النموذج ورقة «تعليمات» بأمثلة).</li>
+          <li><strong>معلّم يدرّس أكثر من مادة لشعب مختلفة:</strong> اكتب سطراً لكل مادة مع شعبها وبنفس البريد — مثل: الفيزياء لـ «عام 1، عام 2» وسطر آخر الكيمياء لـ «عام 4». وإن كانت مادتان لنفس الشعب اكتبهما في خانة واحدة: <strong>الأحياء، علوم البيئة</strong>.</li>
           <li>في عمود الشعبة يمكنك كتابة أكثر من شعبة مفصولة بفاصلة (مثل: <strong>عام 1، عام 2</strong>)، أو <strong>عام</strong> لكل شعب المسار العام، أو <strong>الكل</strong> لكل شعب الصف.</li>
           <li>عند الحفظ يقوم التطبيق تلقائياً بـ: إضافة المعلمين للقائمة المعتمدة، إضافة المواد لكل صف ومسار، وربط كل معلّم بمواده وصفوفه (يظهر ذلك في حسابه دون أن يختارها بنفسه).</li>
           <li>ارفع قائمة الطلاب أولاً حتى يتعرّف التطبيق على الشعب.</li>
@@ -646,7 +647,7 @@ window.__splashDeadline = Date.now() + 5000;
         <div class="input-manual-row">
           <input type="text" id="input-assign-teacher" list="input-assign-teacher-list" placeholder="بريد المعلم أو اسمه">
           <datalist id="input-assign-teacher-list"></datalist>
-          <input type="text" id="input-assign-subject" list="input-assign-subject-list" placeholder="المادة">
+          <input type="text" id="input-assign-subject" list="input-assign-subject-list" placeholder="المادة (أو أكثر مفصولة بفاصلة)">
           <datalist id="input-assign-subject-list"></datalist>
           <select id="input-assign-grade" onchange="inputFillAssignSections()"></select>
           <select id="input-assign-section"></select>
@@ -1512,8 +1513,8 @@ window.__splashDeadline = Date.now() + 5000;
 <script src="js/attachments.js?v=7"></script>
 <script src="js/firebase-init.js?v=37"></script>
 <script src="js/msg-delete.js?v=5"></script>
-<script src="js/app.js?v=81"></script>
-<script src="js/admin-input.js?v=1"></script>
+<script src="js/app.js?v=82"></script>
+<script src="js/admin-input.js?v=2"></script>
 <script src="js/exam-platform.js?v=2"></script>
 </body>
 </html>

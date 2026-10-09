@@ -2190,10 +2190,40 @@ function buildPublicTeacherProfile(teacher){
   return {
     name: teacher.name || '',
     subject: teacher.subject || '',
+    subjects: teacher.subjects || null,
+    subjectMap: teacher.subjectMap || null,
     grades: teacher.grades || [],
     sections: teacher.sections || [],
     gradeMap: teacher.gradeMap || null,
   };
+}
+
+function teacherSubjectKeys(teacher){
+  const keys = Object.keys(teacher?.subjectMap || teacher?.subjects || {});
+  return keys.length ? keys : (teacher?.subject ? [teacher.subject] : []);
+}
+
+function teacherSubjectsLabel(teacher, isEn, keys){
+  return (keys || teacherSubjectKeys(teacher)).map(k=>{
+    const subj = SUBJECTS[k];
+    return subj ? ((isEn ? subj.en : subj.ar) || subj.ar) : k;
+  }).filter(Boolean).join('، ');
+}
+
+// Subjects a teacher teaches in one class (per-subject map from admin assignments when available).
+function teacherSubjectsForClass(teacher, grade, section){
+  if(teacher?.subjectMap){
+    return Object.keys(teacher.subjectMap).filter(k=>{
+      const secs = teacher.subjectMap[k]?.[grade];
+      return Array.isArray(secs) && (!section || secs.includes(section));
+    });
+  }
+  if(!teacher?.subject || !(teacher.grades||[]).includes(grade)) return [];
+  if(section){
+    if(teacher.gradeMap?.[grade]){ if(!teacher.gradeMap[grade].includes(section)) return []; }
+    else if(teacher.sections && !teacher.sections.includes(section)) return [];
+  }
+  return [teacher.subject];
 }
 
 function syncPublicTeacher(key, teacher){
@@ -2716,6 +2746,7 @@ async function submitTeacherRegAsync(){
       if(assigned){
         teacherData.subject = assigned.subject;
         if(assigned.subjects) teacherData.subjects = assigned.subjects;
+        if(assigned.subjectMap) teacherData.subjectMap = assigned.subjectMap;
         teacherData.gradeMap = assigned.gradeMap;
         teacherData.grades = sortGradeKeys(Object.keys(assigned.gradeMap));
         teacherData.sections = sortSectionKeys(Object.values(assigned.gradeMap).flat());
@@ -2928,8 +2959,7 @@ function formatTeacherScopeSummary(scope, isEn){
 function applyTeacherProfile(){
   if(!CURRENT_TEACHER) return;
   const isEn = currentLang==='en';
-  const subj = SUBJECTS[CURRENT_TEACHER.subject];
-  const subjLabel = subj ? (isEn ? subj.en : subj.ar) : (CURRENT_TEACHER.subject || '');
+  const subjLabel = teacherSubjectsLabel(CURRENT_TEACHER, isEn);
   const ts = document.getElementById('teacher-school');
   if(ts){
     ts.textContent = isEn
@@ -4501,7 +4531,13 @@ function adminBuildRegisteredCoverage(teachers){
   (teachers||[]).forEach(t=>{
     if(!t?.subject || t.role === 'admin') return;
     const gm = t.gradeMap || {};
-    if(Object.keys(gm).length){
+    if(t.subjectMap){
+      Object.entries(t.subjectMap).forEach(([subj, grades])=>{
+        Object.entries(grades||{}).forEach(([grade, secs])=>{
+          (secs||[]).forEach(sec=> covered.add(`${grade}|${sec}|${subj}`));
+        });
+      });
+    }else if(Object.keys(gm).length){
       Object.keys(gm).forEach(grade=>{
         (gm[grade]||[]).forEach(sec=> covered.add(`${grade}|${sec}|${t.subject}`));
       });
@@ -7360,22 +7396,15 @@ async function loadParentSubjectTabs(cls, studentName, mid){
       const teachersSnap = await db.ref('publicTeachers').once('value');
       if(teachersSnap.exists()){
         Object.entries(teachersSnap.val()).forEach(([key, teacher])=>{
-          if(!teacher.grades) return;
-          if(!teacher.subject || teacher.role === 'admin') return;
-          // Check if teacher teaches this grade
-          if(!teacher.grades.includes(grade)) return;
-          // Check if teacher teaches this section (if gradeMap exists)
-          if(teacher.gradeMap && teacher.gradeMap[grade]){
-            if(section && !teacher.gradeMap[grade].includes(section)) return;
-          } else if(teacher.sections && section){
-            if(!teacher.sections.includes(section)) return;
-          }
-          const subj = SUBJECTS[teacher.subject];
+          if(!teacher || teacher.role === 'admin') return;
+          const subjects = teacherSubjectsForClass(teacher, grade, section);
+          if(!subjects.length) return;
           teachersList.push({
             key,
             name: teacher.name || '',
-            subject: teacher.subject || '',
-            subjLabel: subj ? (isEn?subj.en:subj.ar) : (teacher.subject||''),
+            subject: subjects.includes(teacher.subject) ? teacher.subject : subjects[0],
+            subjects,
+            subjLabel: teacherSubjectsLabel(teacher, isEn, subjects),
           });
         });
       }
@@ -9887,8 +9916,7 @@ function populateSettingsAccount(){
   }
   wrap.style.display = '';
   const isEn = currentLang === 'en';
-  const subj = SUBJECTS[CURRENT_TEACHER.subject];
-  const subjLabel = subj ? (isEn ? subj.en : subj.ar) : (CURRENT_TEACHER.subject || '—');
+  const subjLabel = teacherSubjectsLabel(CURRENT_TEACHER, isEn) || '—';
   const scope = getTeacherScope();
   const scopeText = formatTeacherScopeSummary(scope, isEn) || '—';
   const lines = [
