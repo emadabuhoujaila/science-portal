@@ -55,7 +55,7 @@ window.__splashDeadline = Date.now() + 5000;
   Promise.all(p).then(done).catch(done);
 })();
 </script>
-<link rel="stylesheet" href="css/app.css?v=79">
+<link rel="stylesheet" href="css/app.css?v=80">
 <link rel="stylesheet" href="css/uae-theme.css?v=3">
 </head>
 <body>
@@ -133,6 +133,7 @@ window.__splashDeadline = Date.now() + 5000;
         </div>
         <div class="form-group">
           <label id="reg-lbl-subject">المادة الدراسية</label>
+          <p id="reg-assigned-hint" class="parent-login-hint" style="margin:4px 0 8px">إن كان المسؤول قد أدخل تكليفاتك فستُضاف موادك وصفوفك تلقائياً ويمكنك ترك المادة والصفوف فارغة.</p>
           <select id="reg-subject" style="width:100%;padding:11px 14px;border:1.5px solid var(--grey-5);border-radius:10px;font-family:inherit;font-size:14px;outline:none">
             <option value="" id="reg-subj-ph">— اختر المادة —</option>
             <option value="math">الرياضيات</option>
@@ -390,13 +391,34 @@ window.__splashDeadline = Date.now() + 5000;
   <div class="main-content">
     <div id="admin-wa-profile-host" class="card" style="margin-bottom:16px;padding:16px 18px;display:none !important"></div>
     <div class="admin-tabs-wrap" style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
-      <button type="button" class="nav-tab admin-main-tab active" id="admin-tab-btn-upload" onclick="showAdminTab('upload',this)">📋 رفع قوائم الطلبة</button>
+      <button type="button" class="nav-tab admin-main-tab active" id="admin-tab-btn-upload" onclick="showAdminTab('upload',this)">📥 الإدخال</button>
       <button type="button" class="nav-tab admin-main-tab" id="admin-tab-btn-monitor" onclick="showAdminTab('monitor',this)">📊 المتابعة</button>
       <button type="button" class="nav-tab admin-main-tab" id="admin-tab-btn-complaints" onclick="showAdminTab('complaints',this)">📢 صندوق الشكاوى</button>
       <button type="button" class="nav-tab admin-main-tab" id="admin-tab-btn-messages" onclick="showAdminTab('messages',this)">💬 صندوق الرسائل</button>
     </div>
 
     <div id="admin-tab-upload" class="admin-tab-panel">
+    <div class="card input-guide">
+      <h3>📥 الإدخال — ابدأ من هنا</h3>
+      <p>أدخل بيانات المدرسة بالترتيب التالي. كل قسم يقبل <strong>رفع قائمة Excel</strong> أو <strong>الإدخال اليدوي</strong>، ولكل قائمة نموذج جاهز للتنزيل.</p>
+      <div class="input-steps">
+        <button type="button" class="input-step active" data-panel="students" onclick="showInputPanel('students',this)"><b>1</b> 👥 الطلاب<small id="input-step-count-students"></small></button>
+        <button type="button" class="input-step" data-panel="teachers" onclick="showInputPanel('teachers',this)"><b>2</b> 👩‍🏫 المعلمون<small id="input-step-count-teachers"></small></button>
+        <button type="button" class="input-step" data-panel="subjects" onclick="showInputPanel('subjects',this)"><b>3</b> 📚 المواد<small id="input-step-count-subjects"></small></button>
+        <button type="button" class="input-step" data-panel="assignments" onclick="showInputPanel('assignments',this)"><b>4</b> 🗂️ التكليفات<small id="input-step-count-assignments"></small></button>
+      </div>
+      <p class="input-guide-tip">💡 الطريقة الأسرع: ارفع <strong>الطلاب</strong> ثم <strong>التكليفات</strong> فقط — يستخرج التطبيق منها المعلمين والمواد تلقائياً.</p>
+    </div>
+
+    <div id="input-panel-students" class="input-panel">
+    <div class="card input-help-card">
+      <h4>👥 إدخال الطلاب</h4>
+      <ol>
+        <li><strong>بالقائمة:</strong> ارفع ملف أسماء المدرسة كما يصدر من النظام — يقرأ التطبيق الصفوف والشعب من عناوين الجداول.</li>
+        <li><strong>يدوياً:</strong> من بطاقة «إدارة الطلاب يدوياً» أضف طالباً أو انقله أو احذفه.</li>
+        <li>رقم الطالب هو ما يدخل به ولي الأمر.</li>
+      </ol>
+    </div>
     <!-- Upload Card -->
     <div class="card" style="margin-bottom:20px">
       <div class="card-header">
@@ -538,6 +560,105 @@ window.__splashDeadline = Date.now() + 5000;
             <tr><td colspan="8" class="empty-state"><div class="ico">👥</div><p id="admin-empty-txt">لا يوجد طلاب بعد — ارفع ملف Excel</p></td></tr>
           </tbody>
         </table>
+      </div>
+    </div>
+    </div><!-- /input-panel-students -->
+
+    <!-- ═══ المعلمون ═══ -->
+    <div id="input-panel-teachers" class="input-panel" style="display:none">
+      <div class="card input-help-card">
+        <h4>👩‍🏫 إدخال المعلمين</h4>
+        <ol>
+          <li>المعلّم الذي يُضاف هنا يصبح <strong>معتمداً للتسجيل</strong> ببريده الإلكتروني.</li>
+          <li><strong>بالقائمة:</strong> نزّل النموذج، املأ عمودي <strong>اسم المعلم</strong> و<strong>البريد الإلكتروني</strong> (والهاتف اختياري)، ثم ارفعه.</li>
+          <li><strong>يدوياً:</strong> اكتب الاسم والبريد واضغط «إضافة».</li>
+          <li>لا تحتاج هذه الخطوة إن أدخلت <strong>التكليفات</strong> وفيها بريد كل معلّم — سيُضاف المعلمون تلقائياً.</li>
+        </ol>
+      </div>
+      <div class="card input-card">
+        <div class="input-actions">
+          <button type="button" class="btn-primary" onclick="document.getElementById('input-teachers-file').click()">📥 رفع قائمة المعلمين (Excel)</button>
+          <button type="button" class="btn-icon input-template-btn" onclick="inputDownloadTemplate('teachers')">⬇️ تنزيل النموذج</button>
+          <input type="file" id="input-teachers-file" accept=".xlsx,.xls" style="display:none" onchange="inputImportTeachers(this)">
+        </div>
+        <div class="input-manual-row">
+          <input type="text" id="input-teacher-name" placeholder="اسم المعلم">
+          <input type="email" id="input-teacher-email" placeholder="teacher@school.ae" dir="ltr">
+          <button type="button" class="btn-primary" onclick="inputAddTeacherManual()">➕ إضافة</button>
+        </div>
+        <div id="input-teachers-status" class="input-status"></div>
+        <div class="table-wrap admin-table-wrap">
+          <table class="admin-table">
+            <thead><tr><th>المعلم</th><th>البريد</th><th>المواد</th><th>الصفوف والشعب</th><th>الحالة</th><th></th></tr></thead>
+            <tbody id="input-teachers-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ المواد ═══ -->
+    <div id="input-panel-subjects" class="input-panel" style="display:none">
+      <div class="card input-help-card">
+        <h4>📚 إدخال المواد لكل صف ومسار</h4>
+        <ol>
+          <li>حدّد المواد التي تُدرَّس في كل <strong>صف</strong> وكل <strong>مسار</strong> (عام / متقدم / نخبة).</li>
+          <li><strong>بالقائمة:</strong> أعمدة النموذج: <strong>المادة | Subject | الصف | المسار</strong>. اكتب في المسار «عام» أو «متقدم» أو «الكل».</li>
+          <li><strong>يدوياً:</strong> اختر الصف والمسار واكتب اسم المادة ثم «إضافة». لحذف مادة من صف اضغط ✕ بجانبها.</li>
+          <li>تُستخدم هذه القائمة في «المتابعة» لمعرفة المواد التي لم يُكلَّف بها معلّم بعد.</li>
+        </ol>
+      </div>
+      <div class="card input-card">
+        <div class="input-actions">
+          <button type="button" class="btn-primary" onclick="document.getElementById('input-subjects-file').click()">📥 رفع قائمة المواد (Excel)</button>
+          <button type="button" class="btn-icon input-template-btn" onclick="inputDownloadTemplate('subjects')">⬇️ تنزيل النموذج</button>
+          <input type="file" id="input-subjects-file" accept=".xlsx,.xls" style="display:none" onchange="inputImportSubjects(this)">
+        </div>
+        <div class="input-manual-row">
+          <select id="input-subject-grade"></select>
+          <select id="input-subject-track"></select>
+          <input type="text" id="input-subject-ar" placeholder="اسم المادة بالعربية">
+          <input type="text" id="input-subject-en" placeholder="English name (optional)" dir="ltr">
+          <button type="button" class="btn-primary" onclick="inputAddSubjectManual()">➕ إضافة</button>
+        </div>
+        <div id="input-subjects-status" class="input-status"></div>
+        <div id="input-curriculum-view" class="input-matrix"></div>
+      </div>
+    </div>
+
+    <!-- ═══ التكليفات ═══ -->
+    <div id="input-panel-assignments" class="input-panel" style="display:none">
+      <div class="card input-help-card">
+        <h4>🗂️ إدخال التكليفات (من يدرّس ماذا ولمن)</h4>
+        <ol>
+          <li>كل سطر = <strong>معلّم + مادة + صف + شعبة</strong>. أعمدة النموذج: <strong>اسم المعلم | البريد الإلكتروني | المادة | الصف | الشعبة</strong>.</li>
+          <li>في عمود الشعبة يمكنك كتابة أكثر من شعبة مفصولة بفاصلة (مثل: <strong>عام 1، عام 2</strong>)، أو <strong>عام</strong> لكل شعب المسار العام، أو <strong>الكل</strong> لكل شعب الصف.</li>
+          <li>عند الحفظ يقوم التطبيق تلقائياً بـ: إضافة المعلمين للقائمة المعتمدة، إضافة المواد لكل صف ومسار، وربط كل معلّم بمواده وصفوفه (يظهر ذلك في حسابه دون أن يختارها بنفسه).</li>
+          <li>ارفع قائمة الطلاب أولاً حتى يتعرّف التطبيق على الشعب.</li>
+        </ol>
+      </div>
+      <div class="card input-card">
+        <div class="input-actions">
+          <button type="button" class="btn-primary" onclick="document.getElementById('input-assign-file').click()">📥 رفع قائمة التكليفات (Excel)</button>
+          <button type="button" class="btn-icon input-template-btn" onclick="inputDownloadTemplate('assignments')">⬇️ تنزيل النموذج</button>
+          <input type="file" id="input-assign-file" accept=".xlsx,.xls" style="display:none" onchange="inputImportAssignments(this)">
+          <label class="input-replace-opt"><input type="checkbox" id="input-assign-replace"> استبدال كل التكليفات الحالية بالملف</label>
+        </div>
+        <div class="input-manual-row">
+          <input type="text" id="input-assign-teacher" list="input-assign-teacher-list" placeholder="بريد المعلم أو اسمه">
+          <datalist id="input-assign-teacher-list"></datalist>
+          <input type="text" id="input-assign-subject" list="input-assign-subject-list" placeholder="المادة">
+          <datalist id="input-assign-subject-list"></datalist>
+          <select id="input-assign-grade" onchange="inputFillAssignSections()"></select>
+          <select id="input-assign-section"></select>
+          <button type="button" class="btn-primary" onclick="inputAddAssignmentManual()">➕ إضافة</button>
+        </div>
+        <div id="input-assign-status" class="input-status"></div>
+        <div class="input-view-switch">
+          <button type="button" class="nav-tab active" data-view="list" onclick="inputSetAssignView('list',this)">📋 كل التكليفات</button>
+          <button type="button" class="nav-tab" data-view="teachers" onclick="inputSetAssignView('teachers',this)">👩‍🏫 حسب المعلم</button>
+          <button type="button" class="nav-tab" data-view="classes" onclick="inputSetAssignView('classes',this)">🏫 حسب الصف والمسار</button>
+        </div>
+        <div id="input-assign-view"></div>
       </div>
     </div>
     </div>
@@ -1391,7 +1512,8 @@ window.__splashDeadline = Date.now() + 5000;
 <script src="js/attachments.js?v=7"></script>
 <script src="js/firebase-init.js?v=37"></script>
 <script src="js/msg-delete.js?v=5"></script>
-<script src="js/app.js?v=80"></script>
+<script src="js/app.js?v=81"></script>
+<script src="js/admin-input.js?v=1"></script>
 <script src="js/exam-platform.js?v=2"></script>
 </body>
 </html>

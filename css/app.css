@@ -646,6 +646,32 @@ tbody td{padding:10px 12px;text-align:center;color:var(--grey-2)}
 #screen-admin .admin-stat-missing{background:#fff8e1;border-color:#ffcc80}
 #screen-admin .admin-stat-missing .admin-stat-num{color:#e65100}
 #screen-admin .admin-help-text{font-size:13px;color:var(--grey-3);margin:0 0 14px;line-height:1.6}
+#screen-admin .input-guide{padding:18px 20px;margin-bottom:16px;border-right:4px solid var(--teal-mid)}
+#screen-admin .input-guide h3{margin:0 0 6px;color:var(--teal-dark);font-size:17px}
+#screen-admin .input-guide p{margin:0 0 12px;font-size:13px;color:var(--grey-2);line-height:1.7}
+#screen-admin .input-guide .input-guide-tip{margin:12px 0 0;background:var(--gold-light);color:var(--grey-1, #333);padding:8px 12px;border-radius:8px}
+#screen-admin .input-steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+#screen-admin .input-step{display:flex;align-items:center;gap:8px;padding:12px 14px;border:1.5px solid var(--grey-5);border-radius:12px;background:var(--white);font-family:inherit;font-size:14px;font-weight:600;color:var(--grey-2);cursor:pointer;text-align:right}
+#screen-admin .input-step b{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--grey-5);color:var(--teal-dark);font-size:12px;flex-shrink:0}
+#screen-admin .input-step small{margin-inline-start:auto;font-size:11px;font-weight:500;color:var(--grey-3)}
+#screen-admin .input-step.active{border-color:var(--teal-mid);background:var(--teal-pale);color:var(--teal-dark)}
+#screen-admin .input-step.active b{background:var(--teal-mid);color:#fff}
+#screen-admin .input-help-card{padding:14px 18px;margin-bottom:14px;background:var(--teal-pale)}
+#screen-admin .input-help-card h4{margin:0 0 8px;color:var(--teal-dark);font-size:15px}
+#screen-admin .input-help-card ol{margin:0;padding-inline-start:20px;font-size:13px;line-height:1.9;color:var(--grey-2)}
+#screen-admin .input-card{padding:16px 18px;margin-bottom:20px}
+#screen-admin .input-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+#screen-admin .input-template-btn{background:var(--gold-light);color:var(--gold)}
+#screen-admin .input-replace-opt{font-size:12px;color:var(--grey-2);display:flex;align-items:center;gap:6px;cursor:pointer}
+#screen-admin .input-manual-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:12px;padding:12px;border:1.5px dashed var(--grey-5);border-radius:10px}
+#screen-admin .input-manual-row input,#screen-admin .input-manual-row select{width:100%;padding:9px 10px;border:1.5px solid var(--grey-5);border-radius:8px;font-family:inherit;font-size:13px;box-sizing:border-box}
+#screen-admin .input-status{font-size:13px;color:var(--teal-mid);margin-bottom:10px;white-space:pre-line}
+#screen-admin .input-status.warn{color:#e65100}
+#screen-admin .input-matrix{display:flex;flex-direction:column;gap:12px}
+#screen-admin .input-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;margin:3px;border-radius:16px;font-size:12px;font-weight:600;background:var(--white);border:1px solid var(--grey-5);color:var(--teal-dark)}
+#screen-admin .input-chip button{border:none;background:none;color:var(--red-soft);cursor:pointer;font-size:13px;padding:0 2px}
+#screen-admin .input-chip.missing{background:#fff3e0;color:#e65100;border-color:#ffcc80}
+#screen-admin .input-view-switch{display:flex;gap:4px;flex-wrap:wrap;border-bottom:2px solid var(--grey-5);margin:6px 0 12px}
 #screen-admin .admin-missing-wrap{display:flex;flex-direction:column;gap:14px}
 #screen-admin .admin-grade-block{background:var(--teal-pale);border:1px solid var(--grey-5);border-radius:12px;padding:14px 16px;border-right:4px solid var(--gold)}
 #screen-admin .admin-grade-title{font-size:15px;font-weight:800;color:var(--teal-dark);margin:0 0 10px;display:flex;align-items:center;gap:8px}

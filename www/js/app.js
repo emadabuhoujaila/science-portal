@@ -2346,6 +2346,10 @@ function refreshAdminSecFilter(){
   adminSyncSchoolStructure();
   adminRefreshClassSelects();
   adminRenderRosterSummary();
+  if(typeof inputRenderCounts === 'function'){
+    inputRenderCounts();
+    inputFillSelects();
+  }
   const sel = document.getElementById('admin-sec-filter');
   if(!sel) return;
   const isEn = currentLang==='en';
@@ -2637,16 +2641,20 @@ async function submitTeacherRegAsync(){
 
   if(!name)                         return showRegErr(isEn?'Enter your full name':'أدخل اسمك الكامل');
   if(!email||!email.includes('@'))  return showRegErr(isEn?'Enter a valid email':'أدخل بريداً إلكترونياً صحيحاً');
-  if(!subject)                      return showRegErr(isEn?'Select a subject':'اختر المادة الدراسية');
   if(pw.length<8)                   return showRegErr(isEn?'Password must be 8+ characters':'كلمة المرور 8 أحرف على الأقل');
   if(pw!==pw2)                      return showRegErr(isEn?'Passwords do not match':'كلمة المرور غير متطابقة');
   if(!waPhone)                      return showRegErr(isEn?'Enter a valid WhatsApp number':'أدخل رقم واتساب صحيحاً');
   if(!waOptIn)                      return showRegErr(isEn?'Enable WhatsApp to receive messages':'فعّل واتساب لتلقي الرسائل');
-  if(!checkedGrades.length)         return showRegErr(isEn?'Select at least one grade':'اختر صفاً واحداً على الأقل');
 
-  // Check each selected grade has at least one section
+  // Subject/grades may come from admin assignments; otherwise the form must be complete.
   const gradeWithNoSec = checkedGrades.find(g=>!gradeMap[g]||!gradeMap[g].length);
-  if(gradeWithNoSec) return showRegErr(isEn?`Select at least one section for Grade ${gradeWithNoSec}`:`اختر شعبة واحدة على الأقل للصف ${gradeWithNoSec}`);
+  const manualScopeError = !subject
+    ? (isEn?'Select a subject':'اختر المادة الدراسية')
+    : !checkedGrades.length
+      ? (isEn?'Select at least one grade':'اختر صفاً واحداً على الأقل')
+      : gradeWithNoSec
+        ? (isEn?`Select at least one section for Grade ${gradeWithNoSec}`:`اختر شعبة واحدة على الأقل للصف ${gradeWithNoSec}`)
+        : '';
 
   const btn=document.getElementById('reg-submit-btn');
   btn.disabled=true;
@@ -2699,6 +2707,24 @@ async function submitTeacherRegAsync(){
       btn.textContent=isEn?'⏳ Creating...':'⏳ جارٍ الإنشاء...';
       const cred = await auth.createUserWithEmailAndPassword(email, pw);
       teacherData.uid = cred.user.uid;
+      let assigned = null;
+      try{
+        const allowSnap = await db.ref('teacherAllowlist/' + key).once('value');
+        const entry = allowSnap.val();
+        if(entry?.subject && entry?.gradeMap && Object.keys(entry.gradeMap).length) assigned = entry;
+      }catch(e){ console.warn('read assignments', e); }
+      if(assigned){
+        teacherData.subject = assigned.subject;
+        if(assigned.subjects) teacherData.subjects = assigned.subjects;
+        teacherData.gradeMap = assigned.gradeMap;
+        teacherData.grades = sortGradeKeys(Object.keys(assigned.gradeMap));
+        teacherData.sections = sortSectionKeys(Object.values(assigned.gradeMap).flat());
+      }else if(manualScopeError){
+        try{ await cred.user.delete(); }catch(_){}
+        btn.disabled=false;
+        btn.textContent=isEn?'✅ Create Account':'✅ إنشاء الحساب';
+        return showRegErr(manualScopeError);
+      }
       const updates = {};
       updates['teachers/' + key] = teacherData;
       updates['teacherLookup/' + cred.user.uid] = { key, role: 'teacher' };
@@ -3574,6 +3600,7 @@ function _enterAdminDashboard(){
   if(as){ as.classList.add('active'); as.style.display='block'; as.style.minHeight='100vh'; }
   if(window.MsgDelete?.syncFromServer) window.MsgDelete.syncFromServer();
   adminLoadStudents();
+  if(typeof inputLoadAll === 'function') inputLoadAll();
   startAdminComplaintsListener();
   startAdminMessagesListener();
   loadPortalPublicConfig().catch(()=>{});
@@ -3619,6 +3646,7 @@ function showAdminTab(tab, el){
   if(wasOnMessages && tab !== 'messages'){
     _markAdminInboxSeen();
   }
+  if(tab==='upload' && typeof inputLoadAll === 'function') inputLoadAll();
   if(tab==='monitor') adminLoadMonitoring();
   if(tab==='complaints') renderAdminComplaints();
   if(tab==='messages'){
@@ -4435,8 +4463,8 @@ async function adminSendMessage(viaWhatsApp){
 
 function formatAdminGrades(teacher, isEn){
   const gm = teacher.gradeMap || {};
-  const parts = Object.keys(gm).sort().map(g=>{
-    const secs = (gm[g]||[]).join(', ');
+  const parts = sortGradeKeys(Object.keys(gm)).map(g=>{
+    const secs = (gm[g]||[]).map(s=>formatSectionLabel(s, isEn)).join(', ');
     return isEn ? `G${g} (${secs})` : `ص${g} (${secs})`;
   });
   return parts.join(' · ') || (teacher.grades||[]).join(', ') || '—';
@@ -4483,6 +4511,9 @@ function adminBuildRegisteredCoverage(teachers){
       });
     }
   });
+  Object.values(window.INPUT_DATA?.assignments || {}).forEach(a=>{
+    if(a?.subject) covered.add(`${a.grade}|${a.section}|${a.subject}`);
+  });
   return covered;
 }
 
@@ -4497,8 +4528,12 @@ function adminComputeMissingCoverage(teachers){
     ? gradeSections
     : (usedFallback = true, getSchoolGrades().flatMap(grade => getSchoolSections(grade).map(section => ({ grade, section, count: 0 }))));
 
+  const hasCurriculum = Object.keys(window.INPUT_DATA?.curriculum || {}).length > 0;
   slots.forEach(({ grade, section })=>{
-    subjectKeys.forEach(sk=>{
+    const classSubjects = hasCurriculum && typeof inputSubjectsForClass === 'function'
+      ? inputSubjectsForClass(grade, section)
+      : subjectKeys;
+    classSubjects.forEach(sk=>{
       if(!covered.has(`${grade}|${section}|${sk}`)){
         missing.push({ grade, section, subject: sk });
       }
@@ -4520,7 +4555,7 @@ function adminRenderMissingCoverage(teachers, isEn){
     desc.textContent = usedFallback
       ? (isEn
         ? 'No student lists uploaded yet — showing all grades/sections. Upload lists in the first tab for accurate coverage.'
-        : 'لم تُرفَع قوائم طلبة بعد — يُعرض كل الصفوف والشعب. ارفع القوائم من تبويب «رفع قوائم الطلبة» لدقة أعلى.')
+        : 'لم تُرفَع قوائم طلبة بعد — يُعرض كل الصفوف والشعب. ارفع القوائم من تبويب «الإدخال» لدقة أعلى.')
       : (isEn
         ? `Based on uploaded student lists (${gradeSections.length} class sections). Each chip is a subject with no registered teacher yet.`
         : `وفق قوائم الطلبة المرفوعة (${gradeSections.length} شعبة). كل بطاقة = مادة لم يُسجّل معلم لها بعد.`);
@@ -4544,7 +4579,7 @@ function adminRenderMissingCoverage(teachers, isEn){
         const label = formatAdminSubject(sk, isEn);
         return `<span class="admin-missing-chip">📚 ${escapeHtml(label)}</span>`;
       }).join('');
-      const secLabel = isEn ? `Sec ${sec}` : `شعبة ${sec}`;
+      const secLabel = escapeHtml(formatSectionLabel(sec, isEn));
       return `<div class="admin-sec-row"><div class="admin-sec-label">${secLabel}</div><div class="admin-missing-chips">${chips}</div></div>`;
     }).join('');
     const gradeLabel = isEn ? `Grade ${grade}` : `الصف ${grade}`;
@@ -4641,8 +4676,11 @@ function adminRenderAllowlistTable(allowlist, teachersByKey, isEn){
       ? (isEn ? '✅ Registered' : '✅ مسجّل')
       : (isEn ? '⏳ Pending' : '⏳ بانتظار التسجيل');
     const displayName = teacher?.name || entry.name || '—';
-    const subject = teacher ? formatAdminSubject(teacher.subject, isEn) : '—';
-    const grades = teacher ? formatAdminGrades(teacher, isEn) : '—';
+    const profile = teacher || (entry.gradeMap ? entry : null);
+    const subject = profile?.subjects
+      ? Object.keys(profile.subjects).map(s=>formatAdminSubject(s, isEn)).join('، ')
+      : (profile ? formatAdminSubject(profile.subject, isEn) : '—');
+    const grades = profile ? formatAdminGrades(profile, isEn) : '—';
     const regDate = teacher ? formatAdminDate(teacher.createdAt, isEn) : '—';
     const actionBtn = registered
       ? `<div style="display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-start">
@@ -4724,6 +4762,7 @@ async function adminLoadMonitoring(){
   bindAdminAllowlistButtons();
   bindAdminParentDeleteButtons();
   await syncParentQuickLoginFromRegistry();
+  if(typeof inputLoadAll === 'function' && !window.INPUT_DATA?.loaded) await inputLoadAll();
 
   if(typeof db==='undefined'){
     allowlistBody.innerHTML = `<tr><td colspan="7" class="empty-state"><p>${isEn?'Firebase not connected':'Firebase غير متصل'}</p></td></tr>`;
@@ -5809,7 +5848,7 @@ const TRANSLATIONS = {
     adminSettingsPwTooShort: '⚠️ كلمة المرور 8 أحرف على الأقل',
     adminSettingsPwMismatch: '⚠️ كلمتا المرور غير متطابقتين',
     adminSettingsNeedLogin: '⚠️ سجّل الدخول مجدداً ثم حاول',
-    adminTabUpload: '📋 رفع قوائم الطلبة',
+    adminTabUpload: '📥 الإدخال',
     adminTabMonitor: '📊 المتابعة',
     adminUploadTitle: '📤 رفع قائمة الطلاب',
     adminStudentsTitle: '👥 الطلاب المحملون',
@@ -6237,7 +6276,7 @@ const TRANSLATIONS = {
     adminSettingsPwTooShort: '⚠️ Password must be 8+ characters',
     adminSettingsPwMismatch: '⚠️ Passwords do not match',
     adminSettingsNeedLogin: '⚠️ Sign in again and retry',
-    adminTabUpload: '📋 Upload Student Lists',
+    adminTabUpload: '📥 Data Input',
     adminTabMonitor: '📊 Monitoring',
     adminUploadTitle: '📤 Upload Student List',
     adminStudentsTitle: '👥 Loaded Students',
