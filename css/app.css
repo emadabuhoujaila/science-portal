@@ -131,8 +131,8 @@ body{
 .login-logo{width:72px;height:72px;background:var(--teal-light);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 20px;font-size:32px}
 .login-card h1{font-size:22px;font-weight:700;color:var(--teal-dark);margin-bottom:6px}
 .login-card>p{font-size:13px;color:var(--grey-3);margin-bottom:0}
-.login-tabs{display:flex;background:var(--grey-5);border-radius:10px;padding:4px;margin-bottom:24px}
-.login-tab{flex:1;padding:10px;border:none;background:none;border-radius:8px;cursor:pointer;font-family:inherit;font-size:14px;font-weight:500;color:var(--grey-3);transition:all .2s}
+.login-tabs{display:flex;flex-wrap:wrap;gap:4px;background:var(--grey-5);border-radius:10px;padding:4px;margin-bottom:24px}
+.login-tab{flex:1 1 22%;min-width:0;padding:8px 6px;border:none;background:none;border-radius:8px;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;color:var(--grey-3);transition:all .2s;white-space:nowrap}
 .login-tab.active{background:var(--white);color:var(--teal-dark);box-shadow:0 2px 8px rgba(10,74,74,.12)}
 .form-group{margin-bottom:14px;text-align:right}
 .form-group label{display:block;font-size:13px;font-weight:600;color:var(--grey-2);margin-bottom:5px}
@@ -882,3 +882,28 @@ tbody td{padding:10px 12px;text-align:center;color:var(--grey-2)}
 .parent-confirm-no-btn{width:100%;margin-top:10px;padding:12px;border:1.5px solid var(--grey-5);border-radius:10px;background:#fff;font-family:inherit;font-size:14px;cursor:pointer}
 .parent-remember-device{display:flex;align-items:flex-start;gap:8px;margin-top:14px;font-size:13px;color:var(--grey-2);cursor:pointer;line-height:1.5}
 .parent-remember-device input{margin-top:3px;flex-shrink:0}
+
+/* Physics diagnostic exams */
+.exam-wait-card{max-width:480px;margin:48px auto;padding:28px 24px}
+.exam-wait-name{font-size:18px;font-weight:700;color:var(--teal-dark);margin:0 0 6px;text-align:center}
+.exam-wait-meta{font-size:13px;color:var(--grey-3);margin:0 0 18px;text-align:center}
+.exam-wait-box{background:var(--teal-pale);border-radius:12px;padding:16px 18px;margin-bottom:18px;border-right:4px solid var(--teal-mid)}
+.exam-wait-box.exam-wait-locked{background:var(--red-pale);border-right-color:var(--red-soft)}
+.exam-wait-box p{margin:0;font-size:15px;font-weight:700;color:var(--teal-dark);line-height:1.7;text-align:center}
+.exam-wait-box.exam-wait-locked p{color:var(--red-soft)}
+.exam-wait-box .parent-login-hint{margin-top:8px;font-weight:500}
+.exam-grade-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.exam-grade-card{background:var(--white);border:1.5px solid var(--grey-5);border-radius:14px;padding:18px;box-shadow:0 4px 16px rgba(10,74,74,.08)}
+.exam-grade-card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
+.exam-grade-num{font-size:20px;font-weight:800;color:var(--teal-dark)}
+.exam-status-pill{font-size:11px;font-weight:700;background:var(--teal-pale);color:var(--teal-dark);padding:4px 10px;border-radius:999px;white-space:nowrap}
+.exam-grade-title{font-size:13px;color:var(--grey-2);margin:0 0 12px;line-height:1.6}
+.exam-grade-meta{list-style:none;margin:0 0 14px;padding:0;font-size:13px;color:var(--grey-3)}
+.exam-grade-meta li{padding:4px 0}
+.exam-grade-meta strong{color:var(--teal-dark)}
+.exam-grade-actions{display:flex;flex-direction:column;gap:8px}
+.exam-action-btn{width:100%;padding:10px 12px;border:1.5px solid var(--grey-5);border-radius:10px;background:var(--grey-6,#f4f6f6);font-family:inherit;font-size:13px;font-weight:600;color:var(--grey-3);cursor:not-allowed}
+@media(max-width:720px){
+  .login-tab{flex:1 1 46%;font-size:12px}
+  .exam-grade-grid{grid-template-columns:1fr}
+}

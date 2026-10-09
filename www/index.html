@@ -55,7 +55,7 @@ window.__splashDeadline = Date.now() + 5000;
   Promise.all(p).then(done).catch(done);
 })();
 </script>
-<link rel="stylesheet" href="css/app.css?v=78">
+<link rel="stylesheet" href="css/app.css?v=79">
 <link rel="stylesheet" href="css/uae-theme.css?v=3">
 </head>
 <body>
@@ -90,6 +90,7 @@ window.__splashDeadline = Date.now() + 5000;
     </div>
     <div class="login-tabs">
       <button class="login-tab active" onclick="switchTab('teacher',this)" id="tab-teacher">👨‍🏫 المعلم</button>
+      <button class="login-tab" onclick="switchTab('student',this)" id="tab-student">👨‍🎓 الطالب</button>
       <button class="login-tab" onclick="switchTab('parent',this)" id="tab-parent">👨‍👦 ولي الأمر</button>
       <button class="login-tab" onclick="switchTab('admin',this)" id="tab-admin">⚙️ المسؤول</button>
     </div>
@@ -140,6 +141,7 @@ window.__splashDeadline = Date.now() + 5000;
             <option value="english">اللغة الإنجليزية</option>
             <option value="social">الدراسات الاجتماعية</option>
             <option value="islamic">التربية الإسلامية</option>
+            <option value="physics">الفيزياء</option>
           </select>
         </div>
         <div class="form-group">
@@ -167,6 +169,18 @@ window.__splashDeadline = Date.now() + 5000;
         <button class="btn-primary" id="reg-submit-btn" onclick="submitTeacherReg()">✅ إنشاء الحساب</button>
         <button onclick="showTeacherLogin()" id="reg-back-btn" style="width:100%;margin-top:10px;background:transparent;border:none;color:var(--grey-3);padding:8px;font-family:inherit;font-size:13px;cursor:pointer">← العودة للدخول</button>
       </div>
+    </div>
+    <!-- STUDENT — diagnostic exam login -->
+    <div id="login-student" style="display:none">
+      <div class="error-msg" id="exam-student-error" style="display:none"></div>
+      <div class="form-group">
+        <label id="exam-student-mid-lbl">الرقم الوزاري</label>
+        <p id="exam-student-mid-hint" class="parent-login-hint">أدخل رقمك الوزاري للدخول إلى الاختبار التشخيصي في الفيزياء</p>
+        <input type="text" id="exam-student-mid-input" inputmode="numeric" maxlength="14" autocomplete="off"
+          placeholder="مثال: 123456789012"
+          onkeydown="if(event.key==='Enter')examStudentLogin()">
+      </div>
+      <button class="btn-primary" id="exam-student-login-btn" onclick="examStudentLogin()">دخول الاختبار</button>
     </div>
     <!-- PARENT — دخول برقم الطالب الوزاري -->
     <div id="login-parent" style="display:none">
@@ -213,6 +227,21 @@ window.__splashDeadline = Date.now() + 5000;
       <button type="button" id="admin-forgot-pw-btn" onclick="adminForgotPassword()"
         style="width:100%;margin-top:10px;background:transparent;border:none;color:var(--teal-dark);padding:6px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;text-decoration:underline">نسيت كلمة المرور؟</button>
     </div>
+  </div>
+</div>
+
+<!-- ═══════════ SCREEN: STUDENT EXAM WAIT ═══════════ -->
+<div id="screen-exam-student" class="screen">
+  <button onclick="toggleLang()" id="exam-student-lang-btn" style="position:fixed;top:16px;left:16px;z-index:999;background:var(--teal-mid);border:none;color:#fff;padding:8px 18px;border-radius:20px;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,.2)">🌐 EN</button>
+  <div class="login-card exam-wait-card">
+    <h1 id="exam-wait-title">الاختبار التشخيصي — الفيزياء</h1>
+    <p id="exam-wait-name" class="exam-wait-name"></p>
+    <p id="exam-wait-meta" class="exam-wait-meta"></p>
+    <div class="exam-wait-box" id="exam-wait-box">
+      <p id="exam-wait-msg">لم يبدأ الاختبار، انتظر تعليمات المعلم</p>
+      <p id="exam-wait-hint" class="parent-login-hint">عندما يرفع المعلم أسئلة اختبار صفك سيظهر الاختبار هنا.</p>
+    </div>
+    <button type="button" class="btn-primary" id="exam-student-back-btn" onclick="examStudentLogout()">→ رجوع</button>
   </div>
 </div>
 
@@ -375,65 +404,31 @@ window.__splashDeadline = Date.now() + 5000;
       </div>
       <div style="padding:20px">
         <p id="admin-upload-desc" style="font-size:13px;color:var(--grey-2);margin-bottom:16px;line-height:1.7">
-          ارفع ملف Excel لكل صف أو ملفاً واحداً يحتوي كل الصفوف (أوراق بأسماء <strong>5-1</strong> … <strong>8-6</strong>).<br>
-          الهيكل: <strong>م | الصف | الشعبة | رقم الطالب | اسم بالعربية | اسم بالإنجليزية</strong> — الشعب أرقام <strong>1–6</strong>
+          ارفع ملف Excel واحداً لكامل المدرسة — يقرأ النظام الصفوف والشعب تلقائياً من عناوين الجداول (مثل <strong>GRADE 9 GEN 1</strong> أو <strong>الصف العاشر متقدم 2</strong>).<br>
+          أعمدة كل شعبة: <strong>م | رقم الطالب | الاسم بالعربية | الاسم بالانجليزية</strong> — رقم الطالب هو ما يدخل به ولي الأمر.
         </p>
 
-        <!-- Per-grade upload buttons -->
-        <div class="responsive-grid-2" style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:16px">
-          <div style="border:1.5px solid var(--grey-5);border-radius:10px;padding:14px">
-            <div style="font-weight:700;color:var(--teal-dark);margin-bottom:8px">📂 الصف 5</div>
-            <div id="admin-grade5-status" style="font-size:12px;color:var(--grey-3);margin-bottom:8px">—</div>
-            <button class="btn-primary" style="width:100%;padding:9px;font-size:13px"
-              onclick="document.getElementById('admin-upload-5').click()">📥 رفع ملف الصف 5</button>
-            <input type="file" id="admin-upload-5" accept=".xlsx,.xls" style="display:none"
-              onchange="adminImportGrade(this,'5')">
-          </div>
-          <div style="border:1.5px solid var(--grey-5);border-radius:10px;padding:14px">
-            <div style="font-weight:700;color:var(--teal-dark);margin-bottom:8px">📂 الصف 6</div>
-            <div id="admin-grade6-status" style="font-size:12px;color:var(--grey-3);margin-bottom:8px">—</div>
-            <button class="btn-primary" style="width:100%;padding:9px;font-size:13px"
-              onclick="document.getElementById('admin-upload-6').click()">📥 رفع ملف الصف 6</button>
-            <input type="file" id="admin-upload-6" accept=".xlsx,.xls" style="display:none"
-              onchange="adminImportGrade(this,'6')">
-          </div>
-          <div style="border:1.5px solid var(--grey-5);border-radius:10px;padding:14px">
-            <div style="font-weight:700;color:var(--teal-dark);margin-bottom:8px">📂 الصف 7</div>
-            <div id="admin-grade7-status" style="font-size:12px;color:var(--grey-3);margin-bottom:8px">—</div>
-            <button class="btn-primary" style="width:100%;padding:9px;font-size:13px"
-              onclick="document.getElementById('admin-upload-7').click()">📥 رفع ملف الصف 7</button>
-            <input type="file" id="admin-upload-7" accept=".xlsx,.xls" style="display:none"
-              onchange="adminImportGrade(this,'7')">
-          </div>
-          <div style="border:1.5px solid var(--grey-5);border-radius:10px;padding:14px">
-            <div style="font-weight:700;color:var(--teal-dark);margin-bottom:8px">📂 الصف 8</div>
-            <div id="admin-grade8-status" style="font-size:12px;color:var(--grey-3);margin-bottom:8px">—</div>
-            <button class="btn-primary" style="width:100%;padding:9px;font-size:13px"
-              onclick="document.getElementById('admin-upload-8').click()">📥 رفع ملف الصف 8</button>
-            <input type="file" id="admin-upload-8" accept=".xlsx,.xls" style="display:none"
-              onchange="adminImportGrade(this,'8')">
-          </div>
-        </div>
+        <button class="btn-primary" style="width:100%;padding:12px;font-size:14px;margin-bottom:14px"
+          onclick="document.getElementById('admin-students-upload').click()" id="admin-upload-btn">
+          📥 رفع ملف أسماء المدرسة (Excel)
+        </button>
+        <input type="file" id="admin-students-upload" accept=".xlsx,.xls"
+          style="display:none" onchange="adminImportStudents(this)">
 
-        <!-- Full file upload (all grades) -->
+        <div id="admin-roster-summary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin-bottom:16px"></div>
+
         <div style="border-top:1.5px solid var(--grey-5);padding-top:14px;display:flex;gap:10px;flex-wrap:wrap">
-          <button class="btn-icon" style="background:var(--teal-light);color:var(--teal-dark)"
-            onclick="document.getElementById('admin-students-upload').click()" id="admin-upload-btn">
-            📥 رفع ملف شامل (كل الصفوف)
-          </button>
-          <input type="file" id="admin-students-upload" accept=".xlsx,.xls"
-            style="display:none" onchange="adminImportStudents(this)">
           <button class="btn-icon" style="background:var(--red-pale);color:var(--red-soft)"
             onclick="adminClearAllStudents()" id="admin-clear-btn">
             🗑️ مسح كل الطلاب
           </button>
           <button class="btn-icon" onclick="adminClearGrade()"
             style="background:var(--gold-light);color:var(--gold)" id="admin-clear-grade-btn">
-            🗑️ مسح صف محدد
+            🗑️ مسح الصف المختار
           </button>
           <button class="btn-icon" onclick="adminClearSection()"
             style="background:#fce4ec;color:#c62828" id="admin-clear-section-btn">
-            🗑️ مسح شعبة محددة
+            🗑️ مسح الشعبة المختارة
           </button>
         </div>
         <div id="admin-upload-progress" style="margin-top:12px;font-size:13px;color:var(--teal-mid)"></div>
@@ -455,14 +450,12 @@ window.__splashDeadline = Date.now() + 5000;
           <div class="responsive-grid-auto" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px">
             <div>
               <label id="admin-add-lbl-grade" style="font-size:12px;color:var(--grey-3);display:block;margin-bottom:4px">الصف</label>
-              <select id="admin-add-grade" style="width:100%;padding:9px 10px;border:1.5px solid var(--grey-5);border-radius:8px;font-family:inherit;font-size:13px">
-                <option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option>
+              <select id="admin-add-grade" onchange="adminFillSectionSelect('admin-add-sec',this.value)" style="width:100%;padding:9px 10px;border:1.5px solid var(--grey-5);border-radius:8px;font-family:inherit;font-size:13px">
               </select>
             </div>
             <div>
               <label id="admin-add-lbl-sec" style="font-size:12px;color:var(--grey-3);display:block;margin-bottom:4px">الشعبة</label>
               <select id="admin-add-sec" style="width:100%;padding:9px 10px;border:1.5px solid var(--grey-5);border-radius:8px;font-family:inherit;font-size:13px">
-                <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option>
               </select>
             </div>
             <div>
@@ -486,14 +479,12 @@ window.__splashDeadline = Date.now() + 5000;
           <div class="responsive-grid-auto" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px">
             <div>
               <label id="admin-xfer-lbl-grade" style="font-size:12px;color:var(--grey-3);display:block;margin-bottom:4px">الصف</label>
-              <select id="admin-xfer-grade" onchange="adminRefreshTransferStudentList()" style="width:100%;padding:9px 10px;border:1.5px solid var(--grey-5);border-radius:8px;font-family:inherit;font-size:13px">
-                <option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option>
+              <select id="admin-xfer-grade" onchange="adminFillSectionSelect('admin-xfer-from-sec',this.value);adminFillSectionSelect('admin-xfer-to-sec',this.value);adminRefreshTransferStudentList()" style="width:100%;padding:9px 10px;border:1.5px solid var(--grey-5);border-radius:8px;font-family:inherit;font-size:13px">
               </select>
             </div>
             <div>
               <label id="admin-xfer-lbl-from" style="font-size:12px;color:var(--grey-3);display:block;margin-bottom:4px">من الشعبة</label>
               <select id="admin-xfer-from-sec" onchange="adminRefreshTransferStudentList()" style="width:100%;padding:9px 10px;border:1.5px solid var(--grey-5);border-radius:8px;font-family:inherit;font-size:13px">
-                <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option>
               </select>
             </div>
             <div class="admin-xfer-student-span" style="grid-column:span 2">
@@ -505,7 +496,6 @@ window.__splashDeadline = Date.now() + 5000;
             <div>
               <label id="admin-xfer-lbl-to" style="font-size:12px;color:var(--grey-3);display:block;margin-bottom:4px">إلى الشعبة</label>
               <select id="admin-xfer-to-sec" style="width:100%;padding:9px 10px;border:1.5px solid var(--grey-5);border-radius:8px;font-family:inherit;font-size:13px">
-                <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option>
               </select>
             </div>
           </div>
@@ -519,20 +509,13 @@ window.__splashDeadline = Date.now() + 5000;
       <div class="card-header">
         <h3 id="admin-students-title">👥 الطلاب المحملون</h3>
         <div style="display:flex;gap:8px;align-items:center">
-          <select id="admin-grade-filter" onchange="adminRenderStudents()"
+          <select id="admin-grade-filter" onchange="refreshAdminSecFilter();adminRenderStudents()"
             style="padding:7px 12px;border:1.5px solid var(--grey-5);border-radius:8px;font-family:inherit;font-size:13px;outline:none">
             <option value="">الكل</option>
-            <option value="5">الصف 5</option>
-            <option value="6">الصف 6</option>
-            <option value="7">الصف 7</option>
-            <option value="8">الصف 8</option>
           </select>
           <select id="admin-sec-filter" onchange="adminRenderStudents()"
             style="padding:7px 12px;border:1.5px solid var(--grey-5);border-radius:8px;font-family:inherit;font-size:13px;outline:none">
             <option value="">كل الشعب</option>
-            <option value="1">1</option><option value="2">2</option>
-            <option value="3">3</option><option value="4">4</option>
-            <option value="5">5</option><option value="6">6</option>
           </select>
           <span id="admin-student-count" style="font-size:13px;color:var(--grey-3)"></span>
         </div>
@@ -707,14 +690,12 @@ window.__splashDeadline = Date.now() + 5000;
               <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;max-width:520px">
                 <div>
                   <label id="admin-compose-lbl-p-grade" style="font-size:12px;color:var(--grey-3);display:block;margin-bottom:4px">الصف</label>
-                  <select id="admin-compose-grade" onchange="adminRefreshComposeStudentList()" style="width:100%;padding:9px 10px;border:1.5px solid var(--grey-5);border-radius:8px;font-family:inherit;font-size:13px">
-                    <option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option>
+                  <select id="admin-compose-grade" onchange="adminFillSectionSelect('admin-compose-sec',this.value);adminRefreshComposeStudentList()" style="width:100%;padding:9px 10px;border:1.5px solid var(--grey-5);border-radius:8px;font-family:inherit;font-size:13px">
                   </select>
                 </div>
                 <div>
                   <label id="admin-compose-lbl-p-sec" style="font-size:12px;color:var(--grey-3);display:block;margin-bottom:4px">الشعبة</label>
                   <select id="admin-compose-sec" onchange="adminRefreshComposeStudentList()" style="width:100%;padding:9px 10px;border:1.5px solid var(--grey-5);border-radius:8px;font-family:inherit;font-size:13px">
-                    <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option>
                   </select>
                 </div>
                 <div style="grid-column:span 2">
@@ -801,6 +782,7 @@ window.__splashDeadline = Date.now() + 5000;
     <button class="nav-tab" onclick="showTab('behavior',this)" id="ttab-behavior">🧑‍🎓 السلوك</button>
     <button class="nav-tab" onclick="showTab('messages',this)" id="ttab-messages">💬 الرسائل</button>
     <button class="nav-tab" onclick="showTab('school',this)" id="ttab-school">🏫 المدرسة</button>
+    <button class="nav-tab" onclick="showTab('exams',this)" id="ttab-exams">🧪 الاختبار التشخيصي</button>
     <button class="nav-tab" onclick="showTab('links',this)" id="ttab-share">🔗 مشاركة أولياء الأمور</button>
   </div>
 
@@ -1129,6 +1111,15 @@ window.__splashDeadline = Date.now() + 5000;
       </div>
     </div>
 
+    <!-- TAB: PHYSICS DIAGNOSTIC EXAMS -->
+    <div class="tab-content" id="tab-exams">
+      <div class="card" style="margin-bottom:16px;padding:18px 20px">
+        <h3 id="exam-dash-title" style="margin:0 0 6px;color:var(--teal-dark)">اختبارات الفيزياء التشخيصية</h3>
+        <p id="exam-dash-sub" class="admin-help-text" style="margin:0">منصة واحدة لأربعة صفوف. كل صف له اختبار مستقل وأهدافه الخاصة.</p>
+      </div>
+      <div id="exam-grade-grid" class="exam-grade-grid"></div>
+    </div>
+
     <!-- TAB: LINKS -->
     <div class="tab-content" id="tab-links">
       <div class="help-box">
@@ -1400,6 +1391,7 @@ window.__splashDeadline = Date.now() + 5000;
 <script src="js/attachments.js?v=7"></script>
 <script src="js/firebase-init.js?v=37"></script>
 <script src="js/msg-delete.js?v=5"></script>
-<script src="js/app.js?v=79"></script>
+<script src="js/app.js?v=80"></script>
+<script src="js/exam-platform.js?v=2"></script>
 </body>
 </html>
